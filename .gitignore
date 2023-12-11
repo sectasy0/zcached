@@ -1,0 +1,9 @@
+# Zig build artifacts
+zig-cache/
+zig-out/
+zig-cache-*
+zig-out-*
+
+# Zig test artifacts
+zig-test/
+zig-test-*
