@@ -1,18 +1,17 @@
-# zcached - A simple in-memory cache
+# zcached - A Lightweight In-Memory Cache System
 
-Welcome to `zcached`, a lightweight and efficient in-memory caching system akin to databases like Redis. This README serves as a guide to understanding, setting up, and utilizing effectively.
+Welcome to `zcached`, a nimble and efficient in-memory caching system resembling databases like Redis. This README acts as a comprehensive guide, aiding in comprehension, setup, and optimal utilization.
 
 ## Introduction
-`zcached` is designed to provide fast, in-memory caching capabilities similar to popular databases such as Redis. It aims to be user-friendly, lightweight, and efficient, making it suitable for a wide range of applications where quick data retrieval and storage are crucial.
+`zcached` aims to offer rapid, in-memory caching akin to widely-used databases such as Redis. Its focus lies in user-friendliness, efficiency, and agility, making it suitable for various applications requiring swift data retrieval and storage.
 
-Developed using Zig, a modern, versatile, compiled programming language, `zcached` boasts a zero-dependency architecture. This distinctive trait empowers it to seamlessly compile and execute on any system equipped with a Zig compiler, ensuring exceptional portability and ease of deployment.
-
+Crafted using Zig, a versatile, modern, compiled programming language, `zcached` prides itself on a zero-dependency architecture. This unique feature enables seamless compilation and execution across systems equipped with a Zig compiler, ensuring exceptional portability and deployment ease.
 
 ## Features
-- **Zero-Dependency Architecture** - `zcached` is built entirely using Zig, a modern, versatile, compiled programming language. This distinctive trait empowers it to seamlessly compile and execute on any system equipped with a Zig compiler, ensuring exceptional portability and ease of deployment.
-- **Lightweight Design** - Engineered for efficiency, zcached prides itself on a lightweight structure, boasting a diminutive memory footprint and minimal CPU usage. This streamlined design optimizes performance while minimizing resource consumption.
-- **Optimized Efficiency** - Emphasizing swift data retrieval and storage, zcached prioritizes efficiency at its core. Its design intricacies prioritize expeditious operations, ensuring prompt data handling for diverse application requirements.
-- **Diverse Data Type Support** - With a comprehensive range of supported data types including strings, integers, floats, and lists, provides versatility in accommodating various data structures, enhancing its utility across multiple use cases.
+- **Zero-Dependency Architecture**: Entirely built using Zig, ensuring seamless execution across systems with a Zig compiler, enhancing portability.
+- **Lightweight Design**: Engineered for efficiency, `zcached` boasts a small memory footprint and minimal CPU usage, optimizing performance while conserving resources.
+- **Optimized Efficiency**: Prioritizing swift data handling, `zcached` ensures prompt operations to cater to diverse application needs.
+- **Diverse Data Type Support**: Accommodates various data structures like strings, integers, floats, and lists, enhancing utility across different use cases.
 
 ## Installation
 ### Prerequisites
@@ -39,7 +38,7 @@ zig test --main-pkg-path .. tests.zig
 ```
 
 ## Usage
-Actually `zcached` don't come with any CLI, so if you want to use it from the terminal you can use `nc` (netcat) to send commands to the server.
+While `zcached`` lacks a CLI, you can utilize nc (netcat) from the terminal to send commands to the server.
 
 ### Example Commands
 #### SET
@@ -47,14 +46,16 @@ Set a key to hold the string value. If key already holds a value, it is overwrit
 ```bash
 echo "*3\r\n\$3\r\nSET\r\n\$9\r\nmycounter\r\n:42\r\n" | netcat -N localhost 7556
 ```
-explaining the command:
-- `*3\r\n` - number of element in the array (commands are always arrays)
-- `\$3\r\nSET\r\n` - `$3` means that the next string is 3 bytes long, `SET` is the command
+
+
+#### Command Breakdown:
+- `*3\r\n` - number of elements in the array (commands are always arrays)
+- `\$3\r\nSET\r\n` - `$3` denotes the following string as 3 bytes long, SET is the command
 - `\$9\r\nmycounter\r\n` - `$9` means that the next string is 9 bytes long, `mycounter` is the key
-- `:42\r\n` - `:` means that the next string is a number, `42` is the value
+- `:42\r\n` - `:` indicates the next string is a number, `42`` is the value
 
 #### GET
-Get the value of key. If the key does not exist `-not found` is returned. GET only accepts strings as keys.
+Retrieve the value of a key. If the key doesn’t exist, `-not found` is returned. GET only accepts strings as keys.
 ```bash
 echo "*2\r\n\$3\r\nGET\r\n\$9\r\nmycounter\r\n" | netcat -N localhost 7556
 ```
