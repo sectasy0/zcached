@@ -38,7 +38,7 @@ zig test --main-pkg-path .. tests.zig
 ```
 
 ## Usage
-While `zcached`` lacks a CLI, you can utilize nc (netcat) from the terminal to send commands to the server.
+While `zcached` lacks a CLI, you can utilize nc (netcat) from the terminal to send commands to the server.
 
 ### Example Commands
 #### SET
@@ -52,7 +52,7 @@ echo "*3\r\n\$3\r\nSET\r\n\$9\r\nmycounter\r\n:42\r\n" | netcat -N localhost 755
 - `*3\r\n` - number of elements in the array (commands are always arrays)
 - `\$3\r\nSET\r\n` - `$3` denotes the following string as 3 bytes long, SET is the command
 - `\$9\r\nmycounter\r\n` - `$9` means that the next string is 9 bytes long, `mycounter` is the key
-- `:42\r\n` - `:` indicates the next string is a number, `42`` is the value
+- `:42\r\n` - `:` indicates the next string is a number, `42` is the value
 
 #### GET
 Retrieve the value of a key. If the key doesn’t exist, `-not found` is returned. GET only accepts strings as keys.
@@ -72,7 +72,7 @@ echo "*2\r\n\$3\r\nGET\r\n\$9\r\nmycounter\r\n" | netcat -N localhost 7556
 
 ## Release History
 * 0.0.1
-		* Initial release
+	* Initial release
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
