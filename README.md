@@ -71,6 +71,8 @@ echo "*2\r\n\$3\r\nGET\r\n\$9\r\nmycounter\r\n" | netcat -N localhost 7556
 - [ ] Client side library.
 
 ## Release History
+* unreleased
+	* Ability to configure server listen address and port from `zcached.conf` file.
 * 0.0.1
 	* Initial release
 

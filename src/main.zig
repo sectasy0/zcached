@@ -1,11 +1,17 @@
 const std = @import("std");
 
 const server = @import("server/listener.zig");
+const Config = @import("server/config.zig").Config;
 const storage = @import("storage.zig");
 
 pub fn main() void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var allocator = gpa.allocator();
+
+    const config = Config.load(allocator) catch |err| {
+        std.log.err("failed to load config: {}", .{err});
+        return;
+    };
 
     var mem_storage = storage.MemoryStorage.init(allocator);
     defer mem_storage.deinit();
@@ -17,7 +23,7 @@ pub fn main() void {
     };
     defer thread_pool.deinit();
 
-    const listen_addr = std.net.Address.parseIp("127.0.0.1", 7556) catch |err| {
+    const listen_addr = std.net.Address.parseIp(config.address, config.port) catch |err| {
         std.log.err("failed to parse address: {}", .{err});
         return;
     };

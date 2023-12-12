@@ -10,4 +10,5 @@ comptime {
     _ = @import("src/server/cmd_handler.zig");
     _ = @import("src/server/err_handler.zig");
     _ = @import("src/server/listener.zig");
+    _ = @import("src/server/config.zig");
 }
