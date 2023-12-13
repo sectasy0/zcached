@@ -3,7 +3,7 @@ const std = @import("std");
 const FILENAME = "zcached.conf";
 
 pub const Config = struct {
-    address: std.net.Ip4Address = std.net.Ip4Address.init(.{ 127, 0, 0, 1 }, 7556),
+    address: std.net.Address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556),
     max_connections: u16 = 512,
 
     _arena: std.heap.ArenaAllocator,
@@ -77,8 +77,8 @@ pub const Config = struct {
                         const parsed = try std.fmt.parseInt(u16, value, 10);
                         @field(config, field.name) = parsed;
                     },
-                    std.net.Ip4Address => {
-                        const parsed = try std.net.Ip4Address.parse(value, 0);
+                    std.net.Address => {
+                        const parsed = try std.net.Address.parseIp(value, 0);
                         @field(config, field.name) = parsed;
                     },
                     else => unreachable,
@@ -88,12 +88,12 @@ pub const Config = struct {
     }
 };
 
-test "config default values" {
+test "config default values ipv4" {
     var config = try Config.load(std.testing.allocator);
     defer config.deinit();
 
-    const address = std.net.Ip4Address.init(.{ 127, 0, 0, 1 }, 7556);
-    try std.testing.expectEqual(config.address, address);
+    const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
+    try std.testing.expectEqual(config.address.in, address.in);
 }
 
 test "config load" {
@@ -106,8 +106,8 @@ test "config load" {
     var config = try Config.load(std.testing.allocator);
     defer config.deinit();
 
-    const address = std.net.Ip4Address.init(.{ 192, 168, 0, 1 }, 1234);
-    try std.testing.expectEqual(config.address, address);
+    const address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234);
+    try std.testing.expectEqual(config.address.in, address.in);
 
     // delete file
     try std.fs.cwd().deleteFile(FILENAME);
