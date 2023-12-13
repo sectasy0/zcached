@@ -15,6 +15,7 @@ pub fn handle(stream: anytype, err: anyerror, args: Args) !void {
         error.NotBoolean => try out.writeAll("-not boolean\r\n"),
         error.KeyNotString => try out.writeAll("-key not string\r\n"),
         error.NotFound => try out.writeAll("-not found\r\n"),
+        error.MaxClientsReached => try out.writeAll("-max number of clients reached\r\n"),
         else => try out.writeAll("-unexpected\r\n"),
     };
 }
@@ -69,6 +70,17 @@ test "unexpected error" {
     try handle(&stream, error.Unexpected, .{});
 
     var expected: []u8 = @constCast("-unexpected\r\n");
+
+    try std.testing.expectEqualStrings(expected, stream.getWritten());
+}
+
+test "max clients reached" {
+    var buffer: [40]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buffer);
+
+    try handle(&stream, error.MaxClientsReached, .{});
+
+    var expected: []u8 = @constCast("-max number of clients reached\r\n");
 
     try std.testing.expectEqualStrings(expected, stream.getWritten());
 }

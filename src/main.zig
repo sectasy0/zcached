@@ -23,22 +23,19 @@ pub fn main() void {
     };
     defer thread_pool.deinit();
 
-    const listen_addr = std.net.Address.parseIp(config.address, config.port) catch |err| {
-        std.log.err("failed to parse address: {}", .{err});
-        return;
-    };
     var srv = server.ServerListener.init(
-        &listen_addr,
+        &config.address,
         allocator,
         &thread_pool,
         &mem_storage,
+        &config,
     ) catch |err| {
         std.log.err("failed to initialize server: {}", .{err});
         return;
     };
     defer srv.deinit();
 
-    std.log.info("starting zcached server on {}", .{listen_addr});
+    std.log.info("starting zcached server on {}", .{config.address});
 
     srv.listen() catch |err| {
         std.log.err("failed to listen: {}", .{err});

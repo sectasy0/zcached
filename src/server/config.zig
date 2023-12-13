@@ -3,8 +3,8 @@ const std = @import("std");
 const FILENAME = "zcached.conf";
 
 pub const Config = struct {
-    address: []const u8 = @constCast("127.0.0.1"),
-    port: u16 = 7556,
+    address: std.net.Ip4Address = std.net.Ip4Address.init(.{ 127, 0, 0, 1 }, 7556),
+    max_connections: u16 = 512,
 
     _arena: std.heap.ArenaAllocator,
 
@@ -36,6 +36,14 @@ pub const Config = struct {
 
             const key_value = try process_line(config._arena.allocator(), line);
             defer key_value.deinit();
+
+            // Special case for address port because `std.net.Address` is struct with address and port
+            if (std.mem.eql(u8, key_value.items[0], "port")) {
+                if (key_value.items[1].len == 0) return error.InvalidInput;
+                const parsed = try std.fmt.parseInt(u16, key_value.items[1], 10);
+                config.address.setPort(parsed);
+                continue;
+            }
 
             try assign_field_value(&config, key_value);
         }
@@ -69,7 +77,10 @@ pub const Config = struct {
                         const parsed = try std.fmt.parseInt(u16, value, 10);
                         @field(config, field.name) = parsed;
                     },
-                    []const u8 => @field(config, field.name) = value,
+                    std.net.Ip4Address => {
+                        const parsed = try std.net.Ip4Address.parse(value, 0);
+                        @field(config, field.name) = parsed;
+                    },
                     else => unreachable,
                 }
             }
@@ -81,12 +92,12 @@ test "config default values" {
     var config = try Config.load(std.testing.allocator);
     defer config.deinit();
 
-    try std.testing.expectEqualStrings(config.address, "127.0.0.1");
-    try std.testing.expectEqual(config.port, 7556);
+    const address = std.net.Ip4Address.init(.{ 127, 0, 0, 1 }, 7556);
+    try std.testing.expectEqual(config.address, address);
 }
 
 test "config load" {
-    const file_content = "address=192.16.0.1\nport=1234\n";
+    const file_content = "address=192.168.0.1\nport=1234\n";
     // create file
     const file = try std.fs.cwd().createFile(FILENAME, .{});
     try file.writeAll(file_content);
@@ -95,8 +106,8 @@ test "config load" {
     var config = try Config.load(std.testing.allocator);
     defer config.deinit();
 
-    try std.testing.expectEqualStrings(config.address, "192.16.0.1");
-    try std.testing.expectEqual(config.port, 1234);
+    const address = std.net.Ip4Address.init(.{ 192, 168, 0, 1 }, 1234);
+    try std.testing.expectEqual(config.address, address);
 
     // delete file
     try std.fs.cwd().deleteFile(FILENAME);

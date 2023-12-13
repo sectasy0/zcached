@@ -5,6 +5,7 @@ const AnyType = @import("../protocol/types.zig").AnyType;
 const MemoryStorage = @import("../storage.zig").MemoryStorage;
 const errors = @import("err_handler.zig");
 const CMDHandler = @import("cmd_handler.zig").CMDHandler;
+const Config = @import("config.zig").Config;
 
 const Address = std.net.Address;
 const Allocator = std.mem.Allocator;
@@ -20,9 +21,19 @@ pub const ServerListener = struct {
     cmd_handler: CMDHandler,
     storage: *MemoryStorage,
 
+    config: *const Config,
+
+    connections: u16 = 0,
+
     pool: *std.Thread.Pool,
 
-    pub fn init(addr: *const Address, allocator: Allocator, pool: *Pool, storage: *MemoryStorage) !ServerListener {
+    pub fn init(
+        addr: *const Address,
+        allocator: Allocator,
+        pool: *Pool,
+        storage: *MemoryStorage,
+        config: *const Config,
+    ) !ServerListener {
         const proto = protocol.ProtocolHandler.init(allocator) catch {
             return error.ProtocolInitFailed;
         };
@@ -40,6 +51,7 @@ pub const ServerListener = struct {
             .pool = pool,
             .addr = addr,
             .storage = storage,
+            .config = config,
         };
     }
 
@@ -49,6 +61,14 @@ pub const ServerListener = struct {
         // if somewhere in there we get an error, we just translate it to a packet and send it back.
         while (true) {
             var connection: Connection = try self.server.accept();
+            self.connections += 1;
+
+            if (self.connections > self.config.max_connections) {
+                const err = error.MaxClientsReached;
+                errors.handle(connection.stream, err, .{}) catch {
+                    std.log.err("error sending error: {}\n", .{err});
+                };
+            }
 
             std.log.info("got connection from {}\n", .{connection.address});
 
@@ -62,7 +82,7 @@ pub const ServerListener = struct {
     }
 
     fn handle_request(self: *ServerListener, connection: Connection) void {
-        defer connection.stream.close();
+        defer self.close_connection(connection);
 
         const reader: std.net.Stream.Reader = connection.stream.reader();
         const result: AnyType = self.protocol.serialize(&reader) catch |err| {
@@ -104,8 +124,15 @@ pub const ServerListener = struct {
         };
     }
 
+    fn close_connection(self: *ServerListener, connection: Connection) void {
+        connection.stream.close();
+        self.connections -= 1;
+    }
+
     pub fn deinit(self: *ServerListener) void {
         self.server.deinit();
         self.protocol.deinit();
     }
 };
+
+// I dunno how to test this listener, so I'm just gonna test it manually
