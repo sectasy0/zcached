@@ -69,7 +69,7 @@ echo "*2\r\n\$3\r\nGET\r\n\$9\r\nmycounter\r\n" | netcat -N localhost 7556
 - [ ] Server events logging.
 - [+] Configurable server (port, max clients, max memory, etc.).
 - [ ] Client side library.
-- [ ] Encrypted connections, e.g TLS 1.3 or use QUIC (Currently there is no server-side support for TLS in zig).
+- [ ] Encrypted connections, e.g TLS 1.3 or use QUIC (Currently there is no server-side support for TLS in zig, I could use `https://github.com/shiguredo/tls13-zig`).
 
 ## Release History
 * unreleased
