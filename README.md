@@ -15,7 +15,7 @@ Crafted using Zig, a versatile, modern, compiled programming language, `zcached`
 
 ## Installation
 ### Prerequisites
-- [Zig](https://ziglang.org/download/) (0.11.0 or newer)
+- [zig](https://ziglang.org/download/) (0.11.0 or newer)
 
 ### Building from Source
 1. Clone the repository
@@ -67,8 +67,9 @@ echo "*2\r\n\$3\r\nGET\r\n\$9\r\nmycounter\r\n" | netcat -N localhost 7556
 - [ ] Ability to set a TTL for a key.
 - [ ] Logging commands (to be able to replay data inside the server if it crashes).
 - [ ] Server events logging.
-- [ ] Configurable server (port, max clients, max memory, etc.).
+- [+] Configurable server (port, max clients, max memory, etc.).
 - [ ] Client side library.
+- [ ] Encrypted connections, e.g TLS 1.3 or use QUIC (Currently there is no server-side support for TLS in zig).
 
 ## Release History
 * unreleased
