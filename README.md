@@ -2,6 +2,10 @@
 
 Welcome to `zcached`, a nimble and efficient in-memory caching system resembling databases like Redis. This README acts as a comprehensive guide, aiding in comprehension, setup, and optimal utilization.
 
+![zig](https://img.shields.io/badge/Zig-v0.11-0074C1?logo=zig&logoColor=white&color=%230074C1)
+![tests](https://github.com/sectasy0/zcached/actions/workflows/zcached-tests.yml/badge.svg)
+![build](https://github.com/sectasy0/zcached/actions/workflows/zcached-build.yml/badge.svg)
+
 ## Introduction
 `zcached` aims to offer rapid, in-memory caching akin to widely-used databases such as Redis. Its focus lies in user-friendliness, efficiency, and agility, making it suitable for various applications requiring swift data retrieval and storage.
 
