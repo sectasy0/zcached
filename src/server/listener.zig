@@ -2,7 +2,7 @@ const std = @import("std");
 const protocol = @import("../protocol/handler.zig");
 
 const AnyType = @import("../protocol/types.zig").AnyType;
-const MemoryStorage = @import("../storage.zig").MemoryStorage;
+const MemoryStorage = @import("storage.zig").MemoryStorage;
 const errors = @import("err_handler.zig");
 const CMDHandler = @import("cmd_handler.zig").CMDHandler;
 const Config = @import("config.zig").Config;

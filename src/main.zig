@@ -2,7 +2,9 @@ const std = @import("std");
 
 const server = @import("server/listener.zig");
 const Config = @import("server/config.zig").Config;
-const storage = @import("storage.zig");
+const storage = @import("server/storage.zig");
+
+const TracingAllocator = @import("server/tracing.zig").TracingAllocator;
 
 pub fn main() void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -13,7 +15,8 @@ pub fn main() void {
         return;
     };
 
-    var mem_storage = storage.MemoryStorage.init(allocator);
+    var tracing_allocator = TracingAllocator.init(allocator);
+    var mem_storage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mem_storage.deinit();
 
     var thread_pool: std.Thread.Pool = undefined;

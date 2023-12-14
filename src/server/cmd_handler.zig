@@ -1,8 +1,11 @@
 const std = @import("std");
 
-const storage = @import("../storage.zig");
+const storage = @import("storage.zig");
 const AnyType = @import("../protocol/types.zig").AnyType;
+const Config = @import("config.zig").Config;
 const utils = @import("utils.zig");
+
+const TracingAllocator = @import("tracing.zig").TracingAllocator;
 
 const Commands = enum {
     GET,
@@ -92,7 +95,9 @@ pub const CMDHandler = struct {
 };
 
 test "should handle SET command" {
-    var mstorage = storage.MemoryStorage.init(std.testing.allocator);
+    const config = try Config.load(std.testing.allocator);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mstorage.deinit();
 
     var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage);
@@ -105,12 +110,15 @@ test "should handle SET command" {
     try command_set.append(.{ .str = @constCast("value") });
 
     var result = cmd_handler.process(&command_set);
+
     try std.testing.expectEqual(result.ok, .{ .sstr = @constCast("OK") });
     try std.testing.expectEqual(mstorage.get("key"), .{ .str = @constCast("value") });
 }
 
 test "should handle GET command" {
-    var mstorage = storage.MemoryStorage.init(std.testing.allocator);
+    const config = try Config.load(std.testing.allocator);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mstorage.deinit();
     try mstorage.put("key", .{ .str = @constCast("value") });
 
@@ -127,7 +135,9 @@ test "should handle GET command" {
 }
 
 test "should handle DELETE command" {
-    var mstorage = storage.MemoryStorage.init(std.testing.allocator);
+    const config = try Config.load(std.testing.allocator);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mstorage.deinit();
     try mstorage.put("key", .{ .str = @constCast("value") });
     try std.testing.expectEqual(mstorage.get("key"), .{ .str = @constCast("value") });
@@ -146,7 +156,9 @@ test "should handle DELETE command" {
 }
 
 test "should return error.NotFound for non existing during DELETE command" {
-    var mstorage = storage.MemoryStorage.init(std.testing.allocator);
+    const config = try Config.load(std.testing.allocator);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mstorage.deinit();
 
     var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage);
@@ -162,7 +174,9 @@ test "should return error.NotFound for non existing during DELETE command" {
 }
 
 test "should handle FLUSH command" {
-    var mstorage = storage.MemoryStorage.init(std.testing.allocator);
+    const config = try Config.load(std.testing.allocator);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mstorage.deinit();
 
     try mstorage.put("key", .{ .str = @constCast("value") });

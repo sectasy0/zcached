@@ -6,6 +6,11 @@ pub fn to_uppercase(str: []u8) []u8 {
     return result[0..str.len];
 }
 
+pub fn ptrCast(comptime T: type, ptr: *anyopaque) *T {
+    if (@alignOf(T) == 0) @compileError(@typeName(T));
+    return @ptrCast(@alignCast(ptr));
+}
+
 test "to_uppercase" {
     const str = @constCast("hello world");
     const expected = @constCast("HELLO WORLD");

@@ -1,6 +1,4 @@
 comptime {
-    _ = @import("src/storage.zig");
-
     // protocol
     _ = @import("src/protocol/handler.zig");
     _ = @import("src/protocol/serializer.zig");
@@ -11,4 +9,6 @@ comptime {
     _ = @import("src/server/err_handler.zig");
     _ = @import("src/server/listener.zig");
     _ = @import("src/server/config.zig");
+    _ = @import("src/server/storage.zig");
+    _ = @import("src/server/tracing.zig");
 }

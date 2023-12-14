@@ -4,7 +4,9 @@ const FILENAME = "zcached.conf";
 
 pub const Config = struct {
     address: std.net.Address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556),
+
     max_connections: u16 = 512,
+    max_memory: u32 = 0, // 0 means unlimited, value in Megabytes
 
     _arena: std.heap.ArenaAllocator,
 
@@ -31,7 +33,7 @@ pub const Config = struct {
 
         var iter = std.mem.split(u8, buffer, "\n");
         while (iter.next()) |line| {
-            // # is comment, _ is for internal use, like _allocator
+            // # is comment, _ is for internal use, like _arena
             if (line.len == 0 or line[0] == '#' or line[0] == '_') continue;
 
             const key_value = try process_line(config._arena.allocator(), line);
@@ -77,6 +79,10 @@ pub const Config = struct {
                         const parsed = try std.fmt.parseInt(u16, value, 10);
                         @field(config, field.name) = parsed;
                     },
+                    u32 => {
+                        const parsed = try std.fmt.parseInt(u32, value, 10);
+                        @field(config, field.name) = parsed;
+                    },
                     std.net.Address => {
                         const parsed = try std.net.Address.parseIp(value, 0);
                         @field(config, field.name) = parsed;
@@ -94,11 +100,12 @@ test "config default values ipv4" {
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
     try std.testing.expectEqual(config.address.in, address.in);
+    try std.testing.expectEqual(config.max_connections, 512);
+    try std.testing.expectEqual(config.max_memory, 0);
 }
 
-test "config load" {
-    const file_content = "address=192.168.0.1\nport=1234\n";
-    // create file
+test "config load custom values ipv4" {
+    const file_content = "address=192.168.0.1\nport=1234\nmax_connections=1024\nmax_memory=500\n";
     const file = try std.fs.cwd().createFile(FILENAME, .{});
     try file.writeAll(file_content);
     defer file.close();
@@ -108,7 +115,8 @@ test "config load" {
 
     const address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234);
     try std.testing.expectEqual(config.address.in, address.in);
+    try std.testing.expectEqual(config.max_connections, 1024);
+    try std.testing.expectEqual(config.max_memory, 500);
 
-    // delete file
     try std.fs.cwd().deleteFile(FILENAME);
 }

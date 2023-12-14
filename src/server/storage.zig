@@ -1,18 +1,33 @@
 const std = @import("std");
-const AnyType = @import("protocol/types.zig").AnyType;
+
+const Config = @import("config.zig").Config;
+const AnyType = @import("../protocol/types.zig").AnyType;
+const TracingAllocator = @import("tracing.zig").TracingAllocator;
+
+const ptrCast = @import("utils.zig").ptrCast;
 
 pub const MemoryStorage = struct {
     internal: std.StringHashMap(AnyType),
     allocator: std.mem.Allocator,
 
-    pub fn init(allocator: std.mem.Allocator) MemoryStorage {
+    config: Config,
+
+    pub fn init(tarcing_allocator: std.mem.Allocator, config: Config) MemoryStorage {
         return MemoryStorage{
-            .internal = std.StringHashMap(AnyType).init(allocator),
-            .allocator = allocator,
+            .internal = std.StringHashMap(AnyType).init(tarcing_allocator),
+            .allocator = tarcing_allocator,
+            .config = config,
         };
     }
 
     pub fn put(self: *MemoryStorage, key: []const u8, value: AnyType) !void {
+        const tracking = ptrCast(TracingAllocator, self.allocator.ptr);
+
+        const mem_limit = self.config.max_memory * 1024 * 1024;
+        if (tracking.real_size >= mem_limit and self.config.max_memory != 0) {
+            return error.MemoryLimitExceeded;
+        }
+
         switch (value) {
             AnyType.err => return error.CantInsertError,
             else => self.internal.put(key, value) catch return error.InsertFailure,
@@ -39,8 +54,9 @@ pub const MemoryStorage = struct {
 };
 
 test "should get existing and non-existing key" {
-    var allocator = std.heap.page_allocator;
-    var storage = MemoryStorage.init(allocator);
+    const config = try Config.load(std.testing.allocator);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var storage = MemoryStorage.init(tracing_allocator.allocator(), config);
     defer storage.deinit();
 
     var string = "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.";
@@ -55,8 +71,9 @@ test "should get existing and non-existing key" {
 }
 
 test "should delete existing key" {
-    var allocator = std.heap.page_allocator;
-    var storage = MemoryStorage.init(allocator);
+    const config = try Config.load(std.testing.allocator);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var storage = MemoryStorage.init(tracing_allocator.allocator(), config);
     defer storage.deinit();
 
     var string = "Die meisten Menschen sind nichts als Bauern auf einem Schachbrett, das von einer unbekannten Hand geführt wird.";
@@ -71,16 +88,18 @@ test "should delete existing key" {
 }
 
 test "should delete non-existing key" {
-    var allocator = std.heap.page_allocator;
-    var storage = MemoryStorage.init(allocator);
+    const config = try Config.load(std.testing.allocator);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var storage = MemoryStorage.init(tracing_allocator.allocator(), config);
     defer storage.deinit();
 
     try std.testing.expectEqual(storage.delete("foo"), false);
 }
 
 test "should flush storage" {
-    var allocator = std.heap.page_allocator;
-    var storage = MemoryStorage.init(allocator);
+    const config = try Config.load(std.testing.allocator);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var storage = MemoryStorage.init(tracing_allocator.allocator(), config);
     defer storage.deinit();
 
     var string = "Es gibt Momente im Leben, da muss man verstehen, dass die Entscheidungen, die man trifft, nicht nur das eigene Schicksal angehen.";
@@ -91,6 +110,8 @@ test "should flush storage" {
     try storage.put("foo", .{ .int = 42 });
     try storage.put("bar", value);
 
+    std.debug.print("size: {}\n", .{ptrCast(TracingAllocator, storage.allocator.ptr).real_size});
+
     storage.flush();
 
     try std.testing.expectEqual(storage.get("foo"), error.NotFound);
@@ -98,10 +119,31 @@ test "should flush storage" {
 }
 
 test "should not store error" {
-    var allocator = std.heap.page_allocator;
-    var storage = MemoryStorage.init(allocator);
+    const config = try Config.load(std.testing.allocator);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var storage = MemoryStorage.init(tracing_allocator.allocator(), config);
     defer storage.deinit();
 
     const err_value = .{ .err = .{ .message = "random error" } };
     try std.testing.expectEqual(storage.put("test", err_value), error.CantInsertError);
+}
+
+test "should return error.MemoryLimitExceeded" {
+    var config = try Config.load(std.testing.allocator);
+    config.max_memory = 1; // 1 Megabyte
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var storage = MemoryStorage.init(tracing_allocator.allocator(), config);
+    defer storage.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var string = "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.";
+    var value: AnyType = .{ .str = @constCast(string) };
+    for (0..6554) |i| {
+        var key = try std.fmt.allocPrint(arena.allocator(), "key-{d}", .{i});
+        try storage.put(key, value);
+    }
+
+    try std.testing.expectEqual(storage.put("test key", value), error.MemoryLimitExceeded);
 }
