@@ -72,7 +72,7 @@ echo "*2\r\n\$3\r\nGET\r\n\$9\r\nmycounter\r\n" | netcat -N localhost 7556
 - [ ] Logging commands (to be able to replay data inside the server if it crashes).
 - [ ] Server events logging.
 - [x] Configurable server (port, max clients, max memory, etc.).
-- [ ] Pass different configuration file path from command line.
+- [x] Pass different configuration file path from command line.
 - [ ] Client side library.
 - [ ] Encrypted connections, e.g TLS 1.3 or use QUIC (Currently there is no server-side support for TLS in zig, I could use `https://github.com/shiguredo/tls13-zig`).
 
@@ -81,6 +81,8 @@ echo "*2\r\n\$3\r\nGET\r\n\$9\r\nmycounter\r\n" | netcat -N localhost 7556
 	* Ability to configure server listen address and port from `zcached.conf` file.
 	* Ability to configure max clients from `zcached.conf` file.
 	* Ability to configure max memory from `zcached.conf` file.
+	* CLI parser for server
+	* Ability to pass different configuration file path from command line.
 * 0.0.1
 	* Initial release
 
