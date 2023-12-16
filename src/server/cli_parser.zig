@@ -36,6 +36,15 @@ pub const CLIParser = struct {
         try stdout.print("{s}\n", .{help_text});
     }
 
+    pub fn show_version() !void {
+        const stdout = std.io.getStdOut().writer();
+        const version_text: []const u8 =
+            \\zcached 0.0.1
+            \\
+        ;
+        try stdout.print("{s}\n", .{version_text});
+    }
+
     pub fn parse(allocator: std.mem.Allocator) !CLIParser {
         var parser = CLIParser{ ._allocator = allocator };
         parser._process_args = try std.process.argsAlloc(allocator);
@@ -87,6 +96,7 @@ pub const CLIParser = struct {
     ) !?[2][]const u8 {
         for (args, 0..) |arg, index| {
             if (index & 1 == 0) continue;
+            if (arg.len < 2) return error.InvalidArg;
 
             if (std.mem.eql(u8, arg[2..], field.name) or std.mem.eql(u8, arg[1..], short)) {
                 if (args.len > index + 1) {

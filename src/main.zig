@@ -11,8 +11,11 @@ pub fn main() void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var allocator = gpa.allocator();
 
-    const args = CLIParser.parse(allocator) catch |err| {
-        std.log.err("failed to parse CLI arguments: {}", .{err});
+    const args = CLIParser.parse(allocator) catch {
+        CLIParser.show_help() catch |err| {
+            std.log.err("failed to show help: {}", .{err});
+            return;
+        };
         return;
     };
     defer args.deinit();
@@ -20,6 +23,14 @@ pub fn main() void {
     if (args.help) {
         CLIParser.show_help() catch |err| {
             std.log.err("failed to show help: {}", .{err});
+            return;
+        };
+        return;
+    }
+
+    if (args.version) {
+        CLIParser.show_version() catch |err| {
+            std.log.err("failed to show version: {}", .{err});
             return;
         };
         return;
