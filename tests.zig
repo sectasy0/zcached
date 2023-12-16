@@ -11,4 +11,5 @@ comptime {
     _ = @import("src/server/config.zig");
     _ = @import("src/server/storage.zig");
     _ = @import("src/server/tracing.zig");
+    _ = @import("src/server/cli_parser.zig");
 }

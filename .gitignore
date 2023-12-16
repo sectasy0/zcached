@@ -7,3 +7,4 @@ zig-out-*
 # Zig test artifacts
 zig-test/
 zig-test-*
+tmp/
