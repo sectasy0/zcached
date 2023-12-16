@@ -16,7 +16,7 @@ pub const CLIParser = struct {
         .h = "help",
     };
 
-    fn show_help() !void {
+    pub fn show_help() !void {
         const stdout = std.io.getStdOut().writer();
         const help_text: []const u8 =
             \\Usage: zcached [OPTIONS]

@@ -17,12 +17,24 @@ pub fn main() void {
     };
     defer args.deinit();
 
+    if (args.help) {
+        CLIParser.show_help() catch |err| {
+            std.log.err("failed to show help: {}", .{err});
+            return;
+        };
+        return;
+    }
+
     const config = Config.load(allocator, args.@"config-path") catch |err| {
         std.log.err("failed to load config: {}", .{err});
         return;
     };
     defer config.deinit();
 
+    run_server(allocator, config);
+}
+
+fn run_server(allocator: std.mem.Allocator, config: Config) void {
     var tracing_allocator = TracingAllocator.init(allocator);
     var mem_storage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mem_storage.deinit();
