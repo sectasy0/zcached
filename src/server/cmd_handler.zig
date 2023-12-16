@@ -95,7 +95,7 @@ pub const CMDHandler = struct {
 };
 
 test "should handle SET command" {
-    const config = try Config.load(std.testing.allocator);
+    const config = try Config.load(std.testing.allocator, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
     var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mstorage.deinit();
@@ -116,7 +116,7 @@ test "should handle SET command" {
 }
 
 test "should handle GET command" {
-    const config = try Config.load(std.testing.allocator);
+    const config = try Config.load(std.testing.allocator, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
     var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mstorage.deinit();
@@ -135,7 +135,7 @@ test "should handle GET command" {
 }
 
 test "should handle DELETE command" {
-    const config = try Config.load(std.testing.allocator);
+    const config = try Config.load(std.testing.allocator, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
     var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mstorage.deinit();
@@ -156,7 +156,7 @@ test "should handle DELETE command" {
 }
 
 test "should return error.NotFound for non existing during DELETE command" {
-    const config = try Config.load(std.testing.allocator);
+    const config = try Config.load(std.testing.allocator, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
     var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mstorage.deinit();
@@ -174,7 +174,7 @@ test "should return error.NotFound for non existing during DELETE command" {
 }
 
 test "should handle FLUSH command" {
-    const config = try Config.load(std.testing.allocator);
+    const config = try Config.load(std.testing.allocator, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
     var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mstorage.deinit();

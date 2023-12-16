@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const FILENAME = "zcached.conf";
+const FILENAME: []const u8 = "zcached.conf";
 
 pub const Config = struct {
     address: std.net.Address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556),
@@ -10,14 +10,19 @@ pub const Config = struct {
 
     _arena: std.heap.ArenaAllocator,
 
-    pub fn deinit(config: *Config) void {
+    pub fn deinit(config: *const Config) void {
         config._arena.deinit();
     }
 
-    pub fn load(allocator: std.mem.Allocator) !Config {
+    pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8) !Config {
+        var config_file_path: []const u8 = FILENAME;
+        if (file_path != null) config_file_path = file_path.?;
+
         var config = Config{ ._arena = std.heap.ArenaAllocator.init(allocator) };
 
-        const file = std.fs.cwd().openFile(FILENAME, .{ .mode = .read_only }) catch |err| {
+        std.log.info("Loading config from file: {s}", .{config_file_path});
+
+        const file = std.fs.cwd().openFile(config_file_path, .{ .mode = .read_only }) catch |err| {
             // if the file doesn't exist, just return the default config
             if (err == error.FileNotFound) return config;
             return err;
@@ -41,7 +46,8 @@ pub const Config = struct {
 
             // Special case for address port because `std.net.Address` is struct with address and port
             if (std.mem.eql(u8, key_value.items[0], "port")) {
-                if (key_value.items[1].len == 0) return error.InvalidInput;
+                if (key_value.items[1].len == 0) continue;
+
                 const parsed = try std.fmt.parseInt(u16, key_value.items[1], 10);
                 config.address.setPort(parsed);
                 continue;
@@ -57,8 +63,10 @@ pub const Config = struct {
         var result = std.ArrayList([]const u8).init(allocator);
 
         var iter = std.mem.split(u8, line, "=");
+
         const key = iter.next();
         const value = iter.next();
+
         if (key == null or value == null) return error.InvalidInput;
 
         try result.append(key.?);
@@ -84,7 +92,7 @@ pub const Config = struct {
                         @field(config, field.name) = parsed;
                     },
                     std.net.Address => {
-                        const parsed = try std.net.Address.parseIp(value, 0);
+                        const parsed = try std.net.Address.parseIp(value, config.address.getPort());
                         @field(config, field.name) = parsed;
                     },
                     else => unreachable,
@@ -95,28 +103,77 @@ pub const Config = struct {
 };
 
 test "config default values ipv4" {
-    var config = try Config.load(std.testing.allocator);
+    var config = try Config.load(std.testing.allocator, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
-    try std.testing.expectEqual(config.address.in, address.in);
+    try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.max_connections, 512);
     try std.testing.expectEqual(config.max_memory, 0);
 }
 
 test "config load custom values ipv4" {
+    std.fs.cwd().deleteFile("zcached.conf") catch {};
+
     const file_content = "address=192.168.0.1\nport=1234\nmax_connections=1024\nmax_memory=500\n";
     const file = try std.fs.cwd().createFile(FILENAME, .{});
     try file.writeAll(file_content);
     defer file.close();
 
-    var config = try Config.load(std.testing.allocator);
+    var config = try Config.load(std.testing.allocator, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234);
-    try std.testing.expectEqual(config.address.in, address.in);
+    try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.max_connections, 1024);
     try std.testing.expectEqual(config.max_memory, 500);
 
     try std.fs.cwd().deleteFile(FILENAME);
+}
+
+test "config load custom values ipv6" {
+    std.fs.cwd().deleteFile("zcached.conf") catch {};
+
+    const file_content = "address=::1\nport=1234\nmax_connections=1024\nmax_memory=500\n";
+    const file = try std.fs.cwd().createFile(FILENAME, .{});
+    try file.writeAll(file_content);
+    defer file.close();
+
+    var config = try Config.load(std.testing.allocator, null);
+    defer config.deinit();
+
+    const addr = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 };
+    const address = std.net.Address.initIp6(addr, 1234, 0, 0);
+
+    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expectEqual(config.max_connections, 1024);
+    try std.testing.expectEqual(config.max_memory, 500);
+
+    try std.fs.cwd().deleteFile(FILENAME);
+}
+
+test "config load custom values empty port" {
+    std.fs.cwd().deleteFile("tmp/zcached_empty_port.conf") catch {};
+    std.fs.cwd().deleteDir("tmp") catch {};
+
+    var default_config = Config{ ._arena = std.heap.ArenaAllocator.init(std.testing.allocator) };
+
+    const file_content = "address=::1\nport=\nmax_connections=1024\nmax_memory=500\n";
+    try std.fs.cwd().makeDir("tmp");
+    const file = try std.fs.cwd().createFile("tmp/zcached_empty_port.conf", .{});
+    try file.writeAll(file_content);
+    defer file.close();
+
+    var config = try Config.load(std.testing.allocator, "tmp/zcached_empty_port.conf");
+    defer config.deinit();
+
+    const addr = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 };
+    const address = std.net.Address.initIp6(
+        addr,
+        default_config.address.getPort(),
+        0,
+        0,
+    );
+
+    try std.testing.expectEqual(address.any, config.address.any);
 }

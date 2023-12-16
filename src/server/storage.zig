@@ -8,20 +8,20 @@ const ptrCast = @import("utils.zig").ptrCast;
 
 pub const MemoryStorage = struct {
     internal: std.StringHashMap(AnyType),
-    allocator: std.mem.Allocator,
+    tracing_allocator: std.mem.Allocator,
 
     config: Config,
 
-    pub fn init(tarcing_allocator: std.mem.Allocator, config: Config) MemoryStorage {
+    pub fn init(tracing_allocator: std.mem.Allocator, config: Config) MemoryStorage {
         return MemoryStorage{
-            .internal = std.StringHashMap(AnyType).init(tarcing_allocator),
-            .allocator = tarcing_allocator,
+            .internal = std.StringHashMap(AnyType).init(tracing_allocator),
+            .tracing_allocator = tracing_allocator,
             .config = config,
         };
     }
 
     pub fn put(self: *MemoryStorage, key: []const u8, value: AnyType) !void {
-        const tracking = ptrCast(TracingAllocator, self.allocator.ptr);
+        const tracking = ptrCast(TracingAllocator, self.tracing_allocator.ptr);
 
         const mem_limit = self.config.max_memory * 1024 * 1024;
         if (tracking.real_size >= mem_limit and self.config.max_memory != 0) {
@@ -54,7 +54,9 @@ pub const MemoryStorage = struct {
 };
 
 test "should get existing and non-existing key" {
-    const config = try Config.load(std.testing.allocator);
+    var config = try Config.load(std.testing.allocator, null);
+    defer config.deinit();
+
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
     var storage = MemoryStorage.init(tracing_allocator.allocator(), config);
     defer storage.deinit();
@@ -71,7 +73,9 @@ test "should get existing and non-existing key" {
 }
 
 test "should delete existing key" {
-    const config = try Config.load(std.testing.allocator);
+    var config = try Config.load(std.testing.allocator, null);
+    defer config.deinit();
+
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
     var storage = MemoryStorage.init(tracing_allocator.allocator(), config);
     defer storage.deinit();
@@ -88,7 +92,9 @@ test "should delete existing key" {
 }
 
 test "should delete non-existing key" {
-    const config = try Config.load(std.testing.allocator);
+    var config = try Config.load(std.testing.allocator, null);
+    defer config.deinit();
+
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
     var storage = MemoryStorage.init(tracing_allocator.allocator(), config);
     defer storage.deinit();
@@ -97,7 +103,9 @@ test "should delete non-existing key" {
 }
 
 test "should flush storage" {
-    const config = try Config.load(std.testing.allocator);
+    var config = try Config.load(std.testing.allocator, null);
+    defer config.deinit();
+
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
     var storage = MemoryStorage.init(tracing_allocator.allocator(), config);
     defer storage.deinit();
@@ -110,8 +118,6 @@ test "should flush storage" {
     try storage.put("foo", .{ .int = 42 });
     try storage.put("bar", value);
 
-    std.debug.print("size: {}\n", .{ptrCast(TracingAllocator, storage.allocator.ptr).real_size});
-
     storage.flush();
 
     try std.testing.expectEqual(storage.get("foo"), error.NotFound);
@@ -119,7 +125,9 @@ test "should flush storage" {
 }
 
 test "should not store error" {
-    const config = try Config.load(std.testing.allocator);
+    var config = try Config.load(std.testing.allocator, null);
+    defer config.deinit();
+
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
     var storage = MemoryStorage.init(tracing_allocator.allocator(), config);
     defer storage.deinit();
@@ -129,8 +137,10 @@ test "should not store error" {
 }
 
 test "should return error.MemoryLimitExceeded" {
-    var config = try Config.load(std.testing.allocator);
+    var config = try Config.load(std.testing.allocator, null);
+    defer config.deinit();
     config.max_memory = 1; // 1 Megabyte
+
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
     var storage = MemoryStorage.init(tracing_allocator.allocator(), config);
     defer storage.deinit();
