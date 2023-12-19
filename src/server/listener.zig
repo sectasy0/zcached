@@ -70,12 +70,18 @@ pub const ServerListener = struct {
                 };
             }
 
-            std.log.info("got connection from {}\n", .{connection.address});
+            std.log.debug("new connection from {}\n", .{connection.address});
 
             self.pool.spawn(
                 handle_request,
                 .{ self, connection },
             ) catch |err| {
+                errors.handle(connection.stream, err, .{}) catch {
+                    std.log.err("error sending error: {}\n", .{err});
+                };
+
+                self.close_connection(connection);
+
                 std.log.err("error spawning thread: {}\n", .{err});
             };
         }
