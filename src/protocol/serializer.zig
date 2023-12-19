@@ -11,10 +11,13 @@ pub fn SerializerT(comptime GenericReader: type) type {
         handlers: std.StringHashMap(*const HandlerFunc),
         arena: std.heap.ArenaAllocator,
 
+        raw: std.ArrayList(u8),
+
         pub fn init(allocator: std.mem.Allocator) !Self {
             var handler = Self{
                 .handlers = std.StringHashMap(*const HandlerFunc).init(allocator),
                 .arena = std.heap.ArenaAllocator.init(allocator),
+                .raw = std.ArrayList(u8).init(allocator),
             };
 
             try handler.handlers.put("+", serialize_sstring);
@@ -35,45 +38,43 @@ pub fn SerializerT(comptime GenericReader: type) type {
 
             if (size == 0) return error.BadRequest;
 
-            const handler_ref = self.handlers.get(&request_type);
-            if (handler_ref == null) return error.BadRequest;
-            return if (handler_ref) |ref| try ref(self, reader) else error.BadRequest;
+            const handler_ref = self.handlers.get(&request_type) orelse return error.BadRequest;
+            return try handler_ref(self, reader);
         }
 
         pub fn deinit(self: *Self) void {
             self.handlers.deinit();
             self.arena.deinit();
+            self.raw.deinit();
         }
 
         fn serialize_sstring(self: *Self, reader: GenericReader) !types.AnyType {
-            const string = try self.read_line_alloc(reader);
+            const string = try self.read_line_alloc(reader) orelse return error.BadRequest;
+            if (string.len == 0) return error.BadRequest;
 
-            if (string == null or string.?.len == 0) return error.BadRequest;
-
-            return .{ .str = @constCast(string.?[0 .. string.?.len - 1]) };
+            return .{ .str = @constCast(string[0 .. string.len - 1]) };
         }
 
         fn serialize_string(self: *Self, reader: GenericReader) !types.AnyType {
-            const bytes = try self.read_line_alloc(reader);
+            const bytes = try self.read_line_alloc(reader) orelse return error.BadRequest;
 
-            const string_len = std.fmt.parseInt(usize, bytes.?[0 .. bytes.?.len - 1], 10) catch {
+            const string_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
                 return error.BadRequest;
             };
 
-            const string = try self.read_line_alloc(reader);
+            const string = try self.read_line_alloc(reader) orelse return error.BadRequest;
+            if (string.len == 0) return error.BadRequest;
             // .len - 1 because we don't want to include the \n
-            if (string == null or string.?.len == 0) return error.BadRequest;
-            if (string_len != string.?.len - 1) return error.BadRequest;
+            if (string_len != string.len - 1) return error.BadRequest;
 
-            return .{ .str = @constCast(string.?[0 .. string.?.len - 1]) };
+            return .{ .str = @constCast(string[0 .. string.len - 1]) };
         }
 
         fn serialize_int(self: *Self, reader: GenericReader) !types.AnyType {
-            const bytes = try self.read_line_alloc(reader);
+            const bytes = try self.read_line_alloc(reader) orelse return error.BadRequest;
+            if (bytes.len == 0) return error.BadRequest;
 
-            if (bytes == null or bytes.?.len == 0) return error.BadRequest;
-
-            const int = std.fmt.parseInt(i64, bytes.?[0 .. bytes.?.len - 1], 10) catch {
+            const int = std.fmt.parseInt(i64, bytes[0 .. bytes.len - 1], 10) catch {
                 return error.NotInteger;
             };
 
@@ -81,24 +82,28 @@ pub fn SerializerT(comptime GenericReader: type) type {
         }
 
         fn serialize_bool(self: *Self, reader: GenericReader) !types.AnyType {
-            const bytes = try self.read_line_alloc(reader);
+            const bytes = try self.read_line_alloc(reader) orelse return error.BadRequest;
 
             // <bool> is either "t" or "f", with \n at the end is 2 bytes
-            if (bytes == null or bytes.?.len != 2) return error.BadRequest;
+            if (bytes.len != 2) return error.BadRequest;
 
-            const value = bytes.?[0 .. bytes.?.len - 1];
-            if (std.mem.eql(u8, value, "t") or std.mem.eql(u8, value, "T")) return .{ .bool = true };
-            if (std.mem.eql(u8, value, "f") or std.mem.eql(u8, value, "F")) return .{ .bool = false };
+            const value = bytes[0 .. bytes.len - 1];
+            if (std.mem.eql(u8, value, "t") or std.mem.eql(u8, value, "T")) {
+                return .{ .bool = true };
+            }
+            if (std.mem.eql(u8, value, "f") or std.mem.eql(u8, value, "F")) {
+                return .{ .bool = false };
+            }
 
             return error.NotBoolean;
         }
 
         fn serialize_float(self: *Self, reader: GenericReader) !types.AnyType {
-            const bytes = try self.read_line_alloc(reader);
+            const bytes = try self.read_line_alloc(reader) orelse return error.BadRequest;
 
-            if (bytes == null or bytes.?.len == 0) return error.BadRequest;
+            if (bytes.len == 0) return error.BadRequest;
 
-            const float = std.fmt.parseFloat(f64, bytes.?[0 .. bytes.?.len - 1]) catch {
+            const float = std.fmt.parseFloat(f64, bytes[0 .. bytes.len - 1]) catch {
                 return error.NotFloat;
             };
 
@@ -106,11 +111,11 @@ pub fn SerializerT(comptime GenericReader: type) type {
         }
 
         fn serialize_array(self: *Self, reader: GenericReader) !types.AnyType {
-            const bytes = try self.read_line_alloc(reader);
+            const bytes = try self.read_line_alloc(reader) orelse return error.BadRequest;
 
-            if (bytes == null or bytes.?.len == 0) return error.BadRequest;
+            if (bytes.len == 0) return error.BadRequest;
 
-            const array_len = std.fmt.parseInt(usize, bytes.?[0 .. bytes.?.len - 1], 10) catch {
+            const array_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
                 return error.InvalidArrayLength;
             };
 
@@ -130,18 +135,18 @@ pub fn SerializerT(comptime GenericReader: type) type {
 
         fn serialize_null(self: *Self, reader: GenericReader) !types.AnyType {
             _ = reader;
-            _ = self;
+            try self.raw.appendSlice("_\r\n");
             return .{ .null = void{} };
         }
 
         // Only for client side, server should never receive an error
         fn serialize_error(self: *Self, reader: GenericReader) !types.AnyType {
-            const error_message = try self.read_line_alloc(reader);
+            const error_message = try self.read_line_alloc(reader) orelse return error.BadRequest;
 
-            if (error_message == null or error_message.?.len < 1) return error.BadRequest;
+            if (error_message.len < 1) return error.BadRequest;
 
             return .{ .err = .{
-                .message = error_message.?[0 .. error_message.?.len - 1],
+                .message = error_message[0 .. error_message.len - 1],
             } };
         }
 
@@ -153,6 +158,11 @@ pub fn SerializerT(comptime GenericReader: type) type {
             ) catch {
                 return error.BadRequest;
             };
+
+            if (bytes != null) {
+                try self.raw.appendSlice(bytes.?);
+                try self.raw.appendSlice("\n");
+            }
             return bytes;
         }
     };
