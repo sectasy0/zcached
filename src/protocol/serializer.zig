@@ -39,6 +39,7 @@ pub fn SerializerT(comptime GenericReader: type) type {
             if (size == 0) return error.BadRequest;
 
             const handler_ref = self.handlers.get(&request_type) orelse return error.BadRequest;
+            try self.raw.append(request_type[0]);
             return try handler_ref(self, reader);
         }
 

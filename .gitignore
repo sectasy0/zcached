@@ -8,3 +8,4 @@ zig-out-*
 zig-test/
 zig-test-*
 tmp/
+log/

@@ -32,6 +32,13 @@ fn ProtocolHandlerT(comptime GenericReader: type) type {
             return self.deserializer.process(value);
         }
 
+        pub fn repr(self: *Self, value: []const u8) ![]const u8 {
+            const size = std.mem.replacementSize(u8, value, "\r\n", "\\r\\n");
+            var output = try self.allocator.alloc(u8, size);
+            _ = std.mem.replace(u8, value, "\r\n", "\\r\\n", output);
+            return output;
+        }
+
         pub fn deinit(self: *Self) void {
             self.serializer.deinit();
             self.deserializer.deinit();

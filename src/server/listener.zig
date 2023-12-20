@@ -6,6 +6,7 @@ const MemoryStorage = @import("storage.zig").MemoryStorage;
 const errors = @import("err_handler.zig");
 const CMDHandler = @import("cmd_handler.zig").CMDHandler;
 const Config = @import("config.zig").Config;
+const log = @import("logger.zig");
 
 const Address = std.net.Address;
 const Allocator = std.mem.Allocator;
@@ -17,6 +18,8 @@ pub const ServerListener = struct {
     server: std.net.StreamServer,
     addr: *const std.net.Address,
 
+    allocator: Allocator,
+
     protocol: protocol.ProtocolHandler,
     cmd_handler: CMDHandler,
     storage: *MemoryStorage,
@@ -25,6 +28,7 @@ pub const ServerListener = struct {
 
     connections: u16 = 0,
 
+    logger: *const log.Logger,
     pool: *std.Thread.Pool,
 
     pub fn init(
@@ -33,12 +37,15 @@ pub const ServerListener = struct {
         pool: *Pool,
         storage: *MemoryStorage,
         config: *const Config,
+        logger: *const log.Logger,
     ) !ServerListener {
         const proto = protocol.ProtocolHandler.init(allocator) catch {
             return error.ProtocolInitFailed;
         };
 
-        const cmdhandler = CMDHandler.init(allocator, storage);
+        const cmdhandler = CMDHandler.init(allocator, storage, logger);
+
+        logger.log(log.LogLevel.Info, "* ready to accept connections", .{});
 
         return ServerListener{
             .server = std.net.StreamServer.init(.{
@@ -46,12 +53,14 @@ pub const ServerListener = struct {
                 .reuse_address = true,
                 .reuse_port = true,
             }),
+            .allocator = allocator,
             .cmd_handler = cmdhandler,
             .protocol = proto,
             .pool = pool,
             .addr = addr,
             .storage = storage,
             .config = config,
+            .logger = logger,
         };
     }
 
@@ -66,23 +75,23 @@ pub const ServerListener = struct {
             if (self.connections > self.config.max_connections) {
                 const err = error.MaxClientsReached;
                 errors.handle(connection.stream, err, .{}) catch {
-                    std.log.err("error sending error: {}\n", .{err});
+                    self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
                 };
             }
 
-            std.log.debug("new connection from {}\n", .{connection.address});
+            self.logger.log(log.LogLevel.Info, "* new connection from {any}", .{connection.address});
 
             self.pool.spawn(
                 handle_request,
                 .{ self, connection },
             ) catch |err| {
                 errors.handle(connection.stream, err, .{}) catch {
-                    std.log.err("error sending error: {}\n", .{err});
+                    self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
                 };
 
                 self.close_connection(connection);
 
-                std.log.err("error spawning thread: {}\n", .{err});
+                self.logger.log(log.LogLevel.Error, "* failed to spawn new thread {any}", .{err});
             };
         }
     }
@@ -93,7 +102,7 @@ pub const ServerListener = struct {
         const reader: std.net.Stream.Reader = connection.stream.reader();
         const result: AnyType = self.protocol.serialize(&reader) catch |err| {
             errors.handle(connection.stream, err, .{}) catch {
-                std.log.err("error sending error: {}\n", .{err});
+                self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
             };
 
             return;
@@ -101,8 +110,8 @@ pub const ServerListener = struct {
 
         // command is always and array of bulk strings
         if (std.meta.activeTag(result) != .array) {
-            errors.handle(connection.stream, error.ProtocolInvalidRequest, .{}) catch {
-                std.log.err("error sending error:\n", .{});
+            errors.handle(connection.stream, error.ProtocolInvalidRequest, .{}) catch |err| {
+                self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
             };
             return;
         }
@@ -111,23 +120,39 @@ pub const ServerListener = struct {
 
         const cmd_result = self.cmd_handler.process(command_set);
         if (std.meta.activeTag(cmd_result) != .ok) {
-            errors.handle(connection.stream, cmd_result.err, .{}) catch {
-                std.log.err("error sending error:\n", .{});
+            errors.handle(connection.stream, cmd_result.err, .{}) catch |err| {
+                self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
             };
             return;
         }
 
+        // log request
+        if (self.protocol.repr(self.protocol.serializer.raw.items)) |value| {
+            defer self.allocator.free(value);
+            self.logger.log(log.LogLevel.Info, "> request: {s}", .{value});
+        } else |err| {
+            self.logger.log(log.LogLevel.Error, "* failed to repr request: {any}", .{err});
+        }
+
         var response = self.protocol.deserialize(cmd_result.ok) catch |err| {
-            errors.handle(connection.stream, err, .{}) catch {
-                std.log.err("error sending error:\n", .{});
+            errors.handle(connection.stream, err, .{}) catch |er| {
+                self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{er});
             };
             return;
         };
         connection.stream.writer().writeAll(response) catch |err| {
-            errors.handle(connection.stream, err, .{}) catch {
-                std.log.err("error sending error:\n", .{});
+            errors.handle(connection.stream, err, .{}) catch |er| {
+                self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{er});
             };
         };
+
+        // log response
+        var output = self.protocol.repr(response) catch |err| {
+            self.logger.log(log.LogLevel.Error, "* failed to repr response: {any}", .{err});
+            return;
+        };
+        defer self.allocator.free(output);
+        self.logger.log(log.LogLevel.Info, "< response: {s}", .{output});
     }
 
     fn close_connection(self: *ServerListener, connection: Connection) void {

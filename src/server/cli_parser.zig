@@ -2,6 +2,7 @@ const std = @import("std");
 
 pub const CLIParser = struct {
     @"config-path": ?[]const u8 = null,
+    @"log-path": ?[]const u8 = null,
 
     version: bool = false,
     help: bool = false,
@@ -12,6 +13,7 @@ pub const CLIParser = struct {
 
     pub const shorthands = .{
         .c = "config-path",
+        .l = "log-path",
         .v = "version",
         .h = "help",
     };
@@ -25,9 +27,10 @@ pub const CLIParser = struct {
             \\  zcached is a lightweight, high-performance, in-memory key-value database.
             \\
             \\Options:
-            \\  -c, --config <str>  Path to the configuration file (default: ./zcached).
-            \\  -v, --version       Display zcached's version and exit.
-            \\  -h, --help          Display this help message and exit.
+            \\  -c, --config <str>      Path to the configuration file (default: ./zcached).
+            \\  -l, --log-path <str>    Path to the log file (default: ./log/zcached.log).
+            \\  -v, --version           Display zcached's version and exit.
+            \\  -h, --help              Display this help message and exit.
             \\
             \\Examples:
             \\  zcached --config-path /etc/zcached.conf
@@ -56,7 +59,11 @@ pub const CLIParser = struct {
             if (field.name[0] != '_') {
                 const short = try field_shorthand(field.name);
 
-                const field_args = try args_for_field(field, short, parser._process_args);
+                const field_args = try args_for_field(
+                    field,
+                    short,
+                    parser._process_args,
+                );
                 if (field_args != null) {
                     switch (field.type) {
                         bool => @field(parser, field.name) = true,

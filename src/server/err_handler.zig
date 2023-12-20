@@ -8,6 +8,8 @@ const Args = struct {
 pub fn handle(stream: anytype, err: anyerror, args: Args) !void {
     const out = stream.writer();
 
+    std.log.debug("handling error: {}", .{err});
+
     _ = switch (err) {
         error.BadRequest => try out.writeAll("-bad request\r\n"),
         error.UnknownCommand => try handle_unknown_command(out, args),

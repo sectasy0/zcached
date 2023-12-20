@@ -1,9 +1,10 @@
 const std = @import("std");
 
-const FILENAME: []const u8 = "zcached.conf";
+const DEFAULT_PATH: []const u8 = "./zcached.conf";
 
 pub const Config = struct {
     address: std.net.Address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556),
+    loger_path: []const u8 = DEFAULT_PATH,
 
     max_connections: u16 = 512,
     max_memory: u32 = 0, // 0 means unlimited, value in Megabytes
@@ -14,15 +15,19 @@ pub const Config = struct {
         config._arena.deinit();
     }
 
-    pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8) !Config {
-        var config_file_path: []const u8 = FILENAME;
-        if (file_path != null) config_file_path = file_path.?;
+    pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]const u8) !Config {
+        var path: []const u8 = DEFAULT_PATH;
+        if (file_path != null) path = file_path.?;
 
         var config = Config{ ._arena = std.heap.ArenaAllocator.init(allocator) };
+        if (log_path != null) config.loger_path = log_path.?;
 
-        std.log.info("Loading config from file: {s}", .{config_file_path});
+        std.debug.print(
+            "INFO [{d}] loading config file from: {s}\n",
+            .{ std.time.timestamp(), path },
+        );
 
-        const file = std.fs.cwd().openFile(config_file_path, .{ .mode = .read_only }) catch |err| {
+        const file = std.fs.cwd().openFile(path, .{ .mode = .read_only }) catch |err| {
             // if the file doesn't exist, just return the default config
             if (err == error.FileNotFound) return config;
             return err;
@@ -103,24 +108,26 @@ pub const Config = struct {
 };
 
 test "config default values ipv4" {
-    var config = try Config.load(std.testing.allocator, null);
+    var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
     try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.max_connections, 512);
     try std.testing.expectEqual(config.max_memory, 0);
+
+    std.fs.cwd().deleteFile(DEFAULT_PATH) catch {};
 }
 
 test "config load custom values ipv4" {
-    std.fs.cwd().deleteFile("zcached.conf") catch {};
+    std.fs.cwd().deleteFile(DEFAULT_PATH) catch {};
 
     const file_content = "address=192.168.0.1\nport=1234\nmax_connections=1024\nmax_memory=500\n";
-    const file = try std.fs.cwd().createFile(FILENAME, .{});
+    const file = try std.fs.cwd().createFile(DEFAULT_PATH, .{});
     try file.writeAll(file_content);
     defer file.close();
 
-    var config = try Config.load(std.testing.allocator, null);
+    var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234);
@@ -128,18 +135,18 @@ test "config load custom values ipv4" {
     try std.testing.expectEqual(config.max_connections, 1024);
     try std.testing.expectEqual(config.max_memory, 500);
 
-    try std.fs.cwd().deleteFile(FILENAME);
+    try std.fs.cwd().deleteFile(DEFAULT_PATH);
 }
 
 test "config load custom values ipv6" {
-    std.fs.cwd().deleteFile("zcached.conf") catch {};
+    std.fs.cwd().deleteFile(DEFAULT_PATH) catch {};
 
     const file_content = "address=::1\nport=1234\nmax_connections=1024\nmax_memory=500\n";
-    const file = try std.fs.cwd().createFile(FILENAME, .{});
+    const file = try std.fs.cwd().createFile(DEFAULT_PATH, .{});
     try file.writeAll(file_content);
     defer file.close();
 
-    var config = try Config.load(std.testing.allocator, null);
+    var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
     const addr = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 };
@@ -149,22 +156,22 @@ test "config load custom values ipv6" {
     try std.testing.expectEqual(config.max_connections, 1024);
     try std.testing.expectEqual(config.max_memory, 500);
 
-    try std.fs.cwd().deleteFile(FILENAME);
+    try std.fs.cwd().deleteFile(DEFAULT_PATH);
 }
 
 test "config load custom values empty port" {
-    std.fs.cwd().deleteFile("tmp/zcached_empty_port.conf") catch {};
+    std.fs.cwd().deleteFile("./tmp/zcached_empty_port.conf") catch {};
     std.fs.cwd().deleteDir("tmp") catch {};
 
-    var default_config = Config{ ._arena = std.heap.ArenaAllocator.init(std.testing.allocator) };
-
     const file_content = "address=::1\nport=\nmax_connections=1024\nmax_memory=500\n";
-    try std.fs.cwd().makeDir("tmp");
-    const file = try std.fs.cwd().createFile("tmp/zcached_empty_port.conf", .{});
+    std.fs.cwd().makeDir("tmp") catch {};
+    const file = try std.fs.cwd().createFile("./tmp/zcached_empty_port.conf", .{});
     try file.writeAll(file_content);
     defer file.close();
 
-    var config = try Config.load(std.testing.allocator, "tmp/zcached_empty_port.conf");
+    var default_config = Config{ ._arena = std.heap.ArenaAllocator.init(std.testing.allocator) };
+
+    var config = try Config.load(std.testing.allocator, "./tmp/zcached_empty_port.conf", null);
     defer config.deinit();
 
     const addr = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 };

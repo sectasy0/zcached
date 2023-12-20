@@ -54,7 +54,7 @@ pub const MemoryStorage = struct {
 };
 
 test "should get existing and non-existing key" {
-    var config = try Config.load(std.testing.allocator, null);
+    var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
@@ -73,7 +73,7 @@ test "should get existing and non-existing key" {
 }
 
 test "should delete existing key" {
-    var config = try Config.load(std.testing.allocator, null);
+    var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
@@ -92,7 +92,7 @@ test "should delete existing key" {
 }
 
 test "should delete non-existing key" {
-    var config = try Config.load(std.testing.allocator, null);
+    var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
@@ -103,7 +103,7 @@ test "should delete non-existing key" {
 }
 
 test "should flush storage" {
-    var config = try Config.load(std.testing.allocator, null);
+    var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
@@ -125,7 +125,7 @@ test "should flush storage" {
 }
 
 test "should not store error" {
-    var config = try Config.load(std.testing.allocator, null);
+    var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
@@ -137,7 +137,7 @@ test "should not store error" {
 }
 
 test "should return error.MemoryLimitExceeded" {
-    var config = try Config.load(std.testing.allocator, null);
+    var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
     config.max_memory = 1; // 1 Megabyte
 

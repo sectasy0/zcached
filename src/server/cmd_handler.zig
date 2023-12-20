@@ -4,6 +4,7 @@ const storage = @import("storage.zig");
 const AnyType = @import("../protocol/types.zig").AnyType;
 const Config = @import("config.zig").Config;
 const utils = @import("utils.zig");
+const log = @import("logger.zig");
 
 const TracingAllocator = @import("tracing.zig").TracingAllocator;
 
@@ -19,12 +20,19 @@ pub const CMDHandler = struct {
     allocator: std.mem.Allocator,
     storage: *storage.MemoryStorage,
 
+    logger: *const log.Logger,
+
     const HandlerResult = union(enum) { ok: AnyType, err: anyerror };
 
-    pub fn init(allocator: std.mem.Allocator, mstorage: *storage.MemoryStorage) CMDHandler {
+    pub fn init(
+        allocator: std.mem.Allocator,
+        mstorage: *storage.MemoryStorage,
+        logger: *const log.Logger,
+    ) CMDHandler {
         return CMDHandler{
             .allocator = allocator,
             .storage = mstorage,
+            .logger = logger,
         };
     }
 
@@ -76,6 +84,7 @@ pub const CMDHandler = struct {
 
     fn delete(self: *CMDHandler, key: AnyType) HandlerResult {
         const result = self.storage.delete(key.str);
+
         if (result) {
             return .{ .ok = .{ .sstr = @constCast("OK") } };
         } else {
@@ -95,12 +104,16 @@ pub const CMDHandler = struct {
 };
 
 test "should handle SET command" {
-    const config = try Config.load(std.testing.allocator, null);
+    const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
     var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mstorage.deinit();
 
-    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage);
+    const logger = log.Logger.init(null) catch |err| {
+        std.log.err("# failed to initialize logger: {}", .{err});
+        return;
+    };
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
 
     var command_set = std.ArrayList(AnyType).init(std.testing.allocator);
     defer command_set.deinit();
@@ -116,13 +129,17 @@ test "should handle SET command" {
 }
 
 test "should handle GET command" {
-    const config = try Config.load(std.testing.allocator, null);
+    const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
     var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mstorage.deinit();
     try mstorage.put("key", .{ .str = @constCast("value") });
 
-    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage);
+    const logger = log.Logger.init(null) catch |err| {
+        std.log.err("# failed to initialize logger: {}", .{err});
+        return;
+    };
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
 
     var command_set = std.ArrayList(AnyType).init(std.testing.allocator);
     defer command_set.deinit();
@@ -135,14 +152,18 @@ test "should handle GET command" {
 }
 
 test "should handle DELETE command" {
-    const config = try Config.load(std.testing.allocator, null);
+    const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
     var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mstorage.deinit();
     try mstorage.put("key", .{ .str = @constCast("value") });
     try std.testing.expectEqual(mstorage.get("key"), .{ .str = @constCast("value") });
 
-    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage);
+    const logger = log.Logger.init(null) catch |err| {
+        std.log.err("# failed to initialize logger: {}", .{err});
+        return;
+    };
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
 
     var command_set = std.ArrayList(AnyType).init(std.testing.allocator);
     defer command_set.deinit();
@@ -156,12 +177,16 @@ test "should handle DELETE command" {
 }
 
 test "should return error.NotFound for non existing during DELETE command" {
-    const config = try Config.load(std.testing.allocator, null);
+    const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
     var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mstorage.deinit();
 
-    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage);
+    const logger = log.Logger.init(null) catch |err| {
+        std.log.err("# failed to initialize logger: {}", .{err});
+        return;
+    };
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
 
     var command_set = std.ArrayList(AnyType).init(std.testing.allocator);
     defer command_set.deinit();
@@ -174,7 +199,7 @@ test "should return error.NotFound for non existing during DELETE command" {
 }
 
 test "should handle FLUSH command" {
-    const config = try Config.load(std.testing.allocator, null);
+    const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
     var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mstorage.deinit();
@@ -182,7 +207,11 @@ test "should handle FLUSH command" {
     try mstorage.put("key", .{ .str = @constCast("value") });
     try mstorage.put("key2", .{ .str = @constCast("value2") });
 
-    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage);
+    const logger = log.Logger.init(null) catch |err| {
+        std.log.err("# failed to initialize logger: {}", .{err});
+        return;
+    };
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
 
     var command_set = std.ArrayList(AnyType).init(std.testing.allocator);
     defer command_set.deinit();
