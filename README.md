@@ -83,6 +83,9 @@ echo "*2\r\n\$3\r\nGET\r\n\$9\r\nmycounter\r\n" | netcat -N localhost 7556
 	* Ability to configure max memory from `zcached.conf` file.
 	* CLI interface for server binary.
 	* Ability to pass different configuration file path from command line.
+	* Configurable logger, it can be configured to log to a custom file.
+	* Logging requests and responses.
+	* Logging server events.
 * 0.0.1
 	* Initial release
 
