@@ -70,7 +70,7 @@ echo "*2\r\n\$3\r\nGET\r\n\$9\r\nmycounter\r\n" | netcat -N localhost 7556
 - [ ] Add `SAVE` command.
 - [ ] Ability to set a TTL for a key.
 - [ ] Logging commands (to be able to replay data inside the server if it crashes).
-- [ ] Server events logging.
+- [x] Server events logging.
 - [x] Configurable server (port, max clients, max memory, etc.).
 - [x] Pass different configuration file path from command line.
 - [ ] Client side library.
