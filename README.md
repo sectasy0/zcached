@@ -94,6 +94,8 @@ echo "*1\r\n\$4\r\nPING\r\n" | netcat -N localhost 7556
 	* Configurable logger, it can be configured to log to a custom file.
 	* Logging requests and responses.
 	* Logging server events.
+	* `DBSIZE` command for getting the number of keys in the database.
+	* `PING` command for testing if a connection is still alive.
 * 0.0.1
 	* Initial release
 
