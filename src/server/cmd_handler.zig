@@ -9,12 +9,14 @@ const log = @import("logger.zig");
 const TracingAllocator = @import("tracing.zig").TracingAllocator;
 
 const Commands = enum {
+    PING,
     GET,
     SET,
     DELETE,
     FLUSH,
     MGET,
     MSET,
+    DBSIZE,
 };
 pub const CMDHandler = struct {
     allocator: std.mem.Allocator,
@@ -49,6 +51,7 @@ pub const CMDHandler = struct {
             return .{ .err = error.UnknownCommand };
         };
         try switch (command_type) {
+            .PING => return self.ping(),
             .GET => return self.get(command_set.items[1]),
             .SET => {
                 // second element in command_set is key and should be always str
@@ -60,6 +63,7 @@ pub const CMDHandler = struct {
             },
             .DELETE => return self.delete(command_set.items[1]),
             .FLUSH => return self.flush(),
+            .DBSIZE => return .{ .ok = .{ .int = self.storage.internal.count() } },
             // .MGET => mget(command_set.items[1]),
             // .MSET => mset(command_set.items[1], command_set.items[2]),
             else => return .{ .err = error.UnknownCommand },
@@ -221,4 +225,52 @@ test "should handle FLUSH command" {
     var result = cmd_handler.process(&command_set);
     try std.testing.expectEqual(result.ok, .{ .null = void{} });
     try std.testing.expectEqual(mstorage.internal.count(), 0);
+}
+
+test "should handle PING command" {
+    const config = try Config.load(std.testing.allocator, null, null);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
+    defer mstorage.deinit();
+
+    try mstorage.put("key", .{ .str = @constCast("value") });
+    try mstorage.put("key2", .{ .str = @constCast("value2") });
+
+    const logger = log.Logger.init(null) catch |err| {
+        std.log.err("# failed to initialize logger: {}", .{err});
+        return;
+    };
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
+
+    var command_set = std.ArrayList(AnyType).init(std.testing.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("PING") });
+
+    var result = cmd_handler.process(&command_set);
+    try std.testing.expectEqual(result.ok, .{ .sstr = @constCast("PONG") });
+}
+
+test "should handle DBSIZE command" {
+    const config = try Config.load(std.testing.allocator, null, null);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
+    defer mstorage.deinit();
+
+    try mstorage.put("key", .{ .str = @constCast("value") });
+    try mstorage.put("key2", .{ .str = @constCast("value2") });
+
+    const logger = log.Logger.init(null) catch |err| {
+        std.log.err("# failed to initialize logger: {}", .{err});
+        return;
+    };
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
+
+    var command_set = std.ArrayList(AnyType).init(std.testing.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("DBSIZE") });
+
+    var result = cmd_handler.process(&command_set);
+    try std.testing.expectEqual(result.ok, .{ .int = 2 });
 }
