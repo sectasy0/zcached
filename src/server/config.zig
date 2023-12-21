@@ -1,4 +1,5 @@
 const std = @import("std");
+const utils = @import("utils.zig");
 
 const DEFAULT_PATH: []const u8 = "./zcached.conf";
 
@@ -26,6 +27,8 @@ pub const Config = struct {
             "INFO [{d}] loading config file from: {s}\n",
             .{ std.time.timestamp(), path },
         );
+
+        utils.create_path(path);
 
         const file = std.fs.cwd().openFile(path, .{ .mode = .read_only }) catch |err| {
             // if the file doesn't exist, just return the default config
