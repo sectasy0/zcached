@@ -113,7 +113,7 @@ test "should handle SET command" {
     var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mstorage.deinit();
 
-    const logger = log.Logger.init(null) catch |err| {
+    const logger = log.Logger.init(std.testing.allocator, null) catch |err| {
         std.log.err("# failed to initialize logger: {}", .{err});
         return;
     };
@@ -139,7 +139,7 @@ test "should handle GET command" {
     defer mstorage.deinit();
     try mstorage.put("key", .{ .str = @constCast("value") });
 
-    const logger = log.Logger.init(null) catch |err| {
+    const logger = log.Logger.init(std.testing.allocator, null) catch |err| {
         std.log.err("# failed to initialize logger: {}", .{err});
         return;
     };
@@ -163,7 +163,7 @@ test "should handle DELETE command" {
     try mstorage.put("key", .{ .str = @constCast("value") });
     try std.testing.expectEqual(mstorage.get("key"), .{ .str = @constCast("value") });
 
-    const logger = log.Logger.init(null) catch |err| {
+    const logger = log.Logger.init(std.testing.allocator, null) catch |err| {
         std.log.err("# failed to initialize logger: {}", .{err});
         return;
     };
@@ -186,7 +186,7 @@ test "should return error.NotFound for non existing during DELETE command" {
     var mstorage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
     defer mstorage.deinit();
 
-    const logger = log.Logger.init(null) catch |err| {
+    const logger = log.Logger.init(std.testing.allocator, null) catch |err| {
         std.log.err("# failed to initialize logger: {}", .{err});
         return;
     };
@@ -211,7 +211,7 @@ test "should handle FLUSH command" {
     try mstorage.put("key", .{ .str = @constCast("value") });
     try mstorage.put("key2", .{ .str = @constCast("value2") });
 
-    const logger = log.Logger.init(null) catch |err| {
+    const logger = log.Logger.init(std.testing.allocator, null) catch |err| {
         std.log.err("# failed to initialize logger: {}", .{err});
         return;
     };
@@ -236,7 +236,7 @@ test "should handle PING command" {
     try mstorage.put("key", .{ .str = @constCast("value") });
     try mstorage.put("key2", .{ .str = @constCast("value2") });
 
-    const logger = log.Logger.init(null) catch |err| {
+    const logger = log.Logger.init(std.testing.allocator, null) catch |err| {
         std.log.err("# failed to initialize logger: {}", .{err});
         return;
     };
@@ -260,7 +260,7 @@ test "should handle DBSIZE command" {
     try mstorage.put("key", .{ .str = @constCast("value") });
     try mstorage.put("key2", .{ .str = @constCast("value2") });
 
-    const logger = log.Logger.init(null) catch |err| {
+    const logger = log.Logger.init(std.testing.allocator, null) catch |err| {
         std.log.err("# failed to initialize logger: {}", .{err});
         return;
     };

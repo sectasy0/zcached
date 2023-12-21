@@ -72,9 +72,11 @@ pub const ServerListener = struct {
             var connection: Connection = try self.server.accept();
             self.connections += 1;
 
+            self.protocol.serializer.raw.clearRetainingCapacity();
+
             if (self.connections > self.config.max_connections) {
                 const err = error.MaxClientsReached;
-                errors.handle(connection.stream, err, .{}) catch {
+                errors.handle(connection.stream, err, .{}, self.logger) catch {
                     self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
                 };
             }
@@ -85,7 +87,7 @@ pub const ServerListener = struct {
                 handle_request,
                 .{ self, connection },
             ) catch |err| {
-                errors.handle(connection.stream, err, .{}) catch {
+                errors.handle(connection.stream, err, .{}, self.logger) catch {
                     self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
                 };
 
@@ -101,16 +103,20 @@ pub const ServerListener = struct {
 
         const reader: std.net.Stream.Reader = connection.stream.reader();
         const result: AnyType = self.protocol.serialize(&reader) catch |err| {
-            errors.handle(connection.stream, err, .{}) catch {
+            self.logger.log_request(self.protocol.repr(self.protocol.serializer.raw.items));
+
+            errors.handle(connection.stream, err, .{}, self.logger) catch {
                 self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
             };
 
             return;
         };
 
+        self.logger.log_request(self.protocol.repr(self.protocol.serializer.raw.items));
+
         // command is always and array of bulk strings
         if (std.meta.activeTag(result) != .array) {
-            errors.handle(connection.stream, error.ProtocolInvalidRequest, .{}) catch |err| {
+            errors.handle(connection.stream, error.ProtocolInvalidRequest, .{}, self.logger) catch |err| {
                 self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
             };
             return;
@@ -120,28 +126,22 @@ pub const ServerListener = struct {
 
         const cmd_result = self.cmd_handler.process(command_set);
         if (std.meta.activeTag(cmd_result) != .ok) {
-            errors.handle(connection.stream, cmd_result.err, .{}) catch |err| {
+            errors.handle(connection.stream, cmd_result.err, .{}, self.logger) catch |err| {
                 self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
             };
+
+            std.debug.print("failed to process command: {any}\n", .{self.protocol.serializer.raw.items});
             return;
         }
 
-        // log request
-        if (self.protocol.repr(self.protocol.serializer.raw.items)) |value| {
-            defer self.allocator.free(value);
-            self.logger.log(log.LogLevel.Info, "> request: {s}", .{value});
-        } else |err| {
-            self.logger.log(log.LogLevel.Error, "* failed to repr request: {any}", .{err});
-        }
-
         var response = self.protocol.deserialize(cmd_result.ok) catch |err| {
-            errors.handle(connection.stream, err, .{}) catch |er| {
+            errors.handle(connection.stream, err, .{}, self.logger) catch |er| {
                 self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{er});
             };
             return;
         };
         connection.stream.writer().writeAll(response) catch |err| {
-            errors.handle(connection.stream, err, .{}) catch |er| {
+            errors.handle(connection.stream, err, .{}, self.logger) catch |er| {
                 self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{er});
             };
         };

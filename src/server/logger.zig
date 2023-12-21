@@ -14,8 +14,10 @@ pub const Logger = struct {
     file: std.fs.File = undefined,
     log_path: []const u8 = DEFAULT_PATH,
 
-    pub fn init(file_path: ?[]const u8) !Logger {
-        var logger = Logger{};
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator, file_path: ?[]const u8) !Logger {
+        var logger = Logger{ .allocator = allocator };
 
         if (file_path != null) logger.log_path = file_path.?;
         utils.create_path(logger.log_path);
@@ -70,11 +72,23 @@ pub const Logger = struct {
             return;
         };
     }
+
+    pub fn log_request(self: *const Logger, repr: anyerror![]const u8) void {
+        if (repr) |value| {
+            defer self.allocator.free(value);
+            self.log(LogLevel.Info, "> request: {s}", .{value});
+        } else |er| {
+            self.log(LogLevel.Error, "* failed to repr request: {any}", .{er});
+        }
+    }
 };
 
 test "test logger debug" {
     std.fs.cwd().deleteTree("log") catch {};
-    var logger = try Logger.init(null);
+    var logger = try Logger.init(
+        std.testing.allocator,
+        null,
+    );
     logger.log(LogLevel.Debug, "{s}", .{"test"});
 
     var file = try std.fs.cwd().openFile(DEFAULT_PATH, .{ .mode = .read_only });
@@ -94,7 +108,7 @@ test "test logger debug" {
 
 test "test logger info" {
     std.fs.cwd().deleteTree("log") catch {};
-    var logger = try Logger.init(null);
+    var logger = try Logger.init(std.testing.allocator, null);
     logger.log(LogLevel.Info, "{s}", .{"test"});
 
     var file = try std.fs.cwd().openFile(DEFAULT_PATH, .{ .mode = .read_only });
@@ -114,7 +128,7 @@ test "test logger info" {
 
 test "test logger warning" {
     std.fs.cwd().deleteTree("log") catch {};
-    var logger = try Logger.init(null);
+    var logger = try Logger.init(std.testing.allocator, null);
     logger.log(LogLevel.Warning, "{s}", .{"test"});
 
     var file = try std.fs.cwd().openFile(DEFAULT_PATH, .{ .mode = .read_only });
@@ -134,7 +148,7 @@ test "test logger warning" {
 
 test "test logger error" {
     std.fs.cwd().deleteTree("log") catch {};
-    var logger = try Logger.init(null);
+    var logger = try Logger.init(std.testing.allocator, null);
     logger.log(LogLevel.Error, "{s}", .{"test"});
 
     var file = try std.fs.cwd().openFile(DEFAULT_PATH, .{ .mode = .read_only });
