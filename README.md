@@ -96,6 +96,8 @@ echo "*1\r\n\$4\r\nPING\r\n" | netcat -N localhost 7556
 	* Logging server events.
 	* `DBSIZE` command for getting the number of keys in the database.
 	* `PING` command for testing if a connection is still alive.
+	* Ability to set `thread` count from `zcached.conf` file.
+	* Extended config debug logging.
 * 0.0.1
 	* Initial release
 

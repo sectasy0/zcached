@@ -62,7 +62,7 @@ fn run_server(allocator: std.mem.Allocator, config: Config, logger: log.Logger) 
     defer mem_storage.deinit();
 
     var thread_pool: std.Thread.Pool = undefined;
-    thread_pool.init(.{ .allocator = allocator }) catch |err| {
+    thread_pool.init(.{ .allocator = allocator, .n_jobs = config.threads }) catch |err| {
         logger.log(log.LogLevel.Error, "# failed to initialize thread pool: {?}", .{err});
         return;
     };

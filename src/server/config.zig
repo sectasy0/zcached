@@ -9,6 +9,7 @@ pub const Config = struct {
 
     max_connections: u16 = 512,
     max_memory: u32 = 0, // 0 means unlimited, value in Megabytes
+    threads: ?u32 = null,
 
     _arena: std.heap.ArenaAllocator,
 
@@ -87,20 +88,57 @@ pub const Config = struct {
         // I don't like how many nested things are here, but there is no other way
         inline for (std.meta.fields(Config)) |field| {
             if (std.mem.eql(u8, field.name, key_value.items[0])) {
-                var value = try config._arena.allocator().alloc(u8, key_value.items[1].len);
+                var value = config._arena.allocator().alloc(u8, key_value.items[1].len) catch |err| {
+                    std.debug.print(
+                        "ERROR [{d}] * failed to allocate memory {?}\n",
+                        .{ std.time.timestamp(), err },
+                    );
+                    return;
+                };
+
                 std.mem.copy(u8, value, key_value.items[1]);
+
+                if (value.len == 0) return;
 
                 switch (field.type) {
                     u16 => {
-                        const parsed = try std.fmt.parseInt(u16, value, 10);
+                        const parsed = std.fmt.parseInt(u16, value, 10) catch |err| {
+                            std.debug.print(
+                                "DEBUG [{d}] * parsing {s} as u16, {?}\n",
+                                .{ std.time.timestamp(), value, err },
+                            );
+                            return;
+                        };
                         @field(config, field.name) = parsed;
                     },
                     u32 => {
-                        const parsed = try std.fmt.parseInt(u32, value, 10);
+                        const parsed = std.fmt.parseInt(u32, value, 10) catch |err| {
+                            std.debug.print(
+                                "DEBUG [{d}] * parsing {s} as u32, {?}\n",
+                                .{ std.time.timestamp(), value, err },
+                            );
+                            return;
+                        };
+                        @field(config, field.name) = parsed;
+                    },
+                    ?u32 => {
+                        const parsed = std.fmt.parseInt(u32, value, 10) catch |err| {
+                            std.debug.print(
+                                "DEBUG [{d}] * parsing {s} as ?u32, {?}\n",
+                                .{ std.time.timestamp(), value, err },
+                            );
+                            return;
+                        };
                         @field(config, field.name) = parsed;
                     },
                     std.net.Address => {
-                        const parsed = try std.net.Address.parseIp(value, config.address.getPort());
+                        const parsed = std.net.Address.parseIp(value, config.address.getPort()) catch |err| {
+                            std.debug.print(
+                                "DEBUG [{d}] * parsing {s} as std.net.Address, {?}\n",
+                                .{ std.time.timestamp(), value, err },
+                            );
+                            return;
+                        };
                         @field(config, field.name) = parsed;
                     },
                     else => unreachable,
@@ -186,4 +224,54 @@ test "config load custom values empty port" {
     );
 
     try std.testing.expectEqual(address.any, config.address.any);
+}
+
+test "config load custom values empty address" {
+    std.fs.cwd().deleteFile("./tmp/zcached_empty_address.conf") catch {};
+    std.fs.cwd().deleteDir("tmp") catch {};
+
+    const file_content = "address=\nport=1234\nmax_connections=1024\nmax_memory=500\n";
+    std.fs.cwd().makeDir("tmp") catch {};
+    const file = try std.fs.cwd().createFile("./tmp/zcached_empty_address.conf", .{});
+    try file.writeAll(file_content);
+    defer file.close();
+
+    var config = try Config.load(std.testing.allocator, "./tmp/zcached_empty_address.conf", null);
+    defer config.deinit();
+
+    const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 1234);
+
+    try std.testing.expectEqual(address.any, config.address.any);
+}
+
+test "config load custom values threads" {
+    std.fs.cwd().deleteFile("./tmp/zcached_thread.conf") catch {};
+    std.fs.cwd().deleteDir("tmp") catch {};
+
+    const file_content = "address=::1\nport=1234\nmax_connections=1024\nmax_memory=500\nthreads=4\n";
+    std.fs.cwd().makeDir("tmp") catch {};
+    const file = try std.fs.cwd().createFile("./tmp/zcached_thread.conf", .{});
+    try file.writeAll(file_content);
+    defer file.close();
+
+    var config = try Config.load(std.testing.allocator, "./tmp/zcached_thread.conf", null);
+    defer config.deinit();
+
+    try std.testing.expectEqual(config.threads, 4);
+}
+
+test "config load custom values empty threads" {
+    std.fs.cwd().deleteFile("./tmp/zcached_empty_threads.conf") catch {};
+    std.fs.cwd().deleteDir("tmp") catch {};
+
+    const file_content = "address=::1\nport=1234\nmax_connections=1024\nmax_memory=500\nthreads=\n";
+    std.fs.cwd().makeDir("tmp") catch {};
+    const file = try std.fs.cwd().createFile("./tmp/zcached_empty_threads.conf", .{});
+    try file.writeAll(file_content);
+    defer file.close();
+
+    var config = try Config.load(std.testing.allocator, "./tmp/zcached_empty_threads.conf", null);
+    defer config.deinit();
+
+    try std.testing.expectEqual(config.threads, null);
 }
