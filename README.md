@@ -64,11 +64,17 @@ Retrieve the value of a key. If the key doesn’t exist, `-not found` is returne
 echo "*2\r\n\$3\r\nGET\r\n\$9\r\nmycounter\r\n" | netcat -N localhost 7556
 ```
 
+#### PING
+Returns `PONG`. This command is often used to test if a connection is still alive, or to measure latency.
+```bash
+echo "*1\r\n\$4\r\nPING\r\n" | netcat -N localhost 7556
+```
+
 ## Todo for v1.0.0
 - [ ] Support for more data types eg. Hashes, Sets, Sorted Sets.
 - [ ] Create CLI Interface.
 - [ ] Add `SAVE` command for manual saving.
-- [ ] Add `DBSIZE` command for getting the number of keys in the database.
+- [x] Add `DBSIZE` command for getting the number of keys in the database.
 - [ ] Ability to set ip addresses that can connect to the server.
 - [ ] Ability to set a TTL for a key, `EXPIRE` command for set, `TTL` command for check.
 - [ ] Ability to set background save interval, `BGSAVE` command.
