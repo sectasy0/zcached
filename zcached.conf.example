@@ -3,3 +3,5 @@ port=5555
 max_connections=512
 # max_memory=0 for unlimited, otherwise specify in megabytes
 max_memory=0
+threads=4
+whitelist=127.0.0.1

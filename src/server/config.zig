@@ -11,6 +11,8 @@ pub const Config = struct {
     max_memory: u32 = 0, // 0 means unlimited, value in Megabytes
     threads: ?u32 = null,
 
+    whitelist: std.ArrayList(std.net.Address) = undefined,
+
     _arena: std.heap.ArenaAllocator,
 
     pub fn deinit(config: *const Config) void {
@@ -140,6 +142,22 @@ pub const Config = struct {
                             return;
                         };
                         @field(config, field.name) = parsed;
+                    },
+                    std.ArrayList(std.net.Address) => {
+                        config.whitelist = std.ArrayList(std.net.Address).init(config._arena.allocator());
+
+                        var addresses = std.mem.split(u8, value, ",");
+
+                        while (addresses.next()) |address| {
+                            const parsed = std.net.Address.parseIp(address, config.address.getPort()) catch |err| {
+                                std.debug.print(
+                                    "DEBUG [{d}] * parsing {s} as std.net.Address, {?}\n",
+                                    .{ std.time.timestamp(), address, err },
+                                );
+                                return;
+                            };
+                            try @field(config, field.name).append(parsed);
+                        }
                     },
                     else => unreachable,
                 }
@@ -274,4 +292,58 @@ test "config load custom values empty threads" {
     defer config.deinit();
 
     try std.testing.expectEqual(config.threads, null);
+}
+
+test "config load custom values whitelist" {
+    std.fs.cwd().deleteFile("./tmp/zcached_whitelist.conf") catch {};
+    std.fs.cwd().deleteDir("tmp") catch {};
+
+    const file_content = "address=::1\nport=1234\nmax_connections=1024\nmax_memory=500\nwhitelist=192.168.0.1,127.0.0.1\n";
+    std.fs.cwd().makeDir("tmp") catch {};
+    const file = try std.fs.cwd().createFile("./tmp/zcached_whitelist.conf", .{});
+    try file.writeAll(file_content);
+    defer file.close();
+
+    var config = try Config.load(std.testing.allocator, "./tmp/zcached_whitelist.conf", null);
+    defer config.deinit();
+
+    const address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, config.address.getPort());
+    const address_second = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, config.address.getPort());
+
+    std.debug.print("DEBUG [{d}] * {?}\n", .{ std.time.timestamp(), config.whitelist.items[0] });
+
+    try std.testing.expectEqual(config.whitelist.items[0].any, address.any);
+    try std.testing.expectEqual(config.whitelist.items[1].any, address_second.any);
+}
+
+test "config load custom values empty whitelist" {
+    std.fs.cwd().deleteFile("./tmp/zcached_empty_whitelist.conf") catch {};
+    std.fs.cwd().deleteDir("tmp") catch {};
+
+    const file_content = "address=::1\nport=1234\nmax_connections=1024\nmax_memory=500\nwhitelist=\n";
+    std.fs.cwd().makeDir("tmp") catch {};
+    const file = try std.fs.cwd().createFile("./tmp/zcached_empty_whitelist.conf", .{});
+    try file.writeAll(file_content);
+    defer file.close();
+
+    var config = try Config.load(std.testing.allocator, "./tmp/zcached_empty_whitelist.conf", null);
+    defer config.deinit();
+
+    try std.testing.expectEqual(config.whitelist.items.len, 0);
+}
+
+test "config load custom values invalid whitelist delimiter" {
+    std.fs.cwd().deleteFile("./tmp/zcached_empty_whitelist.conf") catch {};
+    std.fs.cwd().deleteDir("tmp") catch {};
+
+    const file_content = "address=::1\nport=1234\nmax_connections=1024\nmax_memory=500\nwhitelist=192.168.0.1;127.0.0.1\n";
+    std.fs.cwd().makeDir("tmp") catch {};
+    const file = try std.fs.cwd().createFile("./tmp/zcached_empty_whitelist.conf", .{});
+    try file.writeAll(file_content);
+    defer file.close();
+
+    var config = try Config.load(std.testing.allocator, "./tmp/zcached_empty_whitelist.conf", null);
+    defer config.deinit();
+
+    try std.testing.expectEqual(config.whitelist.items.len, 0);
 }

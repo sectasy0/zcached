@@ -81,6 +81,21 @@ pub const ServerListener = struct {
                 };
             }
 
+            if (self.config.whitelist.capacity > 0 and !self.is_whitelisted(connection.address)) {
+                self.logger.log(
+                    log.LogLevel.Info,
+                    "* connection from {any} is not whitelisted, rejected",
+                    .{connection.address},
+                );
+
+                var err = error.NotAllowed;
+                errors.handle(connection.stream, err, .{}, self.logger) catch {
+                    self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
+                };
+
+                return;
+            }
+
             self.logger.log(log.LogLevel.Info, "* new connection from {any}", .{connection.address});
 
             self.pool.spawn(
@@ -153,6 +168,13 @@ pub const ServerListener = struct {
         };
         defer self.allocator.free(output);
         self.logger.log(log.LogLevel.Info, "< response: {s}", .{output});
+    }
+
+    fn is_whitelisted(self: *ServerListener, addr: Address) bool {
+        for (self.config.whitelist.items) |whitelisted| {
+            if (std.meta.eql(whitelisted.any.data[2..].*, addr.any.data[2..].*)) return true;
+        }
+        return false;
     }
 
     fn close_connection(self: *ServerListener, connection: Connection) void {

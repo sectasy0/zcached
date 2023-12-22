@@ -80,6 +80,7 @@ echo "*1\r\n\$4\r\nPING\r\n" | netcat -N localhost 7556
 - [ ] Ability to set background save interval, `BGSAVE` command.
 - [x] Server events logging.
 - [x] Configurable server (port, max clients, max memory, etc.).
+- [x] Connections whitelisting.
 - [x] Pass different configuration file path from command line.
 - [ ] Client side library.
 - [ ] Encrypted connections, e.g TLS 1.3 or use QUIC (Currently there is no server-side support for TLS in zig, I could use `https://github.com/shiguredo/tls13-zig`).
@@ -98,6 +99,7 @@ echo "*1\r\n\$4\r\nPING\r\n" | netcat -N localhost 7556
 	* `PING` command for testing if a connection is still alive.
 	* Ability to set `thread` count from `zcached.conf` file.
 	* Extended config debug logging.
+	* Ability to configure `whitelist` from `zcached.conf` file.
 * 0.0.1
 	* Initial release
 

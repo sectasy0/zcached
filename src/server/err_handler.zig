@@ -5,11 +5,11 @@ const log = @import("logger.zig");
 const Args = struct {
     command_name: ?[]const u8 = null,
 };
-// stream is a std.io.Writer
+// stream is a std.net.Stream
 pub fn handle(stream: anytype, err: anyerror, args: Args, logger: *const log.Logger) !void {
     const out = stream.writer();
 
-    logger.log(log.LogLevel.Error, "handling error: {}", .{err});
+    logger.log(log.LogLevel.Debug, "handling error: {}", .{err});
 
     _ = switch (err) {
         error.BadRequest => try out.writeAll("-bad request\r\n"),
@@ -19,6 +19,7 @@ pub fn handle(stream: anytype, err: anyerror, args: Args, logger: *const log.Log
         error.KeyNotString => try out.writeAll("-key not string\r\n"),
         error.NotFound => try out.writeAll("-not found\r\n"),
         error.MaxClientsReached => try out.writeAll("-max number of clients reached\r\n"),
+        error.NotAllowed => try out.writeAll("-not allowed\r\n"),
         else => try out.writeAll("-unexpected\r\n"),
     };
 }
