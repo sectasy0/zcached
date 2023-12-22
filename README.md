@@ -75,7 +75,6 @@ echo "*1\r\n\$4\r\nPING\r\n" | netcat -N localhost 7556
 - [ ] Create CLI Interface.
 - [ ] Add `SAVE` command for manual saving.
 - [x] Add `DBSIZE` command for getting the number of keys in the database.
-- [ ] Ability to set ip addresses that can connect to the server.
 - [ ] Ability to set a TTL for a key, `EXPIRE` command for set, `TTL` command for check.
 - [ ] Ability to set background save interval, `BGSAVE` command.
 - [x] Server events logging.
