@@ -45,12 +45,16 @@ zig test --main-pkg-path .. tests.zig
 While `zcached` lacks a CLI, you can utilize nc (netcat) from the terminal to send commands to the server.
 
 ### Example Commands
+
 #### SET
 Set a key to hold the string value. If key already holds a value, it is overwritten, regardless of its type.
 ```bash
 echo "*3\r\n\$3\r\nSET\r\n\$9\r\nmycounter\r\n:42\r\n" | netcat -N localhost 7556
 ```
 
+```bash
+echo "*3\r\n\$3\r\nSET\r\n\$7\r\nmyconter\r\n%2\r\n+first\r\n:1\r\n+second\r\n:2\r\n" | netcat -N localhost 7556
+```
 
 #### Command Breakdown:
 - `*3\r\n` - number of elements in the array (commands are always arrays)
@@ -70,8 +74,10 @@ Returns `PONG`. This command is often used to test if a connection is still aliv
 echo "*1\r\n\$4\r\nPING\r\n" | netcat -N localhost 7556
 ```
 
+for supported types and their encodings, see [types.md](types.md)
+
 ## Todo for v1.0.0
-- [ ] Support for more data types eg. Hashes, Sets, Sorted Sets.
+- [ ] Support for more data types eg. Hashes, Sets, Sorted Sets. (Currently only supports Strings, Integers, Floats, Booleans, Nulls, Arrays, and HashMaps).
 - [ ] Create CLI Interface.
 - [ ] Add `SAVE` command for manual saving.
 - [x] Add `DBSIZE` command for getting the number of keys in the database.
@@ -99,6 +105,7 @@ echo "*1\r\n\$4\r\nPING\r\n" | netcat -N localhost 7556
 	* Ability to set `thread` count from `zcached.conf` file.
 	* Extended config debug logging.
 	* Ability to configure `whitelist` from `zcached.conf` file.
+	* Support for `HashMap` data type.
 * 0.0.1
 	* Initial release
 
