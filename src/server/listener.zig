@@ -131,7 +131,7 @@ pub const ServerListener = struct {
 
         // command is always and array of bulk strings
         if (std.meta.activeTag(result) != .array) {
-            errors.handle(connection.stream, error.ProtocolInvalidRequest, .{}, self.logger) catch |err| {
+            errors.handle(connection.stream, error.UnknownCommand, .{}, self.logger) catch |err| {
                 self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
             };
             return;

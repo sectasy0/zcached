@@ -27,6 +27,7 @@ pub fn SerializerT(comptime GenericReader: type) type {
             try handler.handlers.put("-", serialize_error);
             try handler.handlers.put("#", serialize_bool);
             try handler.handlers.put("_", serialize_null);
+            try handler.handlers.put("%", serialize_map);
             try handler.handlers.put(":", serialize_int);
 
             return handler;
@@ -149,6 +150,29 @@ pub fn SerializerT(comptime GenericReader: type) type {
             return .{ .err = .{
                 .message = error_message[0 .. error_message.len - 1],
             } };
+        }
+
+        fn serialize_map(self: *Self, reader: GenericReader) !types.AnyType {
+            const bytes = try self.read_line_alloc(reader) orelse return error.BadRequest;
+
+            if (bytes.len == 0) return error.BadRequest;
+
+            const entries = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
+                return error.InvalidHashLength;
+            };
+
+            var result = std.StringHashMap(types.AnyType).init(self.arena.allocator());
+
+            for (0..entries) |_| {
+                const key = try self.process(reader);
+
+                const active_tag = std.meta.activeTag(key);
+                if (active_tag != .str and active_tag != .sstr) return error.InvalidHashKey;
+
+                const value = try self.process(reader);
+                try result.put(key.str, value);
+            }
+            return .{ .map = result };
         }
 
         fn read_line_alloc(self: *Self, reader: GenericReader) !?[]const u8 {

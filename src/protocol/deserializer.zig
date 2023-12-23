@@ -25,6 +25,7 @@ pub const Deserializer = struct {
             .null => return try self.deserialize_null(input),
             .array => return try self.deserialize_array(input),
             .float => return try self.deserialize_float(input),
+            .map => return try self.deserialize_map(input),
             else => return error.UnsuportedType,
         }
     }
@@ -128,6 +129,40 @@ pub const Deserializer = struct {
                 &.{ result, bytes },
             );
             result = res;
+        }
+        return result;
+    }
+
+    fn deserialize_map(self: *Deserializer, input: types.AnyType) ![]const u8 {
+        var result: []u8 = undefined;
+
+        const map_prefix = std.fmt.allocPrint(
+            self.arena.allocator(),
+            "%{d}\r\n",
+            .{input.map.count()},
+        ) catch {
+            return error.DeserializationError;
+        };
+
+        result = map_prefix;
+
+        var iterator = input.map.iterator();
+        while (iterator.next()) |item| {
+            var bytes = try self.process(.{ .sstr = @constCast(item.key_ptr.*) });
+            const key_part = try std.mem.concat(
+                self.arena.allocator(),
+                u8,
+                &.{ result, bytes },
+            );
+            result = key_part;
+
+            bytes = try self.process(item.value_ptr.*);
+            const value_part = try std.mem.concat(
+                self.arena.allocator(),
+                u8,
+                &.{ result, bytes },
+            );
+            result = value_part;
         }
         return result;
     }
@@ -236,5 +271,25 @@ test "deserialize array" {
 
     var result = try deserializer.process(value);
     const expected = "*3\r\n$5\r\nfirst\r\n$6\r\nsecond\r\n$5\r\nthird\r\n";
+    try std.testing.expectEqualStrings(expected, result);
+}
+
+test "serialize map" {
+    var map = std.StringHashMap(types.AnyType).init(std.testing.allocator);
+    defer map.deinit();
+
+    try map.put("a", .{ .str = @constCast("first") });
+    try map.put("b", .{ .str = @constCast("second") });
+    try map.put("c", .{ .str = @constCast("third") });
+
+    var deserializer = Deserializer.init(std.testing.allocator);
+    defer deserializer.deinit();
+
+    var value = types.AnyType{ .map = map };
+
+    var result = try deserializer.process(value);
+    std.debug.print("result: {s}\n", .{result});
+    // it's not guaranteed that the order of the map will be the same
+    const expected = "%3\r\n+b\r\n$6\r\nsecond\r\n+a\r\n$5\r\nfirst\r\n+c\r\n$5\r\nthird\r\n";
     try std.testing.expectEqualStrings(expected, result);
 }
