@@ -2,6 +2,9 @@ const os = @import("std").os;
 const std = @import("std");
 
 const types = @import("types.zig");
+const Config = @import("../server/config.zig");
+
+pub var MAX_BULK_LEN: usize = 0;
 
 pub fn SerializerT(comptime GenericReader: type) type {
     return struct {
@@ -63,6 +66,8 @@ pub fn SerializerT(comptime GenericReader: type) type {
             const string_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
                 return error.BadRequest;
             };
+
+            if (string_len > MAX_BULK_LEN and MAX_BULK_LEN != 0) return error.BulkTooLarge;
 
             const string = try self.read_line_alloc(reader) orelse return error.BadRequest;
             if (string.len == 0) return error.BadRequest;
@@ -377,4 +382,16 @@ test "serialize float" {
 
     var result = try handler.process(reader);
     try std.testing.expectEqual(.{ .float = 3.14 }, result.float);
+}
+
+test "not serialize too large bulk" {
+    MAX_BULK_LEN = 10;
+    var stream = std.io.fixedBufferStream("$80\r\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    var reader = stream.reader();
+
+    const HandlerType = SerializerT(@TypeOf(reader));
+    var handler = try HandlerType.init(std.testing.allocator);
+    defer handler.deinit();
+
+    try std.testing.expectEqual(handler.process(reader), error.BulkTooLarge);
 }

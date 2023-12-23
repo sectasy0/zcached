@@ -106,6 +106,7 @@ for supported types and their encodings, see [types.md](types.md)
 	* Extended config debug logging.
 	* Ability to configure `whitelist` from `zcached.conf` file.
 	* Support for `HashMap` data type.
+	* Ability to set `proto_max_bulk_len` from `zcached.conf` file, it is the maximum length of a bulk string that can be sent to the server, default is 512MB.
 * 0.0.1
 	* Initial release
 

@@ -43,6 +43,9 @@ pub const ServerListener = struct {
             return error.ProtocolInitFailed;
         };
 
+        const proto_ser = @import("../protocol/serializer.zig");
+        proto_ser.MAX_BULK_LEN = config.proto_max_bulk_len;
+
         const cmdhandler = CMDHandler.init(allocator, storage, logger);
 
         logger.log(log.LogLevel.Info, "* ready to accept connections", .{});

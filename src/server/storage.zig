@@ -23,8 +23,7 @@ pub const MemoryStorage = struct {
     pub fn put(self: *MemoryStorage, key: []const u8, value: AnyType) !void {
         const tracking = ptrCast(TracingAllocator, self.tracing_allocator.ptr);
 
-        const mem_limit = self.config.max_memory * 1024 * 1024;
-        if (tracking.real_size >= mem_limit and self.config.max_memory != 0) {
+        if (tracking.real_size >= self.config.max_memory and self.config.max_memory != 0) {
             return error.MemoryLimitExceeded;
         }
 
@@ -139,7 +138,7 @@ test "should not store error" {
 test "should return error.MemoryLimitExceeded" {
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
-    config.max_memory = 1; // 1 Megabyte
+    config.max_memory = 1048576; // 1 megabyte
 
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
     var storage = MemoryStorage.init(tracing_allocator.allocator(), config);

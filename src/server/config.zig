@@ -5,13 +5,14 @@ const DEFAULT_PATH: []const u8 = "./zcached.conf";
 
 pub const Config = struct {
     address: std.net.Address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556),
-    loger_path: []const u8 = DEFAULT_PATH,
 
+    loger_path: []const u8 = DEFAULT_PATH,
     max_connections: u16 = 512,
-    max_memory: u32 = 0, // 0 means unlimited, value in Megabytes
+    max_memory: u64 = 0, // 0 means unlimited, value in bytes
     threads: ?u32 = null,
 
     whitelist: std.ArrayList(std.net.Address) = undefined,
+    proto_max_bulk_len: u64 = 512 * 1024 * 1024, // 0 means unlimited, value in bytes
 
     _arena: std.heap.ArenaAllocator,
 
@@ -113,8 +114,8 @@ pub const Config = struct {
                         };
                         @field(config, field.name) = parsed;
                     },
-                    u32 => {
-                        const parsed = std.fmt.parseInt(u32, value, 10) catch |err| {
+                    u64 => {
+                        const parsed = std.fmt.parseInt(u64, value, 10) catch |err| {
                             std.debug.print(
                                 "DEBUG [{d}] * parsing {s} as u32, {?}\n",
                                 .{ std.time.timestamp(), value, err },
@@ -346,4 +347,20 @@ test "config load custom values invalid whitelist delimiter" {
     defer config.deinit();
 
     try std.testing.expectEqual(config.whitelist.items.len, 0);
+}
+
+test "config load proto_max_bulk_len" {
+    std.fs.cwd().deleteFile("./tmp/zcached_proto_max_bulk_len.conf") catch {};
+    std.fs.cwd().deleteDir("tmp") catch {};
+
+    const file_content = "address=::1\nport=1234\nmax_connections=1024\nmax_memory=500\nproto_max_bulk_len=1024\n";
+    std.fs.cwd().makeDir("tmp") catch {};
+    const file = try std.fs.cwd().createFile("./tmp/zcached_proto_max_bulk_len.conf", .{});
+    try file.writeAll(file_content);
+    defer file.close();
+
+    var config = try Config.load(std.testing.allocator, "./tmp/zcached_proto_max_bulk_len.conf", null);
+    defer config.deinit();
+
+    try std.testing.expectEqual(config.proto_max_bulk_len, 1024);
 }
