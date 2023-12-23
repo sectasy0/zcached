@@ -19,6 +19,7 @@ pub fn handle(stream: anytype, err: anyerror, args: Args, logger: *const log.Log
         error.KeyNotString => try out.writeAll("-key not string\r\n"),
         error.NotFound => try out.writeAll("-not found\r\n"),
         error.MaxClientsReached => try out.writeAll("-max number of clients reached\r\n"),
+        error.BulkTooLarge => try out.writeAll("-bulk too large\r\n"),
         error.NotAllowed => try out.writeAll("-not allowed\r\n"),
         else => try out.writeAll("-unexpected\r\n"),
     };
