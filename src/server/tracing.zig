@@ -49,16 +49,14 @@ pub const TracingAllocator = struct {
             ret_addr,
         );
         if (stable) {
-            if (new_len > old_len) {
-                self.*.real_size += new_len;
-                self.*.real_size -= old_len;
-                self.*.total_size += new_len;
-                self.*.total_size -= old_len;
-            } else {
-                self.*.real_size -= old_len;
-                self.*.real_size += new_len;
-                self.*.total_size -= old_len;
-                self.*.total_size += new_len;
+            const size_diff = new_len - old_len;
+
+            self.*.real_size += size_diff;
+            self.*.total_size += size_diff;
+
+            if (new_len <= old_len) {
+                self.*.real_size -= 2 * size_diff;
+                self.*.total_size -= 2 * size_diff;
             }
         }
         return stable;
