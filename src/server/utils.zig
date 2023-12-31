@@ -16,7 +16,7 @@ pub fn create_path(file_path: []const u8) void {
 
     std.fs.cwd().makePath(path) catch |err| {
         if (err == error.PathAlreadyExists) return;
-        std.log.err("failed to create log path: {?}", .{err});
+        std.log.err("failed to create path: {?}", .{err});
         return;
     };
 }
