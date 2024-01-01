@@ -96,11 +96,7 @@ pub const CLIParser = struct {
         return error.InvalidShorthand;
     }
 
-    fn args_for_field(
-        field: anytype,
-        short: []const u8,
-        args: [][:0]u8,
-    ) !?[2][]const u8 {
+    fn args_for_field(field: anytype, short: []const u8, args: [][:0]u8) !?[2][]const u8 {
         for (args, 0..) |arg, index| {
             if (index & 1 == 0) continue;
             if (arg.len < 2) return error.InvalidArg;
