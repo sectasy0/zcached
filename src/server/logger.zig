@@ -27,16 +27,21 @@ pub const Logger = struct {
             .{ .read = true, .truncate = false },
         );
 
+        var timestamp: [40]u8 = undefined;
+        const t_size = utils.timestampf(&timestamp);
+
         std.debug.print(
-            "INFO [{d}] logger initialized, log_path: {s}\n",
-            .{ std.time.timestamp(), logger.log_path },
+            "INFO [{s}] logger initialized, log_path: {s}\n",
+            .{ timestamp[0..t_size], logger.log_path },
         );
 
         return logger;
     }
 
     pub fn log(self: *const Logger, level: LogLevel, comptime format: []const u8, args: anytype) void {
-        const timestamp = std.time.timestamp();
+        var timestamp: [40]u8 = undefined;
+        const t_size = utils.timestampf(&timestamp);
+
         const log_level = switch (level) {
             LogLevel.Debug => "DEBUG",
             LogLevel.Info => "INFO",
@@ -51,9 +56,9 @@ pub const Logger = struct {
         };
 
         var fbuf: [BUFFER_SIZE]u8 = undefined;
-        const formatted = std.fmt.bufPrint(&fbuf, "{s} [{d}] {s}\n", .{
+        const formatted = std.fmt.bufPrint(&fbuf, "{s} [{s}] {s}\n", .{
             log_level,
-            timestamp,
+            timestamp[0..t_size],
             message,
         }) catch |err| {
             std.log.err("failed to format log message: {?}", .{err});

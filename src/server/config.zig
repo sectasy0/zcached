@@ -27,9 +27,12 @@ pub const Config = struct {
         var config = Config{ ._arena = std.heap.ArenaAllocator.init(allocator) };
         if (log_path != null) config.loger_path = log_path.?;
 
+        var timestamp: [40]u8 = undefined;
+        const t_size = utils.timestampf(&timestamp);
+
         std.debug.print(
-            "INFO [{d}] loading config file from: {s}\n",
-            .{ std.time.timestamp(), path },
+            "INFO [{s}] loading config file from: {s}\n",
+            .{ timestamp[0..t_size], path },
         );
 
         utils.create_path(path);

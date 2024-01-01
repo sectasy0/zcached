@@ -1,4 +1,5 @@
 const std = @import("std");
+const ctime = @cImport(@cInclude("time.h"));
 
 pub fn to_uppercase(str: []u8) []u8 {
     var result: [1024]u8 = undefined;
@@ -19,6 +20,22 @@ pub fn create_path(file_path: []const u8) void {
         std.log.err("failed to create path: {?}", .{err});
         return;
     };
+}
+
+pub fn timestampf(buff: []u8) usize {
+    var buffer: [40]u8 = undefined;
+
+    const time = ctime.time(null);
+    const local_time = ctime.localtime(&time);
+
+    const time_len = ctime.strftime(
+        &buffer,
+        buffer.len,
+        "%Y-%m-%dT%H:%M:%S.000 %Z",
+        local_time,
+    );
+    @memcpy(buff.ptr, buffer[0..time_len]);
+    return time_len;
 }
 
 test "to_uppercase" {
