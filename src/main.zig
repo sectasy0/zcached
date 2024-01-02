@@ -8,6 +8,7 @@ const Logger = @import("server/logger.zig").Logger;
 const log = @import("server/logger.zig");
 
 const TracingAllocator = @import("server/tracing.zig").TracingAllocator;
+const persistance = @import("server/persistance.zig");
 
 pub fn main() void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -53,14 +54,47 @@ pub fn main() void {
     };
     defer config.deinit();
 
-    run_server(allocator, config, logger);
-}
+    var persister = persistance.PersistanceHandler.init(
+        allocator,
+        config,
+        logger,
+        null,
+    ) catch |err| {
+        logger.log(
+            log.LogLevel.Error,
+            "# failed to init PersistanceHandler: {?}",
+            .{err},
+        );
+        return;
+    };
+    defer persister.deinit();
 
-fn run_server(allocator: std.mem.Allocator, config: Config, logger: log.Logger) void {
     var tracing_allocator = TracingAllocator.init(allocator);
-    var mem_storage = storage.MemoryStorage.init(tracing_allocator.allocator(), config);
+    var mem_storage = storage.MemoryStorage.init(
+        tracing_allocator.allocator(),
+        config,
+    );
     defer mem_storage.deinit();
 
+    persister.load(&mem_storage) catch |err| {
+        if (err != error.FileNotFound) {
+            logger.log(
+                log.LogLevel.Warning,
+                "# failed to restore data from latest .zcpf file: {?}",
+                .{err},
+            );
+        }
+    };
+
+    run_server(allocator, config, logger, &mem_storage);
+}
+
+fn run_server(
+    allocator: std.mem.Allocator,
+    config: Config,
+    logger: log.Logger,
+    mem_storage: *storage.MemoryStorage,
+) void {
     var thread_pool: std.Thread.Pool = undefined;
     thread_pool.init(.{ .allocator = allocator, .n_jobs = config.threads }) catch |err| {
         logger.log(log.LogLevel.Error, "# failed to initialize thread pool: {?}", .{err});
@@ -74,7 +108,7 @@ fn run_server(allocator: std.mem.Allocator, config: Config, logger: log.Logger) 
         &config.address,
         allocator,
         &thread_pool,
-        &mem_storage,
+        mem_storage,
         &config,
         &logger,
     ) catch |err| {

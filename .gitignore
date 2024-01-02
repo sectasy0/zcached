@@ -9,3 +9,5 @@ zig-test/
 zig-test-*
 tmp/
 log/
+*.zcpf
+persist/*
