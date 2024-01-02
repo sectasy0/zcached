@@ -38,7 +38,7 @@ zig build
 ## Running Tests
 Run this command in the root directory of the project:
 ```bash
-zig test --main-pkg-path .. tests.zig
+zig test --main-pkg-path .. tests.zig -lc
 ```
 
 ## Usage
@@ -80,6 +80,7 @@ for supported types and their encodings, see [types.md](types.md)
 - [ ] Support for more data types eg. Hashes, Sets, Sorted Sets. (Currently only supports Strings, Integers, Floats, Booleans, Nulls, Arrays, and HashMaps).
 - [ ] Create CLI Interface.
 - [ ] Add `SAVE` command for manual saving.
+- [x] Persistance mechanism, for further usage.
 - [x] Add `DBSIZE` command for getting the number of keys in the database.
 - [ ] Ability to set a TTL for a key, `EXPIRE` command for set, `TTL` command for check.
 - [ ] Ability to set background save interval, `BGSAVE` command.
@@ -107,6 +108,7 @@ for supported types and their encodings, see [types.md](types.md)
 	* Ability to configure `whitelist` from `zcached.conf` file.
 	* Support for `HashMap` data type.
 	* Ability to set `proto_max_bulk_len` from `zcached.conf` file, it is the maximum length of a bulk string that can be sent to the server, default is 512MB.
+	* Thread-safe `TracingAllocator`
 * 0.0.1
 	* Initial release
 

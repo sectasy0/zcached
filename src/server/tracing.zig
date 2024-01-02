@@ -2,6 +2,11 @@ const std = @import("std");
 
 const ptrCast = @import("utils.zig").ptrCast;
 
+/// TracingAllocator is a thread-safe structure that wraps an underlying allocator,
+/// allowing tracking of various statistics related to memory allocation operations.
+///
+/// It keeps a record of allocation counts, successful allocations, resizes, and frees.
+/// Additionally, it tracks the real size (allocated - freed size) and the total size allocated.
 pub const TracingAllocator = struct {
     child_allocator: std.mem.Allocator,
 
@@ -12,6 +17,8 @@ pub const TracingAllocator = struct {
     count_allocs_success: u64 = 0,
     count_resizes: u64 = 0,
     count_frees: u64 = 0,
+
+    mutex: std.Thread.Mutex = .{},
 
     pub fn init(child_allocator: std.mem.Allocator) TracingAllocator {
         return TracingAllocator{ .child_allocator = child_allocator };
@@ -30,8 +37,16 @@ pub const TracingAllocator = struct {
 
     fn alloc(ctx: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]u8 {
         var self = ptrCast(TracingAllocator, ctx);
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
         self.*.count_allocs += 1;
-        const ptr = self.*.child_allocator.rawAlloc(len, ptr_align, ret_addr) orelse return null;
+        const ptr = self.*.child_allocator.rawAlloc(
+            len,
+            ptr_align,
+            ret_addr,
+        ) orelse return null;
+
         self.*.count_allocs_success += 1;
         self.*.real_size += len;
         self.*.total_size += len;
@@ -40,6 +55,9 @@ pub const TracingAllocator = struct {
 
     fn resize(ctx: *anyopaque, buf: []u8, buf_align: u8, new_len: usize, ret_addr: usize) bool {
         var self = ptrCast(TracingAllocator, ctx);
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
         self.*.count_resizes += 1;
         const old_len = buf.len;
         const stable = self.*.child_allocator.rawResize(
@@ -48,6 +66,7 @@ pub const TracingAllocator = struct {
             new_len,
             ret_addr,
         );
+
         if (stable) {
             const size_diff = new_len - old_len;
 
@@ -64,9 +83,17 @@ pub const TracingAllocator = struct {
 
     fn free(ctx: *anyopaque, buf: []u8, buf_align: u8, ret_addr: usize) void {
         var self = ptrCast(TracingAllocator, ctx);
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
         self.*.count_frees += 1;
         self.*.real_size -= buf.len;
-        return self.*.child_allocator.rawFree(buf, buf_align, ret_addr);
+
+        return self.*.child_allocator.rawFree(
+            buf,
+            buf_align,
+            ret_addr,
+        );
     }
 };
 
