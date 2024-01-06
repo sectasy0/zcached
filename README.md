@@ -71,7 +71,7 @@ echo "*2\r\n\$3\r\nGET\r\n\$9\r\nmycounter\r\n" | netcat -N localhost 7556
 #### PING
 Returns `PONG`. This command is often used to test if a connection is still alive, or to measure latency.
 ```bash
-echo "*1\r\n\$4\r\nPING\r\n" | netcat -N localhost 7556
+echo "*1\r\n$4\r\nPING\r\n" | netcat -N localhost 7556
 ```
 
 for supported types and their encodings, see [types.md](types.md)
@@ -92,25 +92,29 @@ for supported types and their encodings, see [types.md](types.md)
 - [ ] Encrypted connections, e.g TLS 1.3 or use QUIC (Currently there is no server-side support for TLS in zig, I could use `https://github.com/shiguredo/tls13-zig`).
 
 ## Release History
-* unreleased
-	* Ability to configure server listen address and port from `zcached.conf` file.
-	* Ability to configure max clients from `zcached.conf` file.
-	* Ability to configure max memory from `zcached.conf` file.
-	* CLI interface for server binary.
-	* Ability to pass different configuration file path from command line.
-	* Configurable logger, it can be configured to log to a custom file.
-	* Logging requests and responses.
-	* Logging server events.
-	* `DBSIZE` command for getting the number of keys in the database.
-	* `PING` command for testing if a connection is still alive.
-	* Ability to set `thread` count from `zcached.conf` file.
-	* Extended config debug logging.
-	* Ability to configure `whitelist` from `zcached.conf` file.
-	* Support for `HashMap` data type.
-	* Ability to set `proto_max_bulk_len` from `zcached.conf` file, it is the maximum length of a bulk string that can be sent to the server, default is 512MB.
-	* Thread-safe `TracingAllocator`
-* 0.0.1
-	* Initial release
+
+### [unreleased]
+- Ability to configure server listen address and port from `zcached.conf` file.
+- Ability to configure max clients from `zcached.conf` file.
+- Ability to configure max memory from `zcached.conf` file.
+- CLI interface for server binary.
+- Ability to pass different configuration file path from the command line.
+- Configurable logger with the option to log to a custom file.
+- Logging requests, responses, and server events.
+- Introducing `DBSIZE` command to retrieve the number of keys in the database.
+- Implementation of `PING` command to test connection status.
+- Configurable `thread` count from `zcached.conf` file.
+- Extended debug logging in the configuration.
+- Ability to configure `whitelist` from `zcached.conf` file.
+- Support for `HashMap` data type.
+- Ability to set `proto_max_bulk_len` from `zcached.conf` file, defining the maximum length of a bulk string that can be sent to the server (default is 512MB).
+- Introduction of thread-safe `TracingAllocator`.
+- Evented I/O mode.
+- Added a method to log requests/responses to the logger.
+- Implementation of persistence mechanism (pending `SAVE` command implementation).
+
+### [version 0.0.1] - YYYY-MM-DD (Example)
+- First working version.
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
