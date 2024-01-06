@@ -10,6 +10,11 @@ pub const LogLevel = enum {
     Warning,
     Error,
 };
+
+pub const EType = enum {
+    Request,
+    Response,
+};
 pub const Logger = struct {
     file: std.fs.File = undefined,
     log_path: []const u8 = DEFAULT_PATH,
@@ -78,12 +83,24 @@ pub const Logger = struct {
         };
     }
 
-    pub fn log_request(self: *const Logger, repr: anyerror![]const u8) void {
-        if (repr) |value| {
-            defer self.allocator.free(value);
-            self.log(LogLevel.Info, "> request: {s}", .{value});
-        } else |er| {
-            self.log(LogLevel.Error, "* failed to repr request: {any}", .{er});
+    pub fn log_event(self: *const Logger, etype: EType, payload: []const u8) void {
+        const repr = utils.repr(self.allocator, payload) catch |err| {
+            self.log(LogLevel.Error, "* failed to repr payload: {any}", .{err});
+            return;
+        };
+        defer self.allocator.free(repr);
+
+        switch (etype) {
+            EType.Request => self.log(
+                LogLevel.Info,
+                "> request: {s}",
+                .{repr},
+            ),
+            EType.Response => self.log(
+                LogLevel.Info,
+                "> response: {s}",
+                .{repr},
+            ),
         }
     }
 };

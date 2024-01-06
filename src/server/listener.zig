@@ -1,5 +1,5 @@
 const std = @import("std");
-const protocol = @import("../protocol/handler.zig");
+const ProtocolHandler = @import("../protocol/handler.zig").ProtocolHandler;
 
 const AnyType = @import("../protocol/types.zig").AnyType;
 const MemoryStorage = @import("storage.zig").MemoryStorage;
@@ -7,6 +7,7 @@ const errors = @import("err_handler.zig");
 const CMDHandler = @import("cmd_handler.zig").CMDHandler;
 const Config = @import("config.zig").Config;
 const log = @import("logger.zig");
+const utils = @import("utils.zig");
 
 const Address = std.net.Address;
 const Allocator = std.mem.Allocator;
@@ -19,8 +20,6 @@ pub const ServerListener = struct {
     addr: *const std.net.Address,
 
     allocator: Allocator,
-
-    protocol: protocol.ProtocolHandler,
     cmd_handler: CMDHandler,
     storage: *MemoryStorage,
 
@@ -39,12 +38,8 @@ pub const ServerListener = struct {
         config: *const Config,
         logger: *const log.Logger,
     ) !ServerListener {
-        const proto = protocol.ProtocolHandler.init(allocator) catch {
-            return error.ProtocolInitFailed;
-        };
-
-        const proto_ser = @import("../protocol/serializer.zig");
-        proto_ser.MAX_BULK_LEN = config.proto_max_bulk_len;
+        const serializer = @import("../protocol/serializer.zig");
+        serializer.MAX_BULK_LEN = config.proto_max_bulk_len;
 
         const cmdhandler = CMDHandler.init(allocator, storage, logger);
 
@@ -58,7 +53,6 @@ pub const ServerListener = struct {
             }),
             .allocator = allocator,
             .cmd_handler = cmdhandler,
-            .protocol = proto,
             .pool = pool,
             .addr = addr,
             .storage = storage,
@@ -73,25 +67,9 @@ pub const ServerListener = struct {
         // if somewhere in there we get an error, we just translate it to a packet and send it back.
         while (true) {
             var connection: Connection = try self.server.accept();
-            self.connections += 1;
-
-            self.protocol.serializer.raw.clearRetainingCapacity();
 
             if (self.connections > self.config.max_connections) {
                 const err = error.MaxClientsReached;
-                errors.handle(connection.stream, err, .{}, self.logger) catch {
-                    self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
-                };
-            }
-
-            if (self.config.whitelist.capacity > 0 and !self.is_whitelisted(connection.address)) {
-                self.logger.log(
-                    log.LogLevel.Info,
-                    "* connection from {any} is not whitelisted, rejected",
-                    .{connection.address},
-                );
-
-                var err = error.NotAllowed;
                 errors.handle(connection.stream, err, .{}, self.logger) catch {
                     self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
                 };
@@ -99,8 +77,15 @@ pub const ServerListener = struct {
                 return;
             }
 
-            self.logger.log(log.LogLevel.Info, "* new connection from {any}", .{connection.address});
+            self.logger.log(
+                log.LogLevel.Info,
+                "* new connection from {any}",
+                .{connection.address},
+            );
 
+            self.connections += 1;
+
+            // Adds Task to the queue, then workers do its stuff
             self.pool.spawn(
                 handle_request,
                 .{ self, connection },
@@ -119,9 +104,30 @@ pub const ServerListener = struct {
     fn handle_request(self: *ServerListener, connection: Connection) void {
         defer self.close_connection(connection);
 
+        var protocol = ProtocolHandler.init(self.allocator) catch return;
+        defer protocol.deinit();
+
+        if (self.config.whitelist.capacity > 0 and !utils.is_whitelisted(
+            self.config.whitelist,
+            connection.address,
+        )) {
+            self.logger.log(
+                log.LogLevel.Info,
+                "* connection from {any} is not whitelisted, rejected",
+                .{connection.address},
+            );
+
+            var err = error.NotAllowed;
+            errors.handle(connection.stream, err, .{}, self.logger) catch {
+                self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
+            };
+
+            return;
+        }
+
         const reader: std.net.Stream.Reader = connection.stream.reader();
-        const result: AnyType = self.protocol.serialize(&reader) catch |err| {
-            self.logger.log_request(self.protocol.repr(self.protocol.serializer.raw.items));
+        const result: AnyType = protocol.serialize(&reader) catch |err| {
+            self.logger.log_event(log.EType.Request, protocol.serializer.raw.items);
 
             errors.handle(connection.stream, err, .{}, self.logger) catch {
                 self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
@@ -130,7 +136,7 @@ pub const ServerListener = struct {
             return;
         };
 
-        self.logger.log_request(self.protocol.repr(self.protocol.serializer.raw.items));
+        self.logger.log_event(log.EType.Request, protocol.serializer.raw.items);
 
         // command is always and array of bulk strings
         if (std.meta.activeTag(result) != .array) {
@@ -148,11 +154,11 @@ pub const ServerListener = struct {
                 self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
             };
 
-            std.debug.print("failed to process command: {any}\n", .{self.protocol.serializer.raw.items});
+            std.debug.print("failed to process command: {any}\n", .{protocol.serializer.raw.items});
             return;
         }
 
-        var response = self.protocol.deserialize(cmd_result.ok) catch |err| {
+        var response = protocol.deserialize(cmd_result.ok) catch |err| {
             errors.handle(connection.stream, err, .{}, self.logger) catch |er| {
                 self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{er});
             };
@@ -164,20 +170,7 @@ pub const ServerListener = struct {
             };
         };
 
-        // log response
-        var output = self.protocol.repr(response) catch |err| {
-            self.logger.log(log.LogLevel.Error, "* failed to repr response: {any}", .{err});
-            return;
-        };
-        defer self.allocator.free(output);
-        self.logger.log(log.LogLevel.Info, "< response: {s}", .{output});
-    }
-
-    fn is_whitelisted(self: *ServerListener, addr: Address) bool {
-        for (self.config.whitelist.items) |whitelisted| {
-            if (std.meta.eql(whitelisted.any.data[2..].*, addr.any.data[2..].*)) return true;
-        }
-        return false;
+        self.logger.log_event(log.EType.Response, response);
     }
 
     fn close_connection(self: *ServerListener, connection: Connection) void {
@@ -187,7 +180,6 @@ pub const ServerListener = struct {
 
     pub fn deinit(self: *ServerListener) void {
         self.server.deinit();
-        self.protocol.deinit();
     }
 };
 
