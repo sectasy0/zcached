@@ -7,6 +7,13 @@ pub fn to_uppercase(str: []u8) []u8 {
     return result[0..str.len];
 }
 
+test "to_uppercase" {
+    const str = @constCast("hello world");
+    const expected = @constCast("HELLO WORLD");
+    const actual = to_uppercase(str);
+    try std.testing.expectEqualStrings(expected, actual);
+}
+
 pub fn ptrCast(comptime T: type, ptr: *anyopaque) *T {
     if (@alignOf(T) == 0) @compileError(@typeName(T));
     return @ptrCast(@alignCast(ptr));
@@ -20,43 +27,6 @@ pub fn create_path(file_path: []const u8) void {
         std.log.err("failed to create path: {?}", .{err});
         return;
     };
-}
-
-pub fn timestampf(buff: []u8) usize {
-    var buffer: [40]u8 = undefined;
-
-    const time = ctime.time(null);
-    const local_time = ctime.localtime(&time);
-
-    const time_len = ctime.strftime(
-        &buffer,
-        buffer.len,
-        "%Y-%m-%dT%H:%M:%S.000 %Z",
-        local_time,
-    );
-    @memcpy(buff.ptr, buffer[0..time_len]);
-    return time_len;
-}
-
-pub fn is_whitelisted(whitelist: std.ArrayList(std.net.Address), addr: std.net.Address) bool {
-    for (whitelist.items) |whitelisted| {
-        if (std.meta.eql(whitelisted.any.data[2..].*, addr.any.data[2..].*)) return true;
-    }
-    return false;
-}
-
-pub fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
-    const size = std.mem.replacementSize(u8, value, "\r\n", "\\r\\n");
-    var output = try allocator.alloc(u8, size);
-    _ = std.mem.replace(u8, value, "\r\n", "\\r\\n", output);
-    return output;
-}
-
-test "to_uppercase" {
-    const str = @constCast("hello world");
-    const expected = @constCast("HELLO WORLD");
-    const actual = to_uppercase(str);
-    try std.testing.expectEqualStrings(expected, actual);
 }
 
 test "create_path" {
@@ -96,6 +66,22 @@ test "create_path absolute" {
     };
 }
 
+pub fn timestampf(buff: []u8) usize {
+    var buffer: [40]u8 = undefined;
+
+    const time = ctime.time(null);
+    const local_time = ctime.localtime(&time);
+
+    const time_len = ctime.strftime(
+        &buffer,
+        buffer.len,
+        "%Y-%m-%dT%H:%M:%S.000 %Z",
+        local_time,
+    );
+    @memcpy(buff.ptr, buffer[0..time_len]);
+    return time_len;
+}
+
 test "timestampf should format current time correctly" {
     var buff: [40]u8 = undefined;
     const expected = "2024-01-06T12:00:00.000 UTC";
@@ -119,6 +105,12 @@ test "timestampf should format current time correctly" {
     try std.testing.expectEqualStrings(ex_buffer[0..time_len], actual);
 }
 
+pub fn is_whitelisted(whitelist: std.ArrayList(std.net.Address), addr: std.net.Address) bool {
+    for (whitelist.items) |whitelisted| {
+        if (std.meta.eql(whitelisted.any.data[2..].*, addr.any.data[2..].*)) return true;
+    }
+    return false;
+}
 test "is_whitelisted should return true for whitelisted address ipv4" {
     var whitelist = std.ArrayList(std.net.Address).init(std.testing.allocator);
     const whitelisted = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
@@ -202,6 +194,12 @@ test "is_whitelisted should return fallse for non whitelisted address ipv6" {
     try std.testing.expectEqual(false, is_whitelisted(whitelist, addrToCheck));
 }
 
+pub fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
+    const size = std.mem.replacementSize(u8, value, "\r\n", "\\r\\n");
+    var output = try allocator.alloc(u8, size);
+    _ = std.mem.replace(u8, value, "\r\n", "\\r\\n", output);
+    return output;
+}
 test "repr" {
     var expected: []const u8 = "Hello\\r\\nWorld";
     var input: []const u8 = "Hello\r\nWorld";
