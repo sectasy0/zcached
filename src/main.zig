@@ -10,8 +10,10 @@ const log = @import("server/logger.zig");
 const TracingAllocator = @import("server/tracing.zig").TracingAllocator;
 const persistance = @import("server/persistance.zig");
 
+pub const io_mode = .evented;
+
 pub fn main() void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.GeneralPurposeAllocator(.{ .safety = true }){};
     var allocator = gpa.allocator();
 
     const args = CLIParser.parse(allocator) catch {
