@@ -117,7 +117,7 @@ pub const ServerListener = struct {
                 .{connection.address},
             );
 
-            var err = error.NotAllowed;
+            var err = error.NotWhitelisted;
             errors.handle(connection.stream, err, .{}, self.logger) catch {
                 self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
             };
