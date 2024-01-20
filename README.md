@@ -54,7 +54,7 @@ echo "*3\r\n\$3\r\nSET\r\n\$9\r\nmycounter\r\n:42\r\n" | netcat -N localhost 755
 ```
 
 ```bash
-echo "*3\r\n\$3\r\nSET\r\n\$7\r\nmyconter\r\n%2\r\n+first\r\n:1\r\n+second\r\n:2\r\n" | netcat -N localhost 7556
+echo "*3\r\n\$3\r\nSET\r\n\$9\r\nmycounter\r\n%2\r\n+first\r\n:1\r\n+second\r\n:2\r\n" | netcat -N localhost 7556
 ```
 
 #### Command Breakdown:
