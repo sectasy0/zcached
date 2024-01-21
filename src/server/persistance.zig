@@ -221,6 +221,8 @@ pub const PersistanceHandler = struct {
 };
 
 test "should save" {
+    std.fs.cwd().makePath("./tmp/persist") catch {};
+
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
@@ -247,9 +249,12 @@ test "should save" {
     const result = try persister.save(&storage);
 
     try std.testing.expectEqual(result, 108);
+
+    std.fs.cwd().deleteDir("./tmp/persist") catch {};
 }
 
 test "should load" {
+    std.fs.cwd().makePath("./tmp/persist") catch {};
     std.fs.cwd().deleteFile("./tmp/persist/dump_latest.zcpf") catch {};
 
     var config = try Config.load(std.testing.allocator, null, null);
@@ -281,9 +286,11 @@ test "should load" {
     try std.testing.expectEqual(storage.internal.count(), 4);
 
     std.fs.cwd().deleteFile("./tmp/persist/dump_latest.zcpf") catch {};
+    std.fs.cwd().deleteDir("./tmp/persist") catch {};
 }
 
 test "should not load without header" {
+    std.fs.cwd().makePath("./tmp/persist") catch {};
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
@@ -312,10 +319,13 @@ test "should not load without header" {
 
     try std.testing.expectEqual(persister.load(&storage), error.InvalidFile);
 
-    try std.fs.cwd().deleteFile("./tmp/persist/without_header/dump_latest_invalid.zcpf");
+    std.fs.cwd().deleteFile("./tmp/persist/without_header/dump_latest_invalid.zcpf") catch {};
+    std.fs.cwd().deleteDir("./tmp/persist") catch {};
 }
 
 test "should not load invalid ext" {
+    std.fs.cwd().makePath("./tmp/persist") catch {};
+
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
@@ -345,9 +355,12 @@ test "should not load invalid ext" {
     try std.testing.expectEqual(persister.load(&storage), error.FileNotFound);
 
     std.fs.cwd().deleteFile("./tmp/persist/invalid_ext/dump_latest_invalid.asdf") catch {};
+    std.fs.cwd().deleteDir("./tmp/persist") catch {};
 }
 
 test "should not load corrupted file" {
+    std.fs.cwd().makePath("./tmp/persist") catch {};
+
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
@@ -377,4 +390,5 @@ test "should not load corrupted file" {
     try std.testing.expectEqual(persister.load(&storage), error.FileNotFound);
 
     std.fs.cwd().deleteFile("./tmp/persist/corrupted/dump_latest_invalid.asdf") catch {};
+    std.fs.cwd().deleteDir("./tmp/persist") catch {};
 }
