@@ -21,6 +21,7 @@ pub fn handle(stream: anytype, err: anyerror, args: Args, logger: *const log.Log
         error.MaxClientsReached => try out.writeAll("-max number of clients reached\r\n"),
         error.BulkTooLarge => try out.writeAll("-bulk too large\r\n"),
         error.NotWhitelisted => try out.writeAll("-not whitelisted\r\n"),
+        error.DBEmpty => try out.writeAll("-db empty\r\n"),
         else => try out.writeAll("-unexpected\r\n"),
     };
 }

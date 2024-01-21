@@ -55,7 +55,7 @@ pub const PersistanceHandler = struct {
         self.deserializer.deinit();
     }
 
-    pub fn save(self: *PersistanceHandler, storage: MemoryStorage) !usize {
+    pub fn save(self: *PersistanceHandler, storage: *MemoryStorage) !usize {
         const allocator = self.arena.allocator();
         var bytes = std.ArrayList(u8).init(allocator);
 
@@ -93,7 +93,11 @@ pub const PersistanceHandler = struct {
             var key = try self.serializer.process(.{ .str = @constCast(item.key_ptr.*) });
             try bytes.appendSlice(key);
 
+            std.debug.print("{*}", .{item.value_ptr});
+
             var value = try self.serializer.process(item.value_ptr.*);
+
+            std.debug.print("{s}", .{key});
             try bytes.appendSlice(value);
         }
 
@@ -139,6 +143,10 @@ pub const PersistanceHandler = struct {
         };
         defer file.close();
 
+        std.debug.print("{d}", .{latest.?.size});
+
+        if (latest.?.size == 0) return;
+
         var buffer = try self.arena.allocator().alloc(u8, latest.?.size);
         defer self.arena.allocator().free(buffer);
 
@@ -168,7 +176,7 @@ pub const PersistanceHandler = struct {
                 return error.InvalidFile;
             };
 
-            try storage.put(key.str, value);
+            try storage.internal.put(key.str, value);
         }
     }
 
@@ -219,26 +227,27 @@ test "should save" {
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
-    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
-    var storage = MemoryStorage.init(tracing_allocator.allocator(), config);
-    defer storage.deinit();
-
     var logger = try log.Logger.init(std.testing.allocator, null);
+
+    var persister = try PersistanceHandler.init(
+        std.testing.allocator,
+        config,
+        logger,
+        null,
+    );
+
+    defer persister.deinit();
+
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var storage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer storage.deinit();
 
     try storage.put("test1", .{ .str = @constCast("testtest") });
     try storage.put("test2", .{ .str = @constCast("testtest") });
     try storage.put("test3", .{ .str = @constCast("testtest") });
     try storage.put("test4", .{ .str = @constCast("testtest") });
 
-    var persister = try PersistanceHandler.init(
-        std.testing.allocator,
-        config,
-        logger,
-        "./tmp/persist/save/",
-    );
-    defer persister.deinit();
-
-    const result = try persister.save(storage);
+    const result = try persister.save(&storage);
 
     try std.testing.expectEqual(result, 108);
 }
@@ -249,10 +258,6 @@ test "should load" {
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
-    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
-    var storage = MemoryStorage.init(tracing_allocator.allocator(), config);
-    defer storage.deinit();
-
     var logger = try log.Logger.init(std.testing.allocator, null);
 
     var persister = try PersistanceHandler.init(
@@ -262,6 +267,10 @@ test "should load" {
         "./tmp/persist/",
     );
     defer persister.deinit();
+
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var storage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer storage.deinit();
 
     try std.testing.expectEqual(storage.internal.count(), 0);
 
@@ -281,13 +290,7 @@ test "should not load without header" {
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
-    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
-    var storage = MemoryStorage.init(tracing_allocator.allocator(), config);
-    defer storage.deinit();
-
     var logger = try log.Logger.init(std.testing.allocator, null);
-
-    std.fs.cwd().makeDir("./tmp/persist/without_header") catch {};
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -296,6 +299,12 @@ test "should not load without header" {
         "./tmp/persist/without_header/",
     );
     defer persister.deinit();
+
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var storage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer storage.deinit();
+
+    std.fs.cwd().makeDir("./tmp/persist/without_header") catch {};
 
     try std.testing.expectEqual(storage.internal.count(), 0);
 
@@ -313,13 +322,7 @@ test "should not load invalid ext" {
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
-    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
-    var storage = MemoryStorage.init(tracing_allocator.allocator(), config);
-    defer storage.deinit();
-
     var logger = try log.Logger.init(std.testing.allocator, null);
-
-    std.fs.cwd().makeDir("./tmp/persist/invalid_ext") catch {};
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -328,6 +331,12 @@ test "should not load invalid ext" {
         "./tmp/persist/invalid_ext/",
     );
     defer persister.deinit();
+
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var storage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer storage.deinit();
+
+    std.fs.cwd().makeDir("./tmp/persist/invalid_ext") catch {};
 
     try std.testing.expectEqual(storage.internal.count(), 0);
 
@@ -345,13 +354,7 @@ test "should not load corrupted file" {
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
-    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
-    var storage = MemoryStorage.init(tracing_allocator.allocator(), config);
-    defer storage.deinit();
-
     var logger = try log.Logger.init(std.testing.allocator, null);
-
-    std.fs.cwd().makeDir("./tmp/persist/corrupted") catch {};
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -360,6 +363,12 @@ test "should not load corrupted file" {
         "./tmp/persist/corrupted/",
     );
     defer persister.deinit();
+
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+    var storage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer storage.deinit();
+
+    std.fs.cwd().makeDir("./tmp/persist/corrupted") catch {};
 
     try std.testing.expectEqual(storage.internal.count(), 0);
 

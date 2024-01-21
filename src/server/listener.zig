@@ -1,7 +1,7 @@
 const std = @import("std");
 const ProtocolHandler = @import("../protocol/handler.zig").ProtocolHandler;
 
-const AnyType = @import("../protocol/types.zig").AnyType;
+const ZType = @import("../protocol/types.zig").ZType;
 const MemoryStorage = @import("storage.zig").MemoryStorage;
 const errors = @import("err_handler.zig");
 const CMDHandler = @import("cmd_handler.zig").CMDHandler;
@@ -85,6 +85,8 @@ pub const ServerListener = struct {
 
             self.connections += 1;
 
+            // handle_request(self, connection);
+
             // Adds Task to the queue, then workers do its stuff
             self.pool.spawn(
                 handle_request,
@@ -126,7 +128,7 @@ pub const ServerListener = struct {
         }
 
         const reader: std.net.Stream.Reader = connection.stream.reader();
-        const result: AnyType = protocol.serialize(&reader) catch |err| {
+        const result: ZType = protocol.serialize(&reader) catch |err| {
             self.logger.log_event(log.EType.Request, protocol.serializer.raw.items);
 
             errors.handle(connection.stream, err, .{}, self.logger) catch {

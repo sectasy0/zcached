@@ -24,11 +24,11 @@ fn ProtocolHandlerT(comptime GenericReader: type) type {
             };
         }
 
-        pub fn serialize(self: *Self, reader: GenericReader) !types.AnyType {
+        pub fn serialize(self: *Self, reader: GenericReader) !types.ZType {
             return self.serializer.process(reader);
         }
 
-        pub fn deserialize(self: *Self, value: types.AnyType) anyerror![]const u8 {
+        pub fn deserialize(self: *Self, value: types.ZType) anyerror![]const u8 {
             return self.deserializer.process(value);
         }
 
@@ -56,7 +56,7 @@ test "serialize" {
 }
 
 test "deserialize" {
-    var array = std.ArrayList(types.AnyType).init(std.testing.allocator);
+    var array = std.ArrayList(types.ZType).init(std.testing.allocator);
     defer array.deinit();
 
     try array.append(.{ .str = @constCast("first") });

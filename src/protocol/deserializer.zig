@@ -16,7 +16,7 @@ pub const Deserializer = struct {
         self.arena.deinit();
     }
 
-    pub fn process(self: *Deserializer, input: types.AnyType) anyerror![]const u8 {
+    pub fn process(self: *Deserializer, input: types.ZType) anyerror![]const u8 {
         switch (input) {
             .str => return try self.deserialize_str(input),
             .sstr => return try self.deserialize_sstr(input),
@@ -30,7 +30,7 @@ pub const Deserializer = struct {
         }
     }
 
-    fn deserialize_str(self: *Deserializer, input: types.AnyType) ![]const u8 {
+    fn deserialize_str(self: *Deserializer, input: types.ZType) ![]const u8 {
         const bytes = std.fmt.allocPrint(
             self.arena.allocator(),
             "${d}\r\n{s}\r\n",
@@ -41,7 +41,7 @@ pub const Deserializer = struct {
         return bytes;
     }
 
-    fn deserialize_sstr(self: *Deserializer, input: types.AnyType) ![]const u8 {
+    fn deserialize_sstr(self: *Deserializer, input: types.ZType) ![]const u8 {
         const bytes = std.fmt.allocPrint(
             self.arena.allocator(),
             "+{s}\r\n",
@@ -52,7 +52,7 @@ pub const Deserializer = struct {
         return bytes;
     }
 
-    fn deserialize_int(self: *Deserializer, input: types.AnyType) ![]const u8 {
+    fn deserialize_int(self: *Deserializer, input: types.ZType) ![]const u8 {
         const bytes = std.fmt.allocPrint(
             self.arena.allocator(),
             ":{d}\r\n",
@@ -63,7 +63,7 @@ pub const Deserializer = struct {
         return bytes;
     }
 
-    fn deserialize_bool(self: *Deserializer, input: types.AnyType) ![]const u8 {
+    fn deserialize_bool(self: *Deserializer, input: types.ZType) ![]const u8 {
         var bool_byte: [1]u8 = undefined;
         if (input.bool) {
             bool_byte = @constCast("t").*;
@@ -80,13 +80,13 @@ pub const Deserializer = struct {
         return bytes;
     }
 
-    fn deserialize_null(self: *Deserializer, input: types.AnyType) ![]const u8 {
+    fn deserialize_null(self: *Deserializer, input: types.ZType) ![]const u8 {
         _ = input;
         _ = self;
         return "_\r\n";
     }
 
-    fn deserialize_error(self: *Deserializer, input: types.AnyType) ![]const u8 {
+    fn deserialize_error(self: *Deserializer, input: types.ZType) ![]const u8 {
         const bytes = std.fmt.allocPrint(
             self.arena.allocator(),
             "-{s}\r\n",
@@ -97,7 +97,7 @@ pub const Deserializer = struct {
         return bytes;
     }
 
-    fn deserialize_float(self: *Deserializer, input: types.AnyType) ![]const u8 {
+    fn deserialize_float(self: *Deserializer, input: types.ZType) ![]const u8 {
         const bytes = std.fmt.allocPrint(
             self.arena.allocator(),
             ",{d}\r\n",
@@ -108,7 +108,7 @@ pub const Deserializer = struct {
         return bytes;
     }
 
-    fn deserialize_array(self: *Deserializer, input: types.AnyType) ![]const u8 {
+    fn deserialize_array(self: *Deserializer, input: types.ZType) ![]const u8 {
         var result: []u8 = undefined;
 
         const array_prefix = std.fmt.allocPrint(
@@ -133,7 +133,7 @@ pub const Deserializer = struct {
         return result;
     }
 
-    fn deserialize_map(self: *Deserializer, input: types.AnyType) ![]const u8 {
+    fn deserialize_map(self: *Deserializer, input: types.ZType) ![]const u8 {
         var result: []u8 = undefined;
 
         const map_prefix = std.fmt.allocPrint(
@@ -154,6 +154,7 @@ pub const Deserializer = struct {
                 u8,
                 &.{ result, bytes },
             );
+            std.debug.print("{s}", .{ key_part });
             result = key_part;
 
             bytes = try self.process(item.value_ptr.*);
@@ -172,7 +173,7 @@ test "deserialize string" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
 
-    const input = types.AnyType{ .str = @constCast("hello world") };
+    const input = types.ZType{ .str = @constCast("hello world") };
 
     const expected = "$11\r\nhello world\r\n";
     const result = try deserializer.process(input);
@@ -183,7 +184,7 @@ test "deserialize empty string" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
 
-    const input = types.AnyType{ .str = @constCast("") };
+    const input = types.ZType{ .str = @constCast("") };
 
     const expected = "$0\r\n\r\n";
     const result = try deserializer.process(input);
@@ -194,7 +195,7 @@ test "deserialize int" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
 
-    const input = types.AnyType{ .int = 123 };
+    const input = types.ZType{ .int = 123 };
 
     const expected = ":123\r\n";
     const result = try deserializer.process(input);
@@ -205,7 +206,7 @@ test "deserialize bool true" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
 
-    const input = types.AnyType{ .bool = true };
+    const input = types.ZType{ .bool = true };
 
     const expected = "#t\r\n";
     const result = try deserializer.process(input);
@@ -216,7 +217,7 @@ test "deserialize bool false" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
 
-    const input = types.AnyType{ .bool = false };
+    const input = types.ZType{ .bool = false };
 
     const expected = "#f\r\n";
     const result = try deserializer.process(input);
@@ -227,7 +228,7 @@ test "deserialize null" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
 
-    const input = types.AnyType{ .null = void{} };
+    const input = types.ZType{ .null = void{} };
 
     const expected = "_\r\n";
     const result = try deserializer.process(input);
@@ -238,7 +239,7 @@ test "deserialize float" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
 
-    const input = types.AnyType{ .float = 123.456 };
+    const input = types.ZType{ .float = 123.456 };
 
     const expected = ",123.456\r\n";
     const result = try deserializer.process(input);
@@ -249,7 +250,7 @@ test "deserialize simple string" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
 
-    const input = types.AnyType{ .sstr = @constCast("hello world") };
+    const input = types.ZType{ .sstr = @constCast("hello world") };
 
     const expected = "+hello world\r\n";
     const result = try deserializer.process(input);
@@ -257,7 +258,7 @@ test "deserialize simple string" {
 }
 
 test "deserialize array" {
-    var array = std.ArrayList(types.AnyType).init(std.testing.allocator);
+    var array = std.ArrayList(types.ZType).init(std.testing.allocator);
     defer array.deinit();
 
     try array.append(.{ .str = @constCast("first") });
@@ -267,7 +268,7 @@ test "deserialize array" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
 
-    var value = types.AnyType{ .array = array };
+    var value = types.ZType{ .array = array };
 
     var result = try deserializer.process(value);
     const expected = "*3\r\n$5\r\nfirst\r\n$6\r\nsecond\r\n$5\r\nthird\r\n";
@@ -275,7 +276,7 @@ test "deserialize array" {
 }
 
 test "serialize map" {
-    var map = std.StringHashMap(types.AnyType).init(std.testing.allocator);
+    var map = std.StringHashMap(types.ZType).init(std.testing.allocator);
     defer map.deinit();
 
     try map.put("a", .{ .str = @constCast("first") });
@@ -285,7 +286,7 @@ test "serialize map" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
 
-    var value = types.AnyType{ .map = map };
+    var value = types.ZType{ .map = map };
 
     var result = try deserializer.process(value);
     // it's not guaranteed that the order of the map will be the same

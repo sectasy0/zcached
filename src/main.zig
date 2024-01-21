@@ -13,8 +13,13 @@ const persistance = @import("server/persistance.zig");
 pub const io_mode = .evented;
 
 pub fn main() void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{ .safety = true }){};
-    var allocator = gpa.allocator();
+    var gpa = std.heap.GeneralPurposeAllocator(.{
+        .safety = true,
+        .verbose_log = true,
+        .retain_metadata = true,
+    }){};
+    var lalloc = std.heap.loggingAllocator(gpa.allocator());
+    var allocator = lalloc.allocator();
 
     const result = cli.Parser.parse(allocator) catch {
         cli.Parser.show_help() catch |err| {
@@ -61,6 +66,7 @@ pub fn main() void {
     var mem_storage = storage.MemoryStorage.init(
         tracing_allocator.allocator(),
         config,
+        &persister,
     );
     defer mem_storage.deinit();
 
