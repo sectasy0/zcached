@@ -93,11 +93,8 @@ pub const PersistanceHandler = struct {
             var key = try self.serializer.process(.{ .str = @constCast(item.key_ptr.*) });
             try bytes.appendSlice(key);
 
-            std.debug.print("{*}", .{item.value_ptr});
-
             var value = try self.serializer.process(item.value_ptr.*);
 
-            std.debug.print("{s}", .{key});
             try bytes.appendSlice(value);
         }
 

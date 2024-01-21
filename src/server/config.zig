@@ -314,8 +314,6 @@ test "config load custom values whitelist" {
     const address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, config.address.getPort());
     const address_second = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, config.address.getPort());
 
-    std.debug.print("DEBUG [{d}] * {?}\n", .{ std.time.timestamp(), config.whitelist.items[0] });
-
     try std.testing.expectEqual(config.whitelist.items[0].any, address.any);
     try std.testing.expectEqual(config.whitelist.items[1].any, address_second.any);
 }
