@@ -85,8 +85,6 @@ pub const ServerListener = struct {
 
             self.connections += 1;
 
-            // handle_request(self, connection);
-
             // Adds Task to the queue, then workers do its stuff
             self.pool.spawn(
                 handle_request,

@@ -1,7 +1,7 @@
 const std = @import("std");
 const utils = @import("utils.zig");
 
-const DEFAULT_PATH: []const u8 = "./log/zcached.log";
+pub const DEFAULT_PATH: []const u8 = "./log/zcached.log";
 const BUFFER_SIZE: usize = 4096;
 
 pub const LogLevel = enum {
@@ -104,86 +104,3 @@ pub const Logger = struct {
         }
     }
 };
-
-test "test logger debug" {
-    std.fs.cwd().deleteTree("log") catch {};
-    var logger = try Logger.init(
-        std.testing.allocator,
-        null,
-    );
-    logger.log(LogLevel.Debug, "{s}", .{"test"});
-
-    var file = try std.fs.cwd().openFile(DEFAULT_PATH, .{ .mode = .read_only });
-    defer file.close();
-
-    const file_size = (try file.stat()).size;
-    var buffer = try std.testing.allocator.alloc(u8, file_size);
-    const readed = try file.readAll(buffer);
-    _ = readed;
-    defer std.testing.allocator.free(buffer);
-
-    try std.testing.expectStringEndsWith(buffer, "test\n");
-    try std.testing.expectStringStartsWith(buffer, "DEBUG [");
-
-    std.fs.cwd().deleteTree("log") catch {};
-}
-
-test "test logger info" {
-    std.fs.cwd().deleteTree("log") catch {};
-    var logger = try Logger.init(std.testing.allocator, null);
-    logger.log(LogLevel.Info, "{s}", .{"test"});
-
-    var file = try std.fs.cwd().openFile(DEFAULT_PATH, .{ .mode = .read_only });
-    defer file.close();
-
-    const file_size = (try file.stat()).size;
-    var buffer = try std.testing.allocator.alloc(u8, file_size);
-    const readed = try file.readAll(buffer);
-    _ = readed;
-    defer std.testing.allocator.free(buffer);
-
-    try std.testing.expectStringEndsWith(buffer, "test\n");
-    try std.testing.expectStringStartsWith(buffer, "INFO [");
-
-    std.fs.cwd().deleteTree("log") catch {};
-}
-
-test "test logger warning" {
-    std.fs.cwd().deleteTree("log") catch {};
-    var logger = try Logger.init(std.testing.allocator, null);
-    logger.log(LogLevel.Warning, "{s}", .{"test"});
-
-    var file = try std.fs.cwd().openFile(DEFAULT_PATH, .{ .mode = .read_only });
-    defer file.close();
-
-    const file_size = (try file.stat()).size;
-    var buffer = try std.testing.allocator.alloc(u8, file_size);
-    const readed = try file.readAll(buffer);
-    _ = readed;
-    defer std.testing.allocator.free(buffer);
-
-    try std.testing.expectStringEndsWith(buffer, "test\n");
-    try std.testing.expectStringStartsWith(buffer, "WARN [");
-
-    std.fs.cwd().deleteTree("log") catch {};
-}
-
-test "test logger error" {
-    std.fs.cwd().deleteTree("log") catch {};
-    var logger = try Logger.init(std.testing.allocator, null);
-    logger.log(LogLevel.Error, "{s}", .{"test"});
-
-    var file = try std.fs.cwd().openFile(DEFAULT_PATH, .{ .mode = .read_only });
-    defer file.close();
-
-    const file_size = (try file.stat()).size;
-    var buffer = try std.testing.allocator.alloc(u8, file_size);
-    const readed = try file.readAll(buffer);
-    _ = readed;
-    defer std.testing.allocator.free(buffer);
-
-    try std.testing.expectStringEndsWith(buffer, "test\n");
-    try std.testing.expectStringStartsWith(buffer, "ERROR [");
-
-    std.fs.cwd().deleteTree("log") catch {};
-}
