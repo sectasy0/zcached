@@ -80,8 +80,8 @@ for supported types and their encodings, see [types.md](types.md)
 
 ## Todo for v1.0.0
 - [ ] Support for more data types eg. Hashes, Sets, Sorted Sets. (Currently only supports Strings, Integers, Floats, Booleans, Nulls, Arrays, and HashMaps).
-- [ ] Create CLI Interface.
-- [ ] Add `SAVE` command for manual saving.
+- [x] Create CLI Interface.
+- [x] Add `SAVE` command for manual saving.
 - [x] Persistance mechanism, for further usage.
 - [x] Add `DBSIZE` command for getting the number of keys in the database.
 - [ ] Ability to set a TTL for a key, `EXPIRE` command for set, `TTL` command for check.
