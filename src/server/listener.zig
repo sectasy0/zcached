@@ -12,6 +12,7 @@ const utils = @import("utils.zig");
 const Address = std.net.Address;
 const Allocator = std.mem.Allocator;
 const Pool = std.Thread.Pool;
+const activeTag = std.meta.activeTag;
 
 const Connection = std.net.StreamServer.Connection;
 
@@ -125,6 +126,7 @@ pub const ServerListener = struct {
             return;
         }
 
+        // reading data from client and then try to parse to protocol.
         const reader: std.net.Stream.Reader = connection.stream.reader();
         const result: ZType = protocol.serialize(&reader) catch |err| {
             self.logger.log_event(log.EType.Request, protocol.serializer.raw.items);
@@ -138,8 +140,8 @@ pub const ServerListener = struct {
 
         self.logger.log_event(log.EType.Request, protocol.serializer.raw.items);
 
-        // command is always and array of bulk strings
-        if (std.meta.activeTag(result) != .array) {
+        // command is always and array of bulk strings. Processing command below.
+        if (result != .array) {
             errors.handle(connection.stream, error.UnknownCommand, .{}, self.logger) catch |err| {
                 self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
             };
@@ -147,9 +149,10 @@ pub const ServerListener = struct {
         }
 
         const command_set = &result.array;
+        defer command_set.deinit();
 
-        const cmd_result = self.cmd_handler.process(command_set);
-        if (std.meta.activeTag(cmd_result) != .ok) {
+        var cmd_result = self.cmd_handler.process(command_set);
+        if (cmd_result != .ok) {
             errors.handle(connection.stream, cmd_result.err, .{}, self.logger) catch |err| {
                 self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
             };
@@ -157,6 +160,13 @@ pub const ServerListener = struct {
             std.debug.print("failed to process command: {any}\n", .{protocol.serializer.raw.items});
             return;
         }
+
+        // need to free if is map or array.
+        defer switch (cmd_result.ok) {
+            .map => cmd_result.ok.map.deinit(),
+            .array => cmd_result.ok.array.deinit(),
+            inline else => {},
+        };
 
         var response = protocol.deserialize(cmd_result.ok) catch |err| {
             errors.handle(connection.stream, err, .{}, self.logger) catch |er| {

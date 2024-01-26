@@ -235,3 +235,168 @@ test "should handle DBSIZE command" {
     var result = cmd_handler.process(&command_set);
     try std.testing.expectEqual(result.ok, .{ .int = 2 });
 }
+
+test "should handle MGET command" {
+    const config = try Config.load(std.testing.allocator, null, null);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+
+    var logger = try log.Logger.init(std.testing.allocator, null);
+
+    var persister = try PersistanceHandler.init(
+        std.testing.allocator,
+        config,
+        logger,
+        null,
+    );
+
+    defer persister.deinit();
+
+    var mstorage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer mstorage.deinit();
+
+    try mstorage.put("key", .{ .str = @constCast("value") });
+    try mstorage.put("key2", .{ .str = @constCast("value2") });
+
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
+
+    var command_set = std.ArrayList(ZType).init(std.testing.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("MGET") });
+    try command_set.append(.{ .str = @constCast("key") });
+    try command_set.append(.{ .str = @constCast("key2") });
+    try command_set.append(.{ .str = @constCast("key3") });
+
+    var result = cmd_handler.process(&command_set);
+    defer result.ok.map.deinit();
+    try std.testing.expectEqual(std.meta.activeTag(result.ok), .map);
+    try std.testing.expectEqualStrings(result.ok.map.get("key").?.str, @constCast("value"));
+    try std.testing.expectEqualStrings(result.ok.map.get("key2").?.str, @constCast("value2"));
+    try std.testing.expectEqual(result.ok.map.get("key3").?.null, .{ .null = void{} });
+}
+
+test "should handle MSET command" {
+    const config = try Config.load(std.testing.allocator, null, null);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+
+    var logger = try log.Logger.init(std.testing.allocator, null);
+
+    var persister = try PersistanceHandler.init(
+        std.testing.allocator,
+        config,
+        logger,
+        null,
+    );
+
+    defer persister.deinit();
+
+    var mstorage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer mstorage.deinit();
+
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
+
+    var command_set = std.ArrayList(ZType).init(std.testing.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("MSET") });
+    try command_set.append(.{ .str = @constCast("key") });
+    try command_set.append(.{ .str = @constCast("value123") });
+
+    var result = cmd_handler.process(&command_set);
+
+    try std.testing.expectEqual(result.ok, .{ .sstr = @constCast("OK") });
+    try std.testing.expectEqualStrings((try mstorage.get("key")).str, command_set.items[2].str);
+}
+
+test "should handle MSET return InvalidArgs when empty" {
+    const config = try Config.load(std.testing.allocator, null, null);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+
+    var logger = try log.Logger.init(std.testing.allocator, null);
+
+    var persister = try PersistanceHandler.init(
+        std.testing.allocator,
+        config,
+        logger,
+        null,
+    );
+
+    defer persister.deinit();
+
+    var mstorage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer mstorage.deinit();
+
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
+
+    var command_set = std.ArrayList(ZType).init(std.testing.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("MSET") });
+
+    var result = cmd_handler.process(&command_set);
+
+    try std.testing.expectEqual(result.err, error.InvalidArgs);
+}
+
+test "should handle MSET and return InvalidArgs when not even" {
+    const config = try Config.load(std.testing.allocator, null, null);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+
+    var logger = try log.Logger.init(std.testing.allocator, null);
+
+    var persister = try PersistanceHandler.init(
+        std.testing.allocator,
+        config,
+        logger,
+        null,
+    );
+
+    defer persister.deinit();
+
+    var mstorage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer mstorage.deinit();
+
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
+
+    var command_set = std.ArrayList(ZType).init(std.testing.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("MSET") });
+    try command_set.append(.{ .str = @constCast("key") });
+
+    var result = cmd_handler.process(&command_set);
+
+    try std.testing.expectEqual(result.err, error.InvalidArgs);
+}
+
+test "should handle MSET and return KeyNotString" {
+    const config = try Config.load(std.testing.allocator, null, null);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+
+    var logger = try log.Logger.init(std.testing.allocator, null);
+
+    var persister = try PersistanceHandler.init(
+        std.testing.allocator,
+        config,
+        logger,
+        null,
+    );
+
+    defer persister.deinit();
+
+    var mstorage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer mstorage.deinit();
+
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
+
+    var command_set = std.ArrayList(ZType).init(std.testing.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("MSET") });
+    try command_set.append(.{ .sstr = @constCast("key") });
+    try command_set.append(.{ .sstr = @constCast("value") });
+
+    var result = cmd_handler.process(&command_set);
+
+    try std.testing.expectEqual(result.err, error.KeyNotString);
+}

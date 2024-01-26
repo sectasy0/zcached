@@ -48,6 +48,8 @@ While `zcached` lacks a CLI, you can utilize nc (netcat) from the terminal to se
 
 ### Example Commands
 
+For all supported commands and their syntaxt, see [commands.md](commands.md) 
+
 #### SET
 Set a key to hold the string value. If key already holds a value, it is overwritten, regardless of its type.
 ```bash
@@ -81,7 +83,6 @@ for supported types and their encodings, see [types.md](types.md)
 ## Todo for v1.0.0
 - [ ] Support for more data types eg. Hashes, Sets, Sorted Sets. (Currently only supports Strings, Integers, Floats, Booleans, Nulls, Arrays, and HashMaps).
 - [x] Create CLI Interface.
-- [x] Add `SAVE` command for manual saving.
 - [x] Persistance mechanism, for further usage.
 - [x] Add `DBSIZE` command for getting the number of keys in the database.
 - [ ] Ability to set a TTL for a key, `EXPIRE` command for set, `TTL` command for check.
@@ -96,27 +97,30 @@ for supported types and their encodings, see [types.md](types.md)
 ## Release History
 
 ### [unreleased]
-- Ability to configure server listen address and port from `zcached.conf` file.
-- Ability to configure max clients from `zcached.conf` file.
-- Ability to configure max memory from `zcached.conf` file.
-- CLI interface for server binary.
-- Ability to pass different configuration file path from the command line.
-- Configurable logger with the option to log to a custom file.
-- Logging requests, responses, and server events.
-- Introducing `DBSIZE` command to retrieve the number of keys in the database.
-- Implementation of `PING` command to test connection status.
-- Configurable `thread` count from `zcached.conf` file.
-- Extended debug logging in the configuration.
-- Ability to configure `whitelist` from `zcached.conf` file.
-- Support for `HashMap` data type.
-- Ability to set `proto_max_bulk_len` from `zcached.conf` file, defining the maximum length of a bulk string that can be sent to the server (default is 512MB).
-- Introduction of thread-safe `TracingAllocator`.
-- Evented I/O mode.
-- Added a method to log requests/responses to the logger.
-- Implementation of persistence mechanism (pending `SAVE` command implementation).
+- feat(config): ability to configure server listen address and port from `zcached.conf` file.
+- feat(config): ability to configure max clients from `zcached.conf` file.
+- feat(config): ability to configure max memory from `zcached.conf` file.
+- feat: cli interface for server binary.
+- feat(cli): ability to pass different configuration file path from the command line.
+- feat(logger): configurable logger with the option to log to a custom file.
+- feat(logger): logging requests, responses, and server events.
+- feat(command): Introducing `DBSIZE` command to retrieve the number of keys in the database.
+- feat(command): implementation of `PING` command to test connection status.
+- feat(config): configurable `thread` count from `zcached.conf` file.
+- feat(logger): extended debug logging in the configuration.
+- feat(config): ability to configure `whitelist` from `zcached.conf` file.
+- feat: support for `HashMap` data type.
+- feat(config): ability to set `proto_max_bulk_len` from `zcached.conf` file, defining the maximum length of a bulk string that can be sent to the server (default is 512MB).
+- feat: introduction of thread-safe `TracingAllocator`. // I have to change this allocator to `ArenaAllocator`
+- feat: evented input/output mode.
+- feat: Implementation of persistence mechanism.
+- fix: segmentation fault after tryin to get value that client send.
+- feat(command): `SAVE` for dumping db to disk.
+- feat(command): `MSET` and `MGET` for seting and geting multiple keys at once.
+- fix: arrays and maps should be freed after returning to the client.
 
-### [version 0.0.1] - YYYY-MM-DD (Example)
-- First working version.
+### [version 0.0.1] - 11-12-2023
+- feat: first working version.
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
