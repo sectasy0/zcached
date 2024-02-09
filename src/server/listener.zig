@@ -153,7 +153,8 @@ pub const ServerListener = struct {
 
         var cmd_result = self.cmd_handler.process(command_set);
         if (cmd_result != .ok) {
-            errors.handle(connection.stream, cmd_result.err, .{}, self.logger) catch |err| {
+            var args = errors.build_args(command_set);
+            errors.handle(connection.stream, cmd_result.err, args, self.logger) catch |err| {
                 self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
             };
 
