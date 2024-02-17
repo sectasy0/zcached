@@ -48,7 +48,7 @@ While `zcached` lacks a CLI, you can utilize nc (netcat) from the terminal to se
 
 ### Example Commands
 
-For all supported commands and their syntaxt, see [commands.md](commands.md) 
+For all supported commands and their syntaxt, see [commands.md](commands.md)
 
 #### SET
 Set a key to hold the string value. If key already holds a value, it is overwritten, regardless of its type.
@@ -85,14 +85,13 @@ for supported types and their encodings, see [types.md](types.md)
 - [x] Create CLI Interface.
 - [x] Persistance mechanism, for further usage.
 - [x] Add `DBSIZE` command for getting the number of keys in the database.
-- [ ] Ability to set a TTL for a key, `EXPIRE` command for set, `TTL` command for check.
-- [ ] Ability to set background save interval, `BGSAVE` command.
+- [ ] Asynchronous save, `ASAVE`.
 - [x] Server events logging.
 - [x] Configurable server (port, max clients, max memory, etc.).
 - [x] Connections whitelisting.
 - [x] Pass different configuration file path from command line.
 - [ ] Client side library.
-- [ ] Encrypted connections, e.g TLS 1.3 or use QUIC (Currently there is no server-side support for TLS in zig, I could use `https://github.com/shiguredo/tls13-zig`).
+- [ ] *Encrypted connections, e.g TLS 1.3 or use QUIC (Currently there is no server-side support for TLS in zig, I could use `https://github.com/shiguredo/tls13-zig`).
 
 ## Release History
 
