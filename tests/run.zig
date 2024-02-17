@@ -15,4 +15,5 @@ comptime {
     _ = @import("server/logger.zig");
     _ = @import("server/utils.zig");
     _ = @import("server/persistance.zig");
+    _ = @import("server/access_control.zig");
 }

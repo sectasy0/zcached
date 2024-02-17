@@ -1,24 +1,25 @@
 const std = @import("std");
-const ProtocolHandler = @import("../protocol/handler.zig").ProtocolHandler;
 
-const ZType = @import("../protocol/types.zig").ZType;
+const ProtocolHandler = @import("../protocol/handler.zig").ProtocolHandler;
+const AccessControl = @import("access_control.zig").AccessControl;
 const MemoryStorage = @import("storage.zig").MemoryStorage;
-const errors = @import("err_handler.zig");
+const ZType = @import("../protocol/types.zig").ZType;
 const CMDHandler = @import("cmd_handler.zig").CMDHandler;
 const Config = @import("config.zig").Config;
+
+const errors = @import("err_handler.zig");
 const log = @import("logger.zig");
 const utils = @import("utils.zig");
 
 const Address = std.net.Address;
 const Allocator = std.mem.Allocator;
 const Pool = std.Thread.Pool;
-const activeTag = std.meta.activeTag;
 
 const Connection = std.net.StreamServer.Connection;
 
 pub const ServerListener = struct {
     server: std.net.StreamServer,
-    addr: *const std.net.Address,
+    addr: *const Address,
 
     allocator: Allocator,
     cmd_handler: CMDHandler,
@@ -29,7 +30,7 @@ pub const ServerListener = struct {
     connections: u16 = 0,
 
     logger: *const log.Logger,
-    pool: *std.Thread.Pool,
+    pool: *Pool,
 
     pub fn init(
         addr: *const Address,
@@ -69,20 +70,20 @@ pub const ServerListener = struct {
         while (true) {
             var connection: Connection = try self.server.accept();
 
-            if (self.connections > self.config.max_connections) {
-                const err = error.MaxClientsReached;
-                errors.handle(connection.stream, err, .{}, self.logger) catch {
-                    self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
-                };
-
-                return;
-            }
-
             self.logger.log(
                 log.LogLevel.Info,
                 "* new connection from {any}",
                 .{connection.address},
             );
+
+            const access_control = AccessControl.init(self.config, self.logger);
+            access_control.verify(connection.address, &self.connections) catch |err| {
+                errors.handle(connection.stream, err, .{}, self.logger) catch {
+                    self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
+                };
+
+                self.close_connection(connection);
+            };
 
             self.connections += 1;
 
@@ -107,24 +108,6 @@ pub const ServerListener = struct {
 
         var protocol = ProtocolHandler.init(self.allocator) catch return;
         defer protocol.deinit();
-
-        if (self.config.whitelist.capacity > 0 and !utils.is_whitelisted(
-            self.config.whitelist,
-            connection.address,
-        )) {
-            self.logger.log(
-                log.LogLevel.Info,
-                "* connection from {any} is not whitelisted, rejected",
-                .{connection.address},
-            );
-
-            var err = error.NotWhitelisted;
-            errors.handle(connection.stream, err, .{}, self.logger) catch {
-                self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
-            };
-
-            return;
-        }
 
         // reading data from client and then try to parse to protocol.
         const reader: std.net.Stream.Reader = connection.stream.reader();
