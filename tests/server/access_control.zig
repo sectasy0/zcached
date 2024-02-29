@@ -1,8 +1,8 @@
 const std = @import("std");
 
 const log = @import("../../src/server/logger.zig");
-const Config = @import("../../src/server/config.zig").Config;
-const AccessControl = @import("../../src/server/access_control.zig").AccessControl;
+const Config = @import("../../src/server/config.zig");
+const AccessControl = @import("../../src/server/access_control.zig");
 
 test "should not return errors" {
     const config = try Config.load(std.testing.allocator, null, null);
@@ -10,25 +10,11 @@ test "should not return errors" {
 
     const access_control = AccessControl.init(&config, &logger);
     const address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234);
-    var connections: u16 = 0;
-    const result = access_control.verify(address, &connections);
+    const result = access_control.verify(address);
     try std.testing.expectEqual(result, void{});
 }
 
-test "should return MaxClientsReached" {
-    var config = try Config.load(std.testing.allocator, null, null);
-    const logger = try log.Logger.init(std.testing.allocator, null);
-
-    config.max_connections = 1;
-
-    const access_control = AccessControl.init(&config, &logger);
-    const address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234);
-    var connections: u16 = 2;
-    const result = access_control.verify(address, &connections);
-    try std.testing.expectEqual(result, error.MaxClientsReached);
-}
-
-test "should return NotWhitelisted" {
+test "should return error.NotPermitted" {
     var config = try Config.load(std.testing.allocator, null, null);
     const logger = try log.Logger.init(std.testing.allocator, null);
 
@@ -41,7 +27,7 @@ test "should return NotWhitelisted" {
 
     const access_control = AccessControl.init(&config, &logger);
     const address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234);
-    var connections: u16 = 1;
-    const result = access_control.verify(address, &connections);
-    try std.testing.expectEqual(result, error.NotWhitelisted);
+    const result = access_control.verify(address);
+    std.debug.print("{any}", .{result});
+    try std.testing.expectEqual(result, error.NotPermitted);
 }
