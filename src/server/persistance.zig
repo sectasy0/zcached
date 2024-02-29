@@ -1,7 +1,7 @@
 const std = @import("std");
 
-const Config = @import("config.zig").Config;
-const MemoryStorage = @import("storage.zig").MemoryStorage;
+const Config = @import("config.zig");
+const MemoryStorage = @import("storage.zig");
 
 // Context changes
 const Serializer = @import("../protocol/deserializer.zig").Deserializer;
@@ -139,8 +139,6 @@ pub const PersistanceHandler = struct {
             return;
         };
         defer file.close();
-
-        std.debug.print("{d}", .{latest.?.size});
 
         if (latest.?.size == 0) return;
 

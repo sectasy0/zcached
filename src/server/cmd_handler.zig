@@ -1,8 +1,8 @@
 const std = @import("std");
 
-const storage = @import("storage.zig");
+const MemoryStorage = @import("storage.zig");
 const ZType = @import("../protocol/types.zig").ZType;
-const Config = @import("config.zig").Config;
+const Config = @import("config.zig");
 const utils = @import("utils.zig");
 const log = @import("logger.zig");
 
@@ -22,7 +22,7 @@ const Commands = enum {
 };
 pub const CMDHandler = struct {
     allocator: std.mem.Allocator,
-    storage: *storage.MemoryStorage,
+    storage: *MemoryStorage,
 
     logger: *const log.Logger,
 
@@ -30,7 +30,7 @@ pub const CMDHandler = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
-        mstorage: *storage.MemoryStorage,
+        mstorage: *MemoryStorage,
         logger: *const log.Logger,
     ) CMDHandler {
         return CMDHandler{
@@ -48,15 +48,29 @@ pub const CMDHandler = struct {
             return .{ .err = error.UnknownCommand };
         }
 
+        std.debug.print("{any}", .{command_set.items.len});
+
         var cmd_upper: []u8 = utils.to_uppercase(command_set.items[0].str);
         const command_type = std.meta.stringToEnum(Commands, cmd_upper) orelse {
             return .{ .err = error.UnknownCommand };
         };
         try switch (command_type) {
             .PING => return self.ping(),
-            .GET => return self.get(command_set.items[1]),
-            .SET => return self.set(command_set.items[1], command_set.items[2]),
-            .DELETE => return self.delete(command_set.items[1]),
+            .GET => {
+                if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
+
+                return self.get(command_set.items[1]);
+            },
+            .SET => {
+                if (command_set.items.len < 3) return .{ .err = error.InvalidCommand };
+
+                return self.set(command_set.items[1], command_set.items[2]);
+            },
+            .DELETE => {
+                if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
+
+                return self.delete(command_set.items[1]);
+            },
             .FLUSH => return self.flush(),
             .DBSIZE => return .{ .ok = .{ .int = self.storage.internal.count() } },
             .SAVE => return self.save(),

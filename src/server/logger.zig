@@ -36,7 +36,7 @@ pub const Logger = struct {
         const t_size = utils.timestampf(&timestamp);
 
         std.debug.print(
-            "INFO [{s}] logger initialized, log_path: {s}\n",
+            "INFO [{s}] * logger initialized, log_path: {s}\n",
             .{ timestamp[0..t_size], logger.log_path },
         );
 
@@ -56,7 +56,7 @@ pub const Logger = struct {
 
         var buf: [BUFFER_SIZE]u8 = undefined;
         const message = std.fmt.bufPrint(&buf, format, args) catch |err| {
-            std.log.err("failed to format log message: {?}", .{err});
+            std.log.err("# failed to format log message: {?}", .{err});
             return;
         };
 
@@ -66,38 +66,38 @@ pub const Logger = struct {
             timestamp[0..t_size],
             message,
         }) catch |err| {
-            std.log.err("failed to format log message: {?}", .{err});
+            std.log.err("# failed to format log message: {?}", .{err});
             return;
         };
 
         self.file.seekFromEnd(0) catch |err| {
-            std.log.err("failed to seek to end of log file: {?}", .{err});
+            std.log.err("# failed to seek to end of log file: {?}", .{err});
             return;
         };
 
         std.debug.print("{s}", .{formatted});
 
         self.file.writeAll(formatted) catch |err| {
-            std.log.err("failed to write log message: {?}", .{err});
+            std.log.err("# failed to write log message: {?}", .{err});
             return;
         };
     }
 
     pub fn log_event(self: *const Logger, etype: EType, payload: []const u8) void {
         const repr = utils.repr(self.allocator, payload) catch |err| {
-            self.log(LogLevel.Error, "* failed to repr payload: {any}", .{err});
+            self.log(.Error, "* failed to repr payload: {any}", .{err});
             return;
         };
         defer self.allocator.free(repr);
 
         switch (etype) {
             EType.Request => self.log(
-                LogLevel.Info,
+                .Info,
                 "> request: {s}",
                 .{repr},
             ),
             EType.Response => self.log(
-                LogLevel.Info,
+                .Info,
                 "> response: {s}",
                 .{repr},
             ),

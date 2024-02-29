@@ -151,9 +151,11 @@ pub fn SerializerT(comptime GenericReader: type) type {
 
             if (error_message.len < 1) return error.BadRequest;
 
-            return .{ .err = .{
-                .message = error_message[0 .. error_message.len - 1],
-            } };
+            return .{
+                .err = .{
+                    .message = error_message[0 .. error_message.len - 1],
+                },
+            };
         }
 
         fn serialize_map(self: *Self, reader: GenericReader) !types.ZType {

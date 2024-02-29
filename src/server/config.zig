@@ -3,169 +3,160 @@ const utils = @import("utils.zig");
 
 pub const DEFAULT_PATH: []const u8 = "./zcached.conf";
 
-pub const Config = struct {
-    address: std.net.Address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556),
+const Config = @This();
 
-    loger_path: []const u8 = DEFAULT_PATH,
-    max_connections: u16 = 512,
-    max_memory: u64 = 0, // 0 means unlimited, value in bytes
-    threads: ?u32 = null,
+address: std.net.Address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556),
 
-    whitelist: std.ArrayList(std.net.Address) = undefined,
-    proto_max_bulk_len: u64 = 512 * 1024 * 1024, // 0 means unlimited, value in bytes
+loger_path: []const u8 = DEFAULT_PATH,
+// maximum connections per thread
+// to calculate global max connctions: `workers` * `max_connections`
+max_connections: usize = 512,
+max_memory: usize = 0, // 0 means unlimited, value in bytes
+client_buffer_size: usize = 4096, // its resized if more space is requied
+workers: usize = 1,
 
-    _arena: std.heap.ArenaAllocator,
+whitelist: std.ArrayList(std.net.Address) = undefined,
+proto_max_bulk_len: usize = 512 * 1024 * 1024, // 0 means unlimited, value in bytes
 
-    pub fn deinit(config: *const Config) void {
-        config._arena.deinit();
-    }
+_arena: std.heap.ArenaAllocator,
 
-    pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]const u8) !Config {
-        var path: []const u8 = DEFAULT_PATH;
-        if (file_path != null) path = file_path.?;
+pub fn deinit(config: *const Config) void {
+    config._arena.deinit();
+}
 
-        var config = Config{ ._arena = std.heap.ArenaAllocator.init(allocator) };
-        if (log_path != null) config.loger_path = log_path.?;
+pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]const u8) !Config {
+    var path: []const u8 = DEFAULT_PATH;
+    if (file_path != null) path = file_path.?;
 
-        var timestamp: [40]u8 = undefined;
-        const t_size = utils.timestampf(&timestamp);
+    var config = Config{ ._arena = std.heap.ArenaAllocator.init(allocator) };
+    if (log_path != null) config.loger_path = log_path.?;
 
+    var timestamp: [40]u8 = undefined;
+    const t_size = utils.timestampf(&timestamp);
+
+    config.whitelist = std.ArrayList(std.net.Address).initCapacity(allocator, 0) catch |err| {
         std.debug.print(
-            "INFO [{s}] loading config file from: {s}\n",
-            .{ timestamp[0..t_size], path },
+            "INFO [{s}] * failed to allocate for whitelist: {?}\n",
+            .{ timestamp[0..t_size], err },
         );
+        return err;
+    };
 
-        utils.create_path(path);
+    std.debug.print(
+        "INFO [{s}] * loading config file from: {s}\n",
+        .{ timestamp[0..t_size], path },
+    );
 
-        const file = std.fs.cwd().openFile(path, .{ .mode = .read_only }) catch |err| {
-            // if the file doesn't exist, just return the default config
-            if (err == error.FileNotFound) return config;
-            return err;
-        };
-        defer file.close();
+    utils.create_path(path);
 
-        const file_size = (try file.stat()).size;
-        var buffer = try config._arena.allocator().alloc(u8, file_size);
-        defer config._arena.allocator().free(buffer);
+    const file = std.fs.cwd().openFile(path, .{ .mode = .read_only }) catch |err| {
+        // if the file doesn't exist, just return the default config
+        if (err == error.FileNotFound) return config;
+        return err;
+    };
+    defer file.close();
 
-        const readed_size = try file.read(buffer);
-        if (readed_size != file_size) return error.InvalidInput;
+    const file_size = (try file.stat()).size;
+    var buffer = try config._arena.allocator().alloc(u8, file_size);
+    defer config._arena.allocator().free(buffer);
 
-        var iter = std.mem.split(u8, buffer, "\n");
-        while (iter.next()) |line| {
-            // # is comment, _ is for internal use, like _arena
-            if (line.len == 0 or line[0] == '#' or line[0] == '_') continue;
+    const readed_size = try file.read(buffer);
+    if (readed_size != file_size) return error.InvalidInput;
 
-            const key_value = try process_line(config._arena.allocator(), line);
-            defer key_value.deinit();
+    var iter = std.mem.split(u8, buffer, "\n");
+    while (iter.next()) |line| {
+        // # is comment, _ is for internal use, like _arena
+        if (line.len == 0 or line[0] == '#' or line[0] == '_') continue;
 
-            // Special case for address port because `std.net.Address` is struct with address and port
-            if (std.mem.eql(u8, key_value.items[0], "port")) {
-                if (key_value.items[1].len == 0) continue;
+        const key_value = try process_line(config._arena.allocator(), line);
+        defer key_value.deinit();
 
-                const parsed = try std.fmt.parseInt(u16, key_value.items[1], 10);
-                config.address.setPort(parsed);
-                continue;
-            }
+        // Special case for address port because `std.net.Address` is struct with address and port
+        if (std.mem.eql(u8, key_value.items[0], "port")) {
+            if (key_value.items[1].len == 0) continue;
 
-            try assign_field_value(&config, key_value);
+            const parsed = try std.fmt.parseInt(u16, key_value.items[1], 10);
+            config.address.setPort(parsed);
+            continue;
         }
 
-        return config;
+        try assign_field_value(&config, key_value);
     }
 
-    fn process_line(allocator: std.mem.Allocator, line: []const u8) !std.ArrayList([]const u8) {
-        var result = std.ArrayList([]const u8).init(allocator);
+    return config;
+}
 
-        var iter = std.mem.split(u8, line, "=");
+fn process_line(allocator: std.mem.Allocator, line: []const u8) !std.ArrayList([]const u8) {
+    var result = std.ArrayList([]const u8).init(allocator);
 
-        const key = iter.next();
-        const value = iter.next();
+    var iter = std.mem.split(u8, line, "=");
 
-        if (key == null or value == null) return error.InvalidInput;
+    const key = iter.next();
+    const value = iter.next();
 
-        try result.append(key.?);
-        try result.append(value.?);
+    if (key == null or value == null) return error.InvalidInput;
 
-        return result;
-    }
+    try result.append(key.?);
+    try result.append(value.?);
 
-    fn assign_field_value(config: *Config, key_value: std.ArrayList([]const u8)) !void {
-        // I don't like how many nested things are here, but there is no other way
-        inline for (std.meta.fields(Config)) |field| {
-            if (std.mem.eql(u8, field.name, key_value.items[0])) {
-                var value = config._arena.allocator().alloc(u8, key_value.items[1].len) catch |err| {
-                    std.debug.print(
-                        "ERROR [{d}] * failed to allocate memory {?}\n",
-                        .{ std.time.timestamp(), err },
-                    );
-                    return;
-                };
+    return result;
+}
 
-                std.mem.copy(u8, value, key_value.items[1]);
+fn assign_field_value(config: *Config, key_value: std.ArrayList([]const u8)) !void {
+    // I don't like how many nested things are here, but there is no other way
+    inline for (std.meta.fields(Config)) |field| {
+        if (std.mem.eql(u8, field.name, key_value.items[0])) {
+            var value = config._arena.allocator().alloc(u8, key_value.items[1].len) catch |err| {
+                std.debug.print(
+                    "ERROR [{d}] * failed to allocate memory {?}\n",
+                    .{ std.time.timestamp(), err },
+                );
+                return;
+            };
 
-                if (value.len == 0) return;
+            std.mem.copy(u8, value, key_value.items[1]);
 
-                switch (field.type) {
-                    u16 => {
-                        const parsed = std.fmt.parseInt(u16, value, 10) catch |err| {
-                            std.debug.print(
-                                "DEBUG [{d}] * parsing {s} as u16, {?}\n",
-                                .{ std.time.timestamp(), value, err },
-                            );
-                            return;
-                        };
-                        @field(config, field.name) = parsed;
-                    },
-                    u64 => {
-                        const parsed = std.fmt.parseInt(u64, value, 10) catch |err| {
-                            std.debug.print(
-                                "DEBUG [{d}] * parsing {s} as u32, {?}\n",
-                                .{ std.time.timestamp(), value, err },
-                            );
-                            return;
-                        };
-                        @field(config, field.name) = parsed;
-                    },
-                    ?u32 => {
-                        const parsed = std.fmt.parseInt(u32, value, 10) catch |err| {
-                            std.debug.print(
-                                "DEBUG [{d}] * parsing {s} as ?u32, {?}\n",
-                                .{ std.time.timestamp(), value, err },
-                            );
-                            return;
-                        };
-                        @field(config, field.name) = parsed;
-                    },
-                    std.net.Address => {
-                        const parsed = std.net.Address.parseIp(value, config.address.getPort()) catch |err| {
+            if (value.len == 0) return;
+
+            switch (field.type) {
+                usize => {
+                    const parsed = std.fmt.parseInt(usize, value, 10) catch |err| {
+                        std.debug.print(
+                            "DEBUG [{d}] * parsing {s} as usize, {?}\n",
+                            .{ std.time.timestamp(), value, err },
+                        );
+                        return;
+                    };
+                    @field(config, field.name) = parsed;
+                },
+                std.net.Address => {
+                    const parsed = std.net.Address.parseIp(value, config.address.getPort()) catch |err| {
+                        std.debug.print(
+                            "DEBUG [{d}] * parsing {s} as std.net.Address, {?}\n",
+                            .{ std.time.timestamp(), value, err },
+                        );
+                        return;
+                    };
+                    @field(config, field.name) = parsed;
+                },
+                std.ArrayList(std.net.Address) => {
+                    config.whitelist = std.ArrayList(std.net.Address).init(config._arena.allocator());
+
+                    var addresses = std.mem.split(u8, value, ",");
+
+                    while (addresses.next()) |address| {
+                        const parsed = std.net.Address.parseIp(address, config.address.getPort()) catch |err| {
                             std.debug.print(
                                 "DEBUG [{d}] * parsing {s} as std.net.Address, {?}\n",
-                                .{ std.time.timestamp(), value, err },
+                                .{ std.time.timestamp(), address, err },
                             );
                             return;
                         };
-                        @field(config, field.name) = parsed;
-                    },
-                    std.ArrayList(std.net.Address) => {
-                        config.whitelist = std.ArrayList(std.net.Address).init(config._arena.allocator());
-
-                        var addresses = std.mem.split(u8, value, ",");
-
-                        while (addresses.next()) |address| {
-                            const parsed = std.net.Address.parseIp(address, config.address.getPort()) catch |err| {
-                                std.debug.print(
-                                    "DEBUG [{d}] * parsing {s} as std.net.Address, {?}\n",
-                                    .{ std.time.timestamp(), address, err },
-                                );
-                                return;
-                            };
-                            try @field(config, field.name).append(parsed);
-                        }
-                    },
-                    else => unreachable,
-                }
+                        try @field(config, field.name).append(parsed);
+                    }
+                },
+                else => unreachable,
             }
         }
     }
-};
+}

@@ -12,8 +12,8 @@ pub fn ProtocolHandlerT(comptime GenericReader: type) type {
 
         const Serializer = SerializerT(GenericReader);
         serializer: Serializer,
-
         deserializer: Deserializer,
+
         allocator: std.mem.Allocator,
 
         pub fn init(allocator: std.mem.Allocator) !Self {
