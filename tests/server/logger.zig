@@ -1,12 +1,12 @@
 const std = @import("std");
 
-const Config = @import("../../src/server/config.zig").Config;
+const Config = @import("../../src/server/config.zig");
 const types = @import("../../src/protocol/types.zig");
 const TracingAllocator = @import("../../src/server/tracing.zig").TracingAllocator;
 const PersistanceHandler = @import("../../src/server/persistance.zig").PersistanceHandler;
 const log = @import("../../src/server/logger.zig");
 
-const MemoryStorage = @import("../../src/server/storage.zig").MemoryStorage;
+const MemoryStorage = @import("../../src/server/storage.zig");
 const helper = @import("../test_helper.zig");
 
 test "test logger debug" {

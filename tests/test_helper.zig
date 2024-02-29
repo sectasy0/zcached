@@ -1,9 +1,10 @@
 const std = @import("std");
 
-const Config = @import("../src/server/config.zig").Config;
-const MemoryStorage = @import("../src/server/storage.zig").MemoryStorage;
+const Config = @import("../src/server/config.zig");
+const MemoryStorage = @import("../src/server/storage.zig");
 const TracingAllocator = @import("../src/server/tracing.zig").TracingAllocator;
 const PersistanceHandler = @import("../src/server/persistance.zig").PersistanceHandler;
+const CMDHandler = @import("../src/server/cmd_handler.zig").CMDHandler;
 const types = @import("../src/protocol/types.zig");
 const log = @import("../src/server/logger.zig");
 const activeTag = std.meta.activeTag;

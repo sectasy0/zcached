@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const Config = @import("../../src/server/config.zig").Config;
+const Config = @import("../../src/server/config.zig");
 const DEFAULT_PATH = @import("../../src/server/config.zig").DEFAULT_PATH;
 
 test "config default values ipv4" {
@@ -99,11 +99,11 @@ test "config load custom values empty address" {
     try std.testing.expectEqual(address.any, config.address.any);
 }
 
-test "config load custom values threads" {
+test "config load custom values workers" {
     std.fs.cwd().deleteFile("./tmp/zcached_thread.conf") catch {};
     std.fs.cwd().deleteDir("tmp") catch {};
 
-    const file_content = "address=::1\nport=1234\nmax_connections=1024\nmax_memory=500\nthreads=4\n";
+    const file_content = "address=::1\nport=1234\nmax_connections=1024\nmax_memory=500\nworkers=4\n";
     std.fs.cwd().makeDir("tmp") catch {};
     const file = try std.fs.cwd().createFile("./tmp/zcached_thread.conf", .{});
     try file.writeAll(file_content);
@@ -112,23 +112,23 @@ test "config load custom values threads" {
     var config = try Config.load(std.testing.allocator, "./tmp/zcached_thread.conf", null);
     defer config.deinit();
 
-    try std.testing.expectEqual(config.threads, 4);
+    try std.testing.expectEqual(config.workers, 4);
 }
 
-test "config load custom values empty threads" {
-    std.fs.cwd().deleteFile("./tmp/zcached_empty_threads.conf") catch {};
+test "config load custom values empty workers" {
+    std.fs.cwd().deleteFile("./tmp/zcached_empty_workers.conf") catch {};
     std.fs.cwd().deleteDir("tmp") catch {};
 
-    const file_content = "address=::1\nport=1234\nmax_connections=1024\nmax_memory=500\nthreads=\n";
+    const file_content = "address=::1\nport=1234\nmax_connections=1024\nmax_memory=500\nworkers=\n";
     std.fs.cwd().makeDir("tmp") catch {};
-    const file = try std.fs.cwd().createFile("./tmp/zcached_empty_threads.conf", .{});
+    const file = try std.fs.cwd().createFile("./tmp/zcached_empty_workers.conf", .{});
     try file.writeAll(file_content);
     defer file.close();
 
-    var config = try Config.load(std.testing.allocator, "./tmp/zcached_empty_threads.conf", null);
+    var config = try Config.load(std.testing.allocator, "./tmp/zcached_empty_workers.conf", null);
     defer config.deinit();
 
-    try std.testing.expectEqual(config.threads, null);
+    try std.testing.expectEqual(config.workers, 1);
 }
 
 test "config load custom values whitelist" {
@@ -163,6 +163,8 @@ test "config load custom values empty whitelist" {
 
     var config = try Config.load(std.testing.allocator, "./tmp/zcached_empty_whitelist.conf", null);
     defer config.deinit();
+
+    std.debug.print("{d}\n\n", .{config.whitelist.items.len});
 
     try std.testing.expectEqual(config.whitelist.items.len, 0);
 }

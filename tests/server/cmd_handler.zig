@@ -1,13 +1,13 @@
 const std = @import("std");
 
-const Config = @import("../../src/server/config.zig").Config;
+const Config = @import("../../src/server/config.zig");
 const ZType = @import("../../src/protocol/types.zig").ZType;
 const TracingAllocator = @import("../../src/server/tracing.zig").TracingAllocator;
 const PersistanceHandler = @import("../../src/server/persistance.zig").PersistanceHandler;
 const CMDHandler = @import("../../src/server/cmd_handler.zig").CMDHandler;
 const log = @import("../../src/server/logger.zig");
 
-const MemoryStorage = @import("../../src/server/storage.zig").MemoryStorage;
+const MemoryStorage = @import("../../src/server/storage.zig");
 const helper = @import("../test_helper.zig");
 
 test "should handle SET command" {
@@ -43,6 +43,67 @@ test "should handle SET command" {
     try std.testing.expectEqualStrings((try mstorage.get("key")).str, @constCast("value"));
 }
 
+test "should SET return error.InvalidCommand when passed 2 args" {
+    const config = try Config.load(std.testing.allocator, null, null);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+
+    var logger = try log.Logger.init(std.testing.allocator, null);
+
+    var persister = try PersistanceHandler.init(
+        std.testing.allocator,
+        config,
+        logger,
+        null,
+    );
+
+    defer persister.deinit();
+
+    var mstorage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer mstorage.deinit();
+
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
+
+    var command_set = std.ArrayList(ZType).init(std.testing.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("SET") });
+    try command_set.append(.{ .str = @constCast("key") });
+
+    var result = cmd_handler.process(&command_set);
+
+    try std.testing.expectEqual(result.err, error.InvalidCommand);
+}
+
+test "should SET return error.InvalidCommand when passed 1 args" {
+    const config = try Config.load(std.testing.allocator, null, null);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+
+    var logger = try log.Logger.init(std.testing.allocator, null);
+
+    var persister = try PersistanceHandler.init(
+        std.testing.allocator,
+        config,
+        logger,
+        null,
+    );
+
+    defer persister.deinit();
+
+    var mstorage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer mstorage.deinit();
+
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
+
+    var command_set = std.ArrayList(ZType).init(std.testing.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("SET") });
+
+    var result = cmd_handler.process(&command_set);
+
+    try std.testing.expectEqual(result.err, error.InvalidCommand);
+}
+
 test "should handle GET command" {
     const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
@@ -73,6 +134,37 @@ test "should handle GET command" {
 
     var result = cmd_handler.process(&command_set);
     try std.testing.expectEqualStrings(result.ok.str, @constCast("value"));
+}
+
+test "should SET return error.InvalidCommand when missing key" {
+    const config = try Config.load(std.testing.allocator, null, null);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+
+    var logger = try log.Logger.init(std.testing.allocator, null);
+
+    var persister = try PersistanceHandler.init(
+        std.testing.allocator,
+        config,
+        logger,
+        null,
+    );
+
+    defer persister.deinit();
+
+    var mstorage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer mstorage.deinit();
+
+    try mstorage.put("key", .{ .str = @constCast("value") });
+
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
+
+    var command_set = std.ArrayList(ZType).init(std.testing.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("GET") });
+
+    var result = cmd_handler.process(&command_set);
+    try std.testing.expectEqual(result.err, error.InvalidCommand);
 }
 
 test "should handle DELETE command" {
@@ -137,6 +229,38 @@ test "should return error.NotFound for non existing during DELETE command" {
 
     var result = cmd_handler.process(&command_set);
     try std.testing.expectEqual(result, .{ .err = error.NotFound });
+}
+
+test "should DELETE return error.InvalidCommand when missing key" {
+    const config = try Config.load(std.testing.allocator, null, null);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+
+    var logger = try log.Logger.init(std.testing.allocator, null);
+
+    var persister = try PersistanceHandler.init(
+        std.testing.allocator,
+        config,
+        logger,
+        null,
+    );
+
+    defer persister.deinit();
+
+    var mstorage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer mstorage.deinit();
+
+    try mstorage.put("key", .{ .str = @constCast("value") });
+    try std.testing.expectEqualStrings((try mstorage.get("key")).str, @constCast("value"));
+
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
+
+    var command_set = std.ArrayList(ZType).init(std.testing.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("DELETE") });
+
+    var result = cmd_handler.process(&command_set);
+    try std.testing.expectEqual(result.err, error.InvalidCommand);
 }
 
 test "should handle FLUSH command" {
