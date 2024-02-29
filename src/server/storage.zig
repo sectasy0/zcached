@@ -31,8 +31,7 @@ pub fn init(
         .tracing_allocator = tracing_allocator,
         .arena = std.heap.ArenaAllocator.init(tracing_allocator),
         .config = config,
-        .lock = std.Thread.Mutex{},
-        .notifier = std.Thread.Condition{},
+        .lock = std.Thread.RwLock{},
         .persister = persister,
     };
 }
