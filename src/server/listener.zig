@@ -3,7 +3,7 @@ const std = @import("std");
 const Worker = @import("worker.zig");
 const StreamServer = @import("stream_server.zig");
 const Connection = @import("connection.zig");
-const MemoryStorage = @import("storage.zig").MemoryStorage;
+const MemoryStorage = @import("storage.zig");
 const Context = @import("employer.zig").Context;
 
 const AccessControl = @import("access_control.zig");
