@@ -20,6 +20,7 @@ pub fn main() void {
         // .verbose_log = true,
         // .retain_metadata = true,
     }){};
+    defer _ = gpa.deinit();
     // var lalloc = std.heap.loggingAllocator(gpa.allocator());
     var allocator = gpa.allocator();
 
