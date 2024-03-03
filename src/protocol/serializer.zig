@@ -23,8 +23,8 @@ pub fn SerializerT(comptime GenericReader: type) type {
                 .raw = std.ArrayList(u8).init(allocator),
             };
 
-            try handler.handlers.put("+", serialize_sstring);
-            try handler.handlers.put("$", serialize_string);
+            try handler.handlers.put("+", serialize_sstr);
+            try handler.handlers.put("$", serialize_str);
             try handler.handlers.put(",", serialize_float);
             try handler.handlers.put("*", serialize_array);
             try handler.handlers.put("-", serialize_error);
@@ -53,14 +53,14 @@ pub fn SerializerT(comptime GenericReader: type) type {
             self.raw.deinit();
         }
 
-        fn serialize_sstring(self: *Self, reader: GenericReader) !types.ZType {
+        fn serialize_sstr(self: *Self, reader: GenericReader) !types.ZType {
             const string = try self.read_line_alloc(reader);
             if (string.len == 0) return error.BadRequest;
 
             return .{ .str = @constCast(string[0 .. string.len - 1]) };
         }
 
-        fn serialize_string(self: *Self, reader: GenericReader) !types.ZType {
+        fn serialize_str(self: *Self, reader: GenericReader) !types.ZType {
             const bytes = try self.read_line_alloc(reader);
 
             const string_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
