@@ -18,7 +18,6 @@ test "create_path" {
     utils.create_path(file_path);
 
     std.fs.cwd().makeDir(path) catch |err| {
-        std.debug.print("err: {any}\n", .{err});
         try std.testing.expectEqual(err, error.PathAlreadyExists);
     };
 }
@@ -41,7 +40,6 @@ test "create_path absolute" {
     utils.create_path(absolute_path);
 
     std.fs.cwd().makeDir(absolute_path) catch |err| {
-        std.debug.print("err: {any}\n", .{err});
         try std.testing.expectEqual(err, error.PathAlreadyExists);
     };
 }

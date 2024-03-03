@@ -28,6 +28,5 @@ test "should return error.NotPermitted" {
     const access_control = AccessControl.init(&config, &logger);
     const address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234);
     const result = access_control.verify(address);
-    std.debug.print("{any}", .{result});
     try std.testing.expectEqual(result, error.NotPermitted);
 }

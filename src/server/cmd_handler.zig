@@ -48,8 +48,6 @@ pub const CMDHandler = struct {
             return .{ .err = error.UnknownCommand };
         }
 
-        std.debug.print("{any}", .{command_set.items.len});
-
         var cmd_upper: []u8 = utils.to_uppercase(command_set.items[0].str);
         const command_type = std.meta.stringToEnum(Commands, cmd_upper) orelse {
             return .{ .err = error.UnknownCommand };

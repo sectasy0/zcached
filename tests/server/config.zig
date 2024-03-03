@@ -164,8 +164,6 @@ test "config load custom values empty whitelist" {
     var config = try Config.load(std.testing.allocator, "./tmp/zcached_empty_whitelist.conf", null);
     defer config.deinit();
 
-    std.debug.print("{d}\n\n", .{config.whitelist.items.len});
-
     try std.testing.expectEqual(config.whitelist.items.len, 0);
 }
 
