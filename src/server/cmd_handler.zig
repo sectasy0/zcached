@@ -120,14 +120,12 @@ pub const CMDHandler = struct {
         if (self.storage.size() == 0)
             return .{ .ok = .{ .sstr = @constCast("OK") } };
 
-        // TODO: fix segfault
-        // I'll comment out this for now, cases segfault
-        // const size = self.storage.persister.save(self.storage) catch |err| {
-        //     self.logger.log(log.LogLevel.Error, "# failed to save data: {?}", .{err});
+        const size = self.storage.persister.save(self.storage) catch |err| {
+            self.logger.log(log.LogLevel.Error, "# failed to save data: {?}", .{err});
 
-        //     return .{ .err = error.FailedToSave };
-        // };
-        // self.logger.log(log.LogLevel.Debug, "# saved {d} bytes", .{size});
+            return .{ .err = error.FailedToSave };
+        };
+        self.logger.log(log.LogLevel.Debug, "# saved {d} bytes", .{size});
         return .{ .ok = .{ .sstr = @constCast("OK") } };
     }
 
