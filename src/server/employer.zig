@@ -52,9 +52,6 @@ pub fn supervise(self: *const Employer) void {
         );
     };
 
-    // dunno why its not working without this print.
-    // self.context.logger.log(.Debug, "server fd: {any}", .{self.server.sockfd});
-
     utils.set_nonblocking(self.server.sockfd.?) catch |err| {
         self.context.logger.log(
             .Error,
@@ -72,7 +69,16 @@ pub fn supervise(self: *const Employer) void {
     const fds_size = self.context.config.max_connections;
 
     for (0..self.context.config.workers) |i| {
-        var worker = Worker.init(self.allocator, fds_size) catch |err| {
+        // every thread have own allocator.
+        var gpa = std.heap.GeneralPurposeAllocator(.{
+            .safety = true,
+            // .verbose_log = true,
+            // .retain_metadata = true,
+        }){};
+        var allocator = gpa.allocator();
+
+        // + 1 becouse first index is always listener fd
+        var worker = Worker.init(allocator, fds_size + 1) catch |err| {
             self.context.logger.log(
                 .Error,
                 "# failed to create worker: {?}",
