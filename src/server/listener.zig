@@ -72,36 +72,20 @@ pub fn listen(self: *Listener, worker: *Worker) void {
                 if (connection == null) continue;
 
                 switch (err) {
-                    // TODO: remove
-                    // error.MaxConnections => {
-                    //     // should return message to the client
-                    //     self.context.logger.log(
-                    //         .Error,
-                    //         "# failed to connect, max connections reached",
-                    //         .{},
-                    //     );
-
-                    //     if (connection != null) connection.?.close();
-                    //     continue;
-                    // },
-                    // NotPermitted is returned when:
-                    // - access control fails (that means client is not permitted to connect)
-                    error.NotPermitted => {
-                        // also send message to the client
-                        if (connection != null) connection.?.close();
-                        continue;
-                    },
                     // ConnectionAborted aborted is returned when:
                     // - cant set fd to non-block
                     // - cant allocate buffer fo incoming connection
                     // - cant set fd to worker states
-                    error.ConnectionAborted => {
-
+                    //
+                    // NotPermitted is returned when:
+                    // - access control fails (that means client is not permitted to connect)
+                    error.ConnectionAborted, error.NotPermitted => {
+                        std.debug.print("{?}", .{err});
                         // also send message to the client
                         if (connection != null) connection.?.close();
                         continue;
                     },
-                    else => unreachable,
+                    else => continue,
                 }
             }
 
@@ -237,7 +221,6 @@ fn handle_incoming(self: *Listener, worker: *Worker) AcceptResult {
 fn handle_connection(self: *const Listener, worker: *Worker, connection: *Connection) void {
     while (true) {
         self.handle_request(worker, connection) catch |err| {
-            std.debug.print("{?}\n", .{err}); // for debug purposes
             switch (err) {
                 error.WouldBlock => return,
                 error.NotOpenForReading => return,
@@ -263,7 +246,7 @@ fn handle_disconnection(self: *Listener, worker: *Worker, connection: *Connectio
 
     if (worker.connections > 1) worker.connections -= 1;
 
-    // connection.deinit(); looks like remove from states free entinre thing.
+    connection.deinit();
     const remove_result = worker.states.remove(connection.fd());
     if (!remove_result) {
         self.context.logger.log(
