@@ -37,7 +37,7 @@ pub fn init(
     };
 }
 
-pub fn listen(self: *const Listener, worker: *Worker) void {
+pub fn listen(self: *Listener, worker: *Worker) void {
     worker.poll_fds[0] = .{
         .revents = 0,
         .fd = self.server.sockfd.?,
@@ -62,39 +62,44 @@ pub fn listen(self: *const Listener, worker: *Worker) void {
 
             // file descriptor for listening incoming connections
             if (pollfd.fd == self.server.sockfd.?) {
-                self.handle_incoming(worker) catch |err| {
-                    switch (err) {
-                        error.MaxConnections => {
-                            // should return message to the client
-                            self.context.logger.log(
-                                .Error,
-                                "# failed to connect, max connections reached\n",
-                                .{},
-                            );
+                const handle_result: AcceptResult = self.handle_incoming(worker);
+                if (handle_result != .err) continue;
 
-                            std.os.close(pollfd.fd);
-                            continue;
-                        },
-                        // NotPermitted is returned when:
-                        // - access control fails (that means client is not permitted to connect)
-                        error.NotPermitted => {
-                            // also send message to the client
-                            std.os.close(pollfd.fd);
-                            continue;
-                        },
-                        // ConnectionAborted aborted is returned when:
-                        // - cant set fd to non-block
-                        // - cant allocate buffer fo incoming connection
-                        // - cant set fd to worker states
-                        error.ConnectionAborted => {
-                            // also send message to the client
-                            std.os.close(pollfd.fd);
-                            continue;
-                        },
-                        else => continue,
-                    }
-                };
-                continue;
+                const err = handle_result.err.etype;
+                const connection = handle_result.err.fd;
+                if (connection == null) continue;
+
+                switch (err) {
+                    error.MaxConnections => {
+                        // should return message to the client
+                        self.context.logger.log(
+                            .Error,
+                            "# failed to connect, max connections reached",
+                            .{},
+                        );
+
+                        if (connection != null) connection.?.close();
+                        continue;
+                    },
+                    // NotPermitted is returned when:
+                    // - access control fails (that means client is not permitted to connect)
+                    error.NotPermitted => {
+                        // also send message to the client
+                        if (connection != null) connection.?.close();
+                        continue;
+                    },
+                    // ConnectionAborted aborted is returned when:
+                    // - cant set fd to non-block
+                    // - cant allocate buffer fo incoming connection
+                    // - cant set fd to worker states
+                    error.ConnectionAborted => {
+
+                        // also send message to the client
+                        if (connection != null) connection.?.close();
+                        continue;
+                    },
+                    else => unreachable,
+                }
             }
 
             // file descriptor is ready for reading.
@@ -111,10 +116,29 @@ pub fn listen(self: *const Listener, worker: *Worker) void {
     }
 }
 
-fn handle_incoming(self: *const Listener, worker: *Worker) !void {
+const AcceptError = struct {
+    etype: anyerror,
+    fd: ?std.net.Stream,
+};
+const AcceptResult = union(enum) {
+    ok: void,
+    err: AcceptError,
+};
+fn handle_incoming(self: *Listener, worker: *Worker) AcceptResult {
     const incoming = self.server.accept() catch |err| {
+        const result: AcceptResult = .{
+            .err = .{
+                .etype = err,
+                .fd = null,
+            },
+        };
         // another thread must have gotten it, no big deal
-        if (err == error.WouldBlock) return err;
+        if (err == error.WouldBlock) return .{
+            .err = .{
+                .etype = err,
+                .fd = null,
+            },
+        };
 
         // this is actuall error.
         self.context.logger.log(
@@ -122,13 +146,25 @@ fn handle_incoming(self: *const Listener, worker: *Worker) !void {
             "# failed to accept new connection: {?}\n",
             .{err},
         );
-        return err;
+        return result;
     };
 
-    if (worker.connections == worker.poll_fds.len) return error.MaxConnections;
+    if (worker.connections == worker.poll_fds.len) {
+        return .{
+            .err = .{
+                .etype = error.MaxConnections,
+                .fd = incoming.stream,
+            },
+        };
+    }
 
     const access_control = AccessControl.init(self.context.config, self.context.logger);
-    try access_control.verify(incoming.address);
+    access_control.verify(incoming.address) catch return .{
+        .err = .{
+            .etype = error.NotPermitted,
+            .fd = incoming.stream,
+        },
+    };
 
     utils.set_nonblocking(incoming.stream.handle) catch |err| {
         self.context.logger.log(
@@ -137,7 +173,12 @@ fn handle_incoming(self: *const Listener, worker: *Worker) !void {
             .{err},
         );
 
-        return error.ConnectionAborted;
+        return .{
+            .err = .{
+                .etype = error.ConnectionAborted,
+                .fd = incoming.stream,
+            },
+        };
     };
 
     self.context.logger.log(
@@ -159,7 +200,12 @@ fn handle_incoming(self: *const Listener, worker: *Worker) !void {
             .{err},
         );
 
-        return error.ConnectionAborted;
+        return .{
+            .err = .{
+                .etype = error.ConnectionAborted,
+                .fd = incoming.stream,
+            },
+        };
     };
 
     var connection = Connection{
@@ -178,15 +224,23 @@ fn handle_incoming(self: *const Listener, worker: *Worker) !void {
         );
         connection.deinit();
 
-        return error.ConnectionAborted;
+        return .{
+            .err = .{
+                .etype = error.ConnectionAborted,
+                .fd = incoming.stream,
+            },
+        };
     };
 
     worker.connections += 1;
+
+    return .{ .ok = void{} };
 }
 
 fn handle_connection(self: *const Listener, connection: *Connection) void {
     while (true) {
         self.handle_request(connection) catch |err| {
+            std.debug.print("{?}\n", .{err}); // for debug purposes
             switch (err) {
                 error.WouldBlock => return,
                 error.NotOpenForReading => return,
@@ -196,15 +250,21 @@ fn handle_connection(self: *const Listener, connection: *Connection) void {
     }
 }
 
-fn handle_disconnection(self: *const Listener, worker: *Worker, connection: *Connection, i: usize) void {
-    connection.deinit();
-
+fn handle_disconnection(self: *Listener, worker: *Worker, connection: *Connection, i: usize) void {
     self.context.logger.log(
         .Debug,
         "# connection with client closed {any}",
         .{connection.address},
     );
 
+    // remove disconnected by overwiriting it with the last one.
+    if (i != worker.connections - 1) {
+        worker.poll_fds[i] = worker.poll_fds[worker.connections - 1];
+    }
+
+    if (worker.connections > 1) worker.connections -= 1;
+
+    // connection.deinit(); looks like remove from states free entinre thing.
     const remove_result = worker.states.remove(connection.fd());
     if (!remove_result) {
         self.context.logger.log(
@@ -214,13 +274,6 @@ fn handle_disconnection(self: *const Listener, worker: *Worker, connection: *Con
         );
         return;
     }
-
-    // remove disconnected by overwiriting it with the last one.
-    if (i != worker.connections - 1) {
-        worker.poll_fds[i] = worker.poll_fds[worker.connections - 1];
-    }
-
-    worker.connections -= 1;
 }
 
 fn handle_request(self: *const Listener, connection: *Connection) !void {
