@@ -79,6 +79,13 @@ pub fn flush(self: *MemoryStorage) void {
     self.internal.clearRetainingCapacity();
 }
 
+pub fn size(self: *MemoryStorage) i64 {
+    self.lock.lockShared();
+    defer self.lock.unlock();
+
+    return self.internal.count();
+}
+
 pub fn deinit(self: *MemoryStorage) void {
     self.internal.deinit();
     self.arena.deinit();

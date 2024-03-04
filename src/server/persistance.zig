@@ -62,7 +62,7 @@ pub const PersistanceHandler = struct {
         const header = try std.fmt.allocPrint(
             allocator,
             "zcpf%{d}\r\n",
-            .{storage.internal.count()},
+            .{storage.size()},
         );
         try bytes.appendSlice(header);
 
@@ -171,7 +171,7 @@ pub const PersistanceHandler = struct {
                 return error.InvalidFile;
             };
 
-            try storage.internal.put(key.str, value);
+            try storage.put(key.str, value);
         }
     }
 
