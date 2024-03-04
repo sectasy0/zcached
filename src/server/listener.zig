@@ -21,6 +21,8 @@ server: *StreamServer,
 context: Context,
 allocator: std.mem.Allocator,
 
+start: usize = 0,
+
 buffer_size: usize = undefined,
 
 pub fn init(
@@ -45,7 +47,7 @@ pub fn listen(self: *Listener, worker: *Worker) void {
     };
 
     while (true) {
-        _ = std.os.poll(worker.poll_fds[0..worker.connections], -1) catch |err| {
+        _ = std.os.poll(worker.poll_fds[self.start..worker.connections], -1) catch |err| {
             self.context.logger.log(
                 .Error,
                 "# std.os.poll failure: {?}\n",
@@ -70,17 +72,18 @@ pub fn listen(self: *Listener, worker: *Worker) void {
                 if (connection == null) continue;
 
                 switch (err) {
-                    error.MaxConnections => {
-                        // should return message to the client
-                        self.context.logger.log(
-                            .Error,
-                            "# failed to connect, max connections reached",
-                            .{},
-                        );
+                    // TODO: remove
+                    // error.MaxConnections => {
+                    //     // should return message to the client
+                    //     self.context.logger.log(
+                    //         .Error,
+                    //         "# failed to connect, max connections reached",
+                    //         .{},
+                    //     );
 
-                        if (connection != null) connection.?.close();
-                        continue;
-                    },
+                    //     if (connection != null) connection.?.close();
+                    //     continue;
+                    // },
                     // NotPermitted is returned when:
                     // - access control fails (that means client is not permitted to connect)
                     error.NotPermitted => {
@@ -105,7 +108,7 @@ pub fn listen(self: *Listener, worker: *Worker) void {
             // file descriptor is ready for reading.
             if (pollfd.revents == std.os.POLL.IN) {
                 var connection = worker.states.getPtr(pollfd.fd) orelse continue;
-                self.handle_connection(connection);
+                self.handle_connection(worker, connection);
                 continue;
             }
 
@@ -149,14 +152,8 @@ fn handle_incoming(self: *Listener, worker: *Worker) AcceptResult {
         return result;
     };
 
-    if (worker.connections == worker.poll_fds.len) {
-        return .{
-            .err = .{
-                .etype = error.MaxConnections,
-                .fd = incoming.stream,
-            },
-        };
-    }
+    // stop listening after fds array is full
+    if (worker.connections + 1 == worker.poll_fds.len) self.start = 1;
 
     const access_control = AccessControl.init(self.context.config, self.context.logger);
     access_control.verify(incoming.address) catch return .{
@@ -237,9 +234,9 @@ fn handle_incoming(self: *Listener, worker: *Worker) AcceptResult {
     return .{ .ok = void{} };
 }
 
-fn handle_connection(self: *const Listener, connection: *Connection) void {
+fn handle_connection(self: *const Listener, worker: *Worker, connection: *Connection) void {
     while (true) {
-        self.handle_request(connection) catch |err| {
+        self.handle_request(worker, connection) catch |err| {
             std.debug.print("{?}\n", .{err}); // for debug purposes
             switch (err) {
                 error.WouldBlock => return,
@@ -256,6 +253,8 @@ fn handle_disconnection(self: *Listener, worker: *Worker, connection: *Connectio
         "# connection with client closed {any}",
         .{connection.address},
     );
+
+    self.start = 0;
 
     // remove disconnected by overwiriting it with the last one.
     if (i != worker.connections - 1) {
@@ -276,7 +275,7 @@ fn handle_disconnection(self: *Listener, worker: *Worker, connection: *Connectio
     }
 }
 
-fn handle_request(self: *const Listener, connection: *Connection) !void {
+fn handle_request(self: *const Listener, worker: *Worker, connection: *Connection) !void {
     const read_size = try connection.stream.read(connection.buffer[connection.position..]);
 
     if (read_size == 0) return error.ConnectionClosed;
@@ -314,7 +313,7 @@ fn handle_request(self: *const Listener, connection: *Connection) !void {
     connection.position = 0;
 
     var processor = RequestProcessor.init(
-        self.allocator,
+        worker.allocator,
         self.context,
     );
 

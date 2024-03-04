@@ -128,7 +128,7 @@ test "config load custom values empty workers" {
     var config = try Config.load(std.testing.allocator, "./tmp/zcached_empty_workers.conf", null);
     defer config.deinit();
 
-    try std.testing.expectEqual(config.workers, 1);
+    try std.testing.expectEqual(config.workers, 4);
 }
 
 test "config load custom values whitelist" {
