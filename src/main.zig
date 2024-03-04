@@ -116,7 +116,7 @@ fn run_supervisor(allocator: std.mem.Allocator, context: Employer.Context) void 
         context.config.address,
     });
 
-    const employer = Employer.init(allocator, context) catch |err| {
+    var employer = Employer.init(allocator, context) catch |err| {
         context.logger.log(.Error, "# failed to initialize server: {any}", .{err});
         return;
     };

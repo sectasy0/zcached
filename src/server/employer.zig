@@ -12,7 +12,7 @@ const Config = @import("config.zig");
 const Allocator = std.mem.Allocator;
 const Employer = @This();
 
-server: *StreamServer,
+server: StreamServer,
 
 context: Context,
 
@@ -28,14 +28,12 @@ pub const Context = struct {
 };
 
 pub fn init(allocator: Allocator, context: Context) !Employer {
-    var server = StreamServer.init(.{
-        .kernel_backlog = 128,
-        .reuse_address = true,
-        .reuse_port = true,
-    });
-
     return .{
-        .server = &server,
+        .server = StreamServer.init(.{
+            .kernel_backlog = 128,
+            .reuse_address = true,
+            .reuse_port = true,
+        }),
         .context = context,
         .workers = try allocator.alloc(Worker, context.config.workers),
         .threads = try allocator.alloc(std.Thread, context.config.workers),
@@ -43,7 +41,7 @@ pub fn init(allocator: Allocator, context: Context) !Employer {
     };
 }
 
-pub fn supervise(self: *const Employer) void {
+pub fn supervise(self: *Employer) void {
     self.server.listen(self.context.config.address) catch |err| {
         self.context.logger.log(
             .Error,
@@ -62,7 +60,7 @@ pub fn supervise(self: *const Employer) void {
 
     var listener = Listener.init(
         self.allocator,
-        self.server,
+        &self.server,
         self.context,
         self.context.config.client_buffer_size,
     );
@@ -78,7 +76,7 @@ pub fn supervise(self: *const Employer) void {
         var allocator = gpa.allocator();
 
         // + 1 becouse first index is always listener fd
-        var worker = Worker.init(allocator, fds_size + 1) catch |err| {
+        self.workers[i] = Worker.init(allocator, fds_size + 1) catch |err| {
             self.context.logger.log(
                 .Error,
                 "# failed to create worker: {?}",
@@ -87,13 +85,12 @@ pub fn supervise(self: *const Employer) void {
             return;
         };
 
-        self.workers[i] = worker;
-        errdefer worker.deinit();
+        errdefer self.workers[i].deinit();
 
         self.threads[i] = std.Thread.spawn(
             .{},
             delegate,
-            .{ &worker, &listener },
+            .{ &self.workers[i], &listener },
         ) catch |err| {
             self.context.logger.log(
                 .Error,

@@ -50,8 +50,8 @@ pub fn put(self: *MemoryStorage, key: []const u8, value: types.ZType) !void {
     switch (value) {
         .err => return error.CantInsertError,
         else => {
-            var zkey: []u8 = try self.arena.allocator().dupe(u8, key);
-            var zvalue = try types.ztype_copy(value, &self.arena);
+            const zkey: []u8 = try self.arena.allocator().dupe(u8, key);
+            const zvalue = try types.ztype_copy(value, &self.arena);
 
             self.internal.put(zkey, zvalue) catch return error.InsertFailure;
         },

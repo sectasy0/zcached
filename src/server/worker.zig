@@ -11,11 +11,10 @@ connections: usize = 1, // 0 index is always listener fd.
 allocator: std.mem.Allocator,
 
 pub fn init(allocator: std.mem.Allocator, fds_size: usize) !Worker {
-    var states = std.AutoHashMap(std.os.socket_t, Connection).init(allocator);
     return .{
         .poll_fds = try allocator.alloc(std.os.pollfd, fds_size),
         .allocator = allocator,
-        .states = states,
+        .states = std.AutoHashMap(std.os.socket_t, Connection).init(allocator),
     };
 }
 

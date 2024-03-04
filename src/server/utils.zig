@@ -54,7 +54,7 @@ pub fn is_whitelisted(whitelist: std.ArrayList(std.net.Address), addr: std.net.A
 // representation by replacing occurrences of "\r\n" with "\\r\\n".
 pub fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
     const size = std.mem.replacementSize(u8, value, "\r\n", "\\r\\n");
-    var output = try allocator.alloc(u8, size);
+    const output = try allocator.alloc(u8, size);
     _ = std.mem.replace(u8, value, "\r\n", "\\r\\n", output);
     return output;
 }

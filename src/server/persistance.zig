@@ -90,10 +90,10 @@ pub const PersistanceHandler = struct {
 
         var iterator = storage.internal.iterator();
         while (iterator.next()) |item| {
-            var key = try self.serializer.process(.{ .str = @constCast(item.key_ptr.*) });
+            const key = try self.serializer.process(.{ .str = @constCast(item.key_ptr.*) });
             try bytes.appendSlice(key);
 
-            var value = try self.serializer.process(item.value_ptr.*);
+            const value = try self.serializer.process(item.value_ptr.*);
 
             try bytes.appendSlice(value);
         }
@@ -163,11 +163,11 @@ pub const PersistanceHandler = struct {
         };
 
         for (0..map_len) |_| {
-            var key = self.deserializer.process(reader) catch {
+            const key = self.deserializer.process(reader) catch {
                 return error.InvalidFile;
             };
 
-            var value = self.deserializer.process(reader) catch {
+            const value = self.deserializer.process(reader) catch {
                 return error.InvalidFile;
             };
 
