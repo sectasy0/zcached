@@ -21,4 +21,5 @@ pub fn init(allocator: std.mem.Allocator, fds_size: usize) !Worker {
 
 pub fn deinit(self: *Worker) void {
     self.states.deinit();
+    self.allocator.free(self.poll_fds);
 }

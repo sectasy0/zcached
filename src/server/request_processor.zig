@@ -105,11 +105,11 @@ pub fn process(self: *RequestProcessor, connection: *Connection) void {
     }
 
     // need to free if is map or array.
-    defer switch (cmd_result.ok) {
-        .map => cmd_result.ok.map.deinit(),
-        .array => cmd_result.ok.array.deinit(),
-        inline else => {},
-    };
+    // defer switch (cmd_result.ok) {
+    //     .map => cmd_result.ok.map.deinit(),
+    //     .array => cmd_result.ok.array.deinit(),
+    //     inline else => {},
+    // };
 
     var response = protocol.deserialize(cmd_result.ok) catch |err| {
         errors.handle(
