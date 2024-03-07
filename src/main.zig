@@ -12,7 +12,40 @@ const persistance = @import("server/persistance.zig");
 
 const Employer = @import("server/employer.zig");
 
-pub const io_mode = .evented;
+pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
+    @setCold(true);
+
+    log: {
+        const file = std.fs.cwd().createFile(
+            log.DEFAULT_PATH,
+            .{ .truncate = false },
+        ) catch |err| {
+            std.log.err("# failed to open log file: {?}", .{err});
+            break :log;
+        };
+
+        file.seekFromEnd(0) catch |err| {
+            std.log.err("# unable to seek log file eof: {?}", .{err});
+            break :log;
+        };
+
+        const debug_info = std.debug.getSelfDebugInfo() catch break :log;
+        const addr = ret_addr orelse @returnAddress();
+
+        std.debug.writeCurrentStackTrace(
+            file.writer(),
+            debug_info,
+            .no_color,
+            addr,
+        ) catch break :log;
+
+        file.writeAll("== END OF ERROR TRACE == \r\n") catch break :log;
+
+        std.log.err("# server panicked, please check logs in ./log/zcached.log", .{});
+    }
+
+    std.builtin.default_panic(msg, error_return_trace, ret_addr);
+}
 
 pub fn main() void {
     var gpa = std.heap.GeneralPurposeAllocator(.{
@@ -21,7 +54,6 @@ pub fn main() void {
         // .retain_metadata = true,
     }){};
     defer _ = gpa.deinit();
-    // var lalloc = std.heap.loggingAllocator(gpa.allocator());
     var allocator = gpa.allocator();
 
     const result = cli.Parser.parse(allocator) catch {
