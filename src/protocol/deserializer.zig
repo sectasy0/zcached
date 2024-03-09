@@ -148,7 +148,7 @@ pub const Deserializer = struct {
 
         var iterator = input.map.iterator();
         while (iterator.next()) |item| {
-            var bytes = try self.process(.{ .sstr = @constCast(item.key_ptr.*) });
+            var bytes = try self.process(.{ .str = @constCast(item.key_ptr.*) });
             const key_part = try std.mem.concat(
                 self.arena.allocator(),
                 u8,

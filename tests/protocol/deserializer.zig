@@ -124,6 +124,6 @@ test "serialize map" {
 
     var result = try deserializer.process(value);
     // it's not guaranteed that the order of the map will be the same
-    const expected = "%3\r\n+b\r\n$6\r\nsecond\r\n+a\r\n$5\r\nfirst\r\n+c\r\n$5\r\nthird\r\n";
+    const expected = "%3\r\n$1\r\nb\r\n$6\r\nsecond\r\n$1\r\na\r\n$5\r\nfirst\r\n$1\r\nc\r\n$5\r\nthird\r\n";
     try std.testing.expectEqualStrings(expected, result);
 }
