@@ -10,10 +10,10 @@ address: std.net.Address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556),
 loger_path: []const u8 = DEFAULT_PATH,
 
 // maximum connections per thread
-// to calculate global max connctions: `workers` * `max_connections`
-max_connections: usize = 512,
-max_memory: usize = 0, // 0 means unlimited, value in bytes
-client_buffer_size: usize = 4096, // its resized if more space is requied
+// to calculate global max connctions: `workers` * `maxclients`
+maxclients: usize = 512,
+maxmemory: usize = 0, // 0 means unlimited, value in bytes
+cbuffer: usize = 4096, // its resized if more space is requied
 workers: usize = 4,
 
 whitelist: std.ArrayList(std.net.Address) = undefined,

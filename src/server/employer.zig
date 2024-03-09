@@ -62,9 +62,9 @@ pub fn supervise(self: *Employer) void {
         self.allocator,
         &self.server,
         self.context,
-        self.context.config.client_buffer_size,
+        self.context.config.cbuffer,
     );
-    const fds_size = self.context.config.max_connections;
+    const fds_size = self.context.config.maxclients;
 
     for (0..self.context.config.workers) |i| {
         // every thread have own allocator.
