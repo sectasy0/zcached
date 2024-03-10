@@ -2,7 +2,6 @@ const std = @import("std");
 
 const Config = @import("../src/server/config.zig");
 const MemoryStorage = @import("../src/server/storage.zig");
-const TracingAllocator = @import("../src/server/tracing.zig").TracingAllocator;
 const PersistanceHandler = @import("../src/server/persistance.zig").PersistanceHandler;
 const CMDHandler = @import("../src/server/cmd_handler.zig").CMDHandler;
 const types = @import("../src/protocol/types.zig");
@@ -71,10 +70,10 @@ pub fn expectEqualZTypes(first: types.ZType, second: types.ZType) !void {
 
                     if (sitem == null) continue;
                     if (activeTag(fitem.?.value_ptr.*) == activeTag(sitem.?.value_ptr.*)) {
-                        try expectEqualZTypes(
+                        expectEqualZTypes(
                             fitem.?.value_ptr.*,
                             sitem.?.value_ptr.*,
-                        );
+                        ) catch continue;
                         equal_items += 1;
                     }
                 }

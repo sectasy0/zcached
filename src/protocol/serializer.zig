@@ -140,8 +140,9 @@ pub fn SerializerT(comptime GenericReader: type) type {
         }
 
         fn serialize_null(self: *Self, reader: GenericReader) !types.ZType {
-            _ = reader;
-            try self.raw.appendSlice("_\r\n");
+            var buff: [2]u8 = undefined;
+            _ = try reader.readAtLeast(&buff, 2); // to remove \r\n from buffer
+            try self.raw.appendSlice("\r\n");
             return .{ .null = void{} };
         }
 
