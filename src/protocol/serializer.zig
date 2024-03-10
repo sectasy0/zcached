@@ -14,13 +14,10 @@ pub fn SerializerT(comptime GenericReader: type) type {
         handlers: std.StringHashMap(*const HandlerFunc),
         arena: std.heap.ArenaAllocator,
 
-        raw: std.ArrayList(u8),
-
         pub fn init(allocator: std.mem.Allocator) !Self {
             var handler = Self{
                 .handlers = std.StringHashMap(*const HandlerFunc).init(allocator),
                 .arena = std.heap.ArenaAllocator.init(allocator),
-                .raw = std.ArrayList(u8).init(allocator),
             };
 
             try handler.handlers.put("+", serialize_sstr);
@@ -43,14 +40,12 @@ pub fn SerializerT(comptime GenericReader: type) type {
             if (size == 0) return error.BadRequest;
 
             const handler_ref = self.handlers.get(&request_type) orelse return error.BadRequest;
-            try self.raw.append(request_type[0]);
             return try handler_ref(self, reader);
         }
 
         pub fn deinit(self: *Self) void {
             self.handlers.deinit();
             self.arena.deinit();
-            self.raw.deinit();
         }
 
         fn serialize_sstr(self: *Self, reader: GenericReader) !types.ZType {
@@ -140,9 +135,9 @@ pub fn SerializerT(comptime GenericReader: type) type {
         }
 
         fn serialize_null(self: *Self, reader: GenericReader) !types.ZType {
+            _ = self;
             var buff: [2]u8 = undefined;
             _ = try reader.readAtLeast(&buff, 2); // to remove \r\n from buffer
-            try self.raw.appendSlice("\r\n");
             return .{ .null = void{} };
         }
 
@@ -190,9 +185,6 @@ pub fn SerializerT(comptime GenericReader: type) type {
             ) catch {
                 return error.BadRequest;
             };
-
-            try self.raw.appendSlice(bytes);
-            try self.raw.appendSlice("\n");
 
             return bytes;
         }

@@ -53,8 +53,6 @@ pub fn process(self: *RequestProcessor, connection: *Connection) void {
         return;
     };
 
-    self.context.logger.log_event(.Request, protocol.serializer.raw.items);
-
     if (result != .array) {
         errors.handle(
             connection.stream,
@@ -90,26 +88,13 @@ pub fn process(self: *RequestProcessor, connection: *Connection) void {
             );
         };
 
-        const repr = utils.repr(self.allocator, protocol.serializer.raw.items) catch |err| {
-            self.context.logger.log(
-                .Error,
-                "* failed to repr payload: {any}",
-                .{err},
-            );
-            return;
-        };
-        defer self.allocator.free(repr);
-
-        self.context.logger.log(.Error, "* failed to process command: {s}", .{repr});
+        self.context.logger.log(
+            .Error,
+            "* failed to process command: {s}",
+            .{command_set.items[0].str},
+        );
         return;
     }
-
-    // need to free if is map or array.
-    // defer switch (cmd_result.ok) {
-    //     .map => cmd_result.ok.map.deinit(),
-    //     .array => cmd_result.ok.array.deinit(),
-    //     inline else => {},
-    // };
 
     var response = protocol.deserialize(cmd_result.ok) catch |err| {
         errors.handle(
