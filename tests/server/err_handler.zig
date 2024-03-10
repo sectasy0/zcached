@@ -9,7 +9,7 @@ test "BadRequest" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
 
-    const logger = try log.Logger.init(std.testing.allocator, null);
+    const logger = try log.Logger.init(std.testing.allocator, null, false);
     try handle(&stream, error.BadRequest, .{}, &logger);
 
     var expected: []u8 = @constCast("-ERR bad request\r\n");
@@ -21,7 +21,7 @@ test "UnknownCommand" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
 
-    const logger = try log.Logger.init(std.testing.allocator, null);
+    const logger = try log.Logger.init(std.testing.allocator, null, false);
     try handle(&stream, error.UnknownCommand, .{}, &logger);
 
     var expected: []u8 = @constCast("-ERR unknown command\r\n");
@@ -33,7 +33,7 @@ test "UnknownCommand with command name" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
 
-    const logger = try log.Logger.init(std.testing.allocator, null);
+    const logger = try log.Logger.init(std.testing.allocator, null, false);
     try handle(&stream, error.UnknownCommand, .{ .command = "help" }, &logger);
 
     try std.testing.expectFmt(
@@ -47,7 +47,7 @@ test "unexpected error" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
 
-    const logger = try log.Logger.init(std.testing.allocator, null);
+    const logger = try log.Logger.init(std.testing.allocator, null, false);
     try handle(&stream, error.Unexpected, .{}, &logger);
 
     var expected: []u8 = @constCast("-ERR unexpected\r\n");
@@ -59,7 +59,7 @@ test "max clients reached" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
 
-    const logger = try log.Logger.init(std.testing.allocator, null);
+    const logger = try log.Logger.init(std.testing.allocator, null, false);
     try handle(&stream, error.MaxClientsReached, .{}, &logger);
 
     var expected: []u8 = @constCast("-ERR max number of clients reached\r\n");
@@ -71,7 +71,7 @@ test "NotFound with key name" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
 
-    const logger = try log.Logger.init(std.testing.allocator, null);
+    const logger = try log.Logger.init(std.testing.allocator, null, false);
     try handle(&stream, error.NotFound, .{ .key = "user_cache_12345" }, &logger);
 
     try std.testing.expectFmt(

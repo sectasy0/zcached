@@ -300,6 +300,8 @@ fn handle_request(self: *const Listener, worker: *Worker, connection: *Connectio
         self.context,
     );
 
+    self.context.logger.log_event(.Request, connection.buffer.ptr[0..read_size]);
+
     // for now only 1 command - 1 response
     processor.process(connection);
 }

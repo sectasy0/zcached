@@ -14,6 +14,7 @@ test "test logger debug" {
     var logger = try log.Logger.init(
         std.testing.allocator,
         null,
+        false,
     );
     logger.log(log.LogLevel.Debug, "{s}", .{"test"});
 
@@ -34,7 +35,7 @@ test "test logger debug" {
 
 test "test logger info" {
     std.fs.cwd().deleteTree("log") catch {};
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
     logger.log(log.LogLevel.Info, "{s}", .{"test"});
 
     var file = try std.fs.cwd().openFile(log.DEFAULT_PATH, .{ .mode = .read_only });
@@ -54,7 +55,7 @@ test "test logger info" {
 
 test "test logger warning" {
     std.fs.cwd().deleteTree("log") catch {};
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
     logger.log(log.LogLevel.Warning, "{s}", .{"test"});
 
     var file = try std.fs.cwd().openFile(log.DEFAULT_PATH, .{ .mode = .read_only });
@@ -74,7 +75,7 @@ test "test logger warning" {
 
 test "test logger error" {
     std.fs.cwd().deleteTree("log") catch {};
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
     logger.log(log.LogLevel.Error, "{s}", .{"test"});
 
     var file = try std.fs.cwd().openFile(log.DEFAULT_PATH, .{ .mode = .read_only });

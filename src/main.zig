@@ -67,7 +67,11 @@ pub fn main() void {
 
     handle_arguments(result.args) orelse return;
 
-    const logger = Logger.init(allocator, result.args.@"log-path") catch |err| {
+    const logger = Logger.init(
+        allocator,
+        result.args.@"log-path",
+        result.args.sout,
+    ) catch |err| {
         std.log.err("# failed to initialize logger: {}", .{err});
         return;
     };

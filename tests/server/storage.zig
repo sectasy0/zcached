@@ -12,7 +12,7 @@ const helper = @import("../test_helper.zig");
 test "should get existing and not get non-existing key" {
     var config = try Config.load(std.testing.allocator, null, null);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -68,7 +68,7 @@ test "should get existing and not get non-existing key" {
 test "should delete existing key" {
     var config = try Config.load(std.testing.allocator, null, null);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -104,7 +104,7 @@ test "should delete existing key" {
 test "should not delete non-existing key" {
     var config = try Config.load(std.testing.allocator, null, null);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -132,7 +132,7 @@ test "should not delete non-existing key" {
 test "should flush storage" {
     var config = try Config.load(std.testing.allocator, null, null);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -169,7 +169,7 @@ test "should flush storage" {
 test "should not store error" {
     var config = try Config.load(std.testing.allocator, null, null);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,

@@ -19,10 +19,12 @@ pub const Logger = struct {
     file: std.fs.File = undefined,
     log_path: []const u8 = DEFAULT_PATH,
 
+    sout: bool = undefined,
+
     allocator: std.mem.Allocator,
 
-    pub fn init(allocator: std.mem.Allocator, file_path: ?[]const u8) !Logger {
-        var logger = Logger{ .allocator = allocator };
+    pub fn init(allocator: std.mem.Allocator, file_path: ?[]const u8, sout: bool) !Logger {
+        var logger = Logger{ .allocator = allocator, .sout = sout };
 
         if (file_path != null) logger.log_path = file_path.?;
         utils.create_path(logger.log_path);
@@ -75,7 +77,7 @@ pub const Logger = struct {
             return;
         };
 
-        std.debug.print("{s}", .{formatted});
+        if (self.sout) std.debug.print("{s}", .{formatted});
 
         self.file.writeAll(formatted) catch |err| {
             std.log.err("# failed to write log message: {?}", .{err});

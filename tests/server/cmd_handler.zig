@@ -14,7 +14,7 @@ test "should handle SET command" {
     const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -47,7 +47,7 @@ test "should SET return error.InvalidCommand when passed 2 args" {
     const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -78,7 +78,7 @@ test "should SET return error.InvalidCommand when passed 1 args" {
     const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -108,7 +108,7 @@ test "should handle GET command" {
     const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -140,7 +140,7 @@ test "should SET return error.InvalidCommand when missing key" {
     const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -171,7 +171,7 @@ test "should handle DELETE command" {
     const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -205,7 +205,7 @@ test "should return error.NotFound for non existing during DELETE command" {
     const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -235,7 +235,7 @@ test "should DELETE return error.InvalidCommand when missing key" {
     const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -267,7 +267,7 @@ test "should handle FLUSH command" {
     const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -300,7 +300,7 @@ test "should handle PING command" {
     const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -332,7 +332,7 @@ test "should handle DBSIZE command" {
     const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -364,7 +364,7 @@ test "should handle MGET command" {
     const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -403,7 +403,7 @@ test "should handle MSET command" {
     const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -436,7 +436,7 @@ test "should handle MSET return InvalidArgs when empty" {
     const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -466,7 +466,7 @@ test "should handle MSET and return InvalidArgs when not even" {
     const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -497,7 +497,7 @@ test "should handle MSET and return KeyNotString" {
     const config = try Config.load(std.testing.allocator, null, null);
     var tracing_allocator = TracingAllocator.init(std.testing.allocator);
 
-    var logger = try log.Logger.init(std.testing.allocator, null);
+    var logger = try log.Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
