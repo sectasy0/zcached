@@ -1,10 +1,10 @@
 const std = @import("std");
 
-const storage = @import("storage.zig");
+const MemoryStorage = @import("storage.zig");
 const ZType = @import("../protocol/types.zig").ZType;
-const Config = @import("config.zig").Config;
+const Config = @import("config.zig");
 const utils = @import("utils.zig");
-const log = @import("logger.zig");
+const Logger = @import("logger.zig");
 
 const TracingAllocator = @import("tracing.zig").TracingAllocator;
 const PersistanceHandler = @import("persistance.zig").PersistanceHandler;
@@ -22,16 +22,16 @@ const Commands = enum {
 };
 pub const CMDHandler = struct {
     allocator: std.mem.Allocator,
-    storage: *storage.MemoryStorage,
+    storage: *MemoryStorage,
 
-    logger: *const log.Logger,
+    logger: *const Logger,
 
     const HandlerResult = union(enum) { ok: ZType, err: anyerror };
 
     pub fn init(
         allocator: std.mem.Allocator,
-        mstorage: *storage.MemoryStorage,
-        logger: *const log.Logger,
+        mstorage: *MemoryStorage,
+        logger: *const Logger,
     ) CMDHandler {
         return CMDHandler{
             .allocator = allocator,
@@ -54,11 +54,23 @@ pub const CMDHandler = struct {
         };
         try switch (command_type) {
             .PING => return self.ping(),
-            .GET => return self.get(command_set.items[1]),
-            .SET => return self.set(command_set.items[1], command_set.items[2]),
-            .DELETE => return self.delete(command_set.items[1]),
+            .GET => {
+                if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
+
+                return self.get(command_set.items[1]);
+            },
+            .SET => {
+                if (command_set.items.len < 3) return .{ .err = error.InvalidCommand };
+
+                return self.set(command_set.items[1], command_set.items[2]);
+            },
+            .DELETE => {
+                if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
+
+                return self.delete(command_set.items[1]);
+            },
             .FLUSH => return self.flush(),
-            .DBSIZE => return .{ .ok = .{ .int = self.storage.internal.count() } },
+            .DBSIZE => return .{ .ok = .{ .int = self.storage.size() } },
             .SAVE => return self.save(),
             .MGET => return self.mget(command_set.items[1..command_set.items.len]),
             .MSET => return self.mset(command_set.items[1..command_set.items.len]),
@@ -105,16 +117,15 @@ pub const CMDHandler = struct {
     }
 
     fn save(self: *CMDHandler) HandlerResult {
-        if (self.storage.internal.count() == 0) {
+        if (self.storage.size() == 0)
             return .{ .ok = .{ .sstr = @constCast("OK") } };
-        }
 
         const size = self.storage.persister.save(self.storage) catch |err| {
-            self.logger.log(log.LogLevel.Error, "# failed to save data: {?}", .{err});
+            self.logger.log(.Error, "# failed to save data: {?}", .{err});
 
             return .{ .err = error.FailedToSave };
         };
-        self.logger.log(log.LogLevel.Debug, "# saved {d} bytes", .{size});
+        self.logger.log(.Debug, "# saved {d} bytes", .{size});
         return .{ .ok = .{ .sstr = @constCast("OK") } };
     }
 

@@ -1,180 +1,307 @@
 const std = @import("std");
 
-const ProtocolHandler = @import("../protocol/handler.zig").ProtocolHandler;
-const AccessControl = @import("access_control.zig").AccessControl;
-const MemoryStorage = @import("storage.zig").MemoryStorage;
-const ZType = @import("../protocol/types.zig").ZType;
-const CMDHandler = @import("cmd_handler.zig").CMDHandler;
-const Config = @import("config.zig").Config;
+const Worker = @import("worker.zig");
+const StreamServer = @import("stream_server.zig");
+const Connection = @import("connection.zig");
+const MemoryStorage = @import("storage.zig");
+const Context = @import("employer.zig").Context;
 
-const errors = @import("err_handler.zig");
-const log = @import("logger.zig");
+const AccessControl = @import("access_control.zig");
+const RequestProcessor = @import("request_processor.zig");
+
 const utils = @import("utils.zig");
+const Logger = @import("logger.zig");
 
-const Address = std.net.Address;
-const Allocator = std.mem.Allocator;
-const Pool = std.Thread.Pool;
+const DEFAULT_CLIENT_BUFFER: usize = 4096;
 
-const Connection = std.net.StreamServer.Connection;
+const Listener = @This();
 
-pub const ServerListener = struct {
-    server: std.net.StreamServer,
-    addr: *const Address,
+server: *StreamServer,
 
-    allocator: Allocator,
-    cmd_handler: CMDHandler,
-    storage: *MemoryStorage,
+context: Context,
+allocator: std.mem.Allocator,
 
-    config: *const Config,
+start: usize = 0,
 
-    connections: u16 = 0,
+buffer_size: usize = undefined,
 
-    logger: *const log.Logger,
-    pool: *Pool,
+pub fn init(
+    allocator: std.mem.Allocator,
+    server: *StreamServer,
+    context: Context,
+    buffer_size: ?usize,
+) Listener {
+    return .{
+        .allocator = allocator,
+        .server = server,
+        .context = context,
+        .buffer_size = buffer_size orelse DEFAULT_CLIENT_BUFFER,
+    };
+}
 
-    pub fn init(
-        addr: *const Address,
-        allocator: Allocator,
-        pool: *Pool,
-        storage: *MemoryStorage,
-        config: *const Config,
-        logger: *const log.Logger,
-    ) !ServerListener {
-        const serializer = @import("../protocol/serializer.zig");
-        serializer.MAX_BULK_LEN = config.proto_max_bulk_len;
+pub fn listen(self: *Listener, worker: *Worker) void {
+    worker.poll_fds[0] = .{
+        .revents = 0,
+        .fd = self.server.sockfd.?,
+        .events = std.os.POLL.IN,
+    };
 
-        const cmdhandler = CMDHandler.init(allocator, storage, logger);
-
-        logger.log(log.LogLevel.Info, "* ready to accept connections", .{});
-
-        return ServerListener{
-            .server = std.net.StreamServer.init(.{
-                .kernel_backlog = 128,
-                .reuse_address = true,
-                .reuse_port = true,
-            }),
-            .allocator = allocator,
-            .cmd_handler = cmdhandler,
-            .pool = pool,
-            .addr = addr,
-            .storage = storage,
-            .config = config,
-            .logger = logger,
-        };
-    }
-
-    pub fn listen(self: *ServerListener) !void {
-        try self.server.listen(@constCast(self.addr).*);
-
-        // if somewhere in there we get an error, we just translate it to a packet and send it back.
-        while (true) {
-            var connection: Connection = try self.server.accept();
-
-            self.logger.log(
-                log.LogLevel.Info,
-                "* new connection from {any}",
-                .{connection.address},
+    while (true) {
+        _ = std.os.poll(worker.poll_fds[self.start..worker.connections], -1) catch |err| {
+            self.context.logger.log(
+                .Error,
+                "# std.os.poll failure: {?}\n",
+                .{err},
             );
+            return;
+        };
 
-            const access_control = AccessControl.init(self.config, self.logger);
-            access_control.verify(connection.address, &self.connections) catch |err| {
-                errors.handle(connection.stream, err, .{}, self.logger) catch {
-                    self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
-                };
+        for (0..worker.connections) |i| {
+            const pollfd = worker.poll_fds[i];
 
-                self.close_connection(connection);
-            };
+            // there is no events for this file descriptor.
+            if (pollfd.revents == 0) continue;
 
-            self.connections += 1;
+            // file descriptor for listening incoming connections
+            if (pollfd.fd == self.server.sockfd.?) {
+                const handle_result: AcceptResult = self.handle_incoming(worker);
+                if (handle_result != .err) continue;
 
-            // Adds Task to the queue, then workers do its stuff
-            self.pool.spawn(
-                handle_request,
-                .{ self, connection },
-            ) catch |err| {
-                errors.handle(connection.stream, err, .{}, self.logger) catch {
-                    self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
-                };
+                const err = handle_result.err.etype;
+                const connection = handle_result.err.fd;
+                if (connection == null) continue;
 
-                self.close_connection(connection);
+                switch (err) {
+                    // ConnectionAborted aborted is returned when:
+                    // - cant set fd to non-block
+                    // - cant allocate buffer fo incoming connection
+                    // - cant set fd to worker states
+                    //
+                    // NotPermitted is returned when:
+                    // - access control fails (that means client is not permitted to connect)
+                    error.ConnectionAborted, error.NotPermitted => {
+                        std.debug.print("{?}", .{err});
+                        // also send message to the client
+                        if (connection != null) connection.?.close();
+                        continue;
+                    },
+                    else => continue,
+                }
+            }
 
-                self.logger.log(log.LogLevel.Error, "* failed to spawn new thread {any}", .{err});
-            };
+            // file descriptor is ready for reading.
+            if (pollfd.revents == std.os.POLL.IN) {
+                var connection = worker.states.getPtr(pollfd.fd) orelse continue;
+                self.handle_connection(worker, connection);
+                continue;
+            }
+
+            // treat everything else as error/disconnect
+            const connection = worker.states.getPtr(pollfd.fd) orelse continue;
+            self.handle_disconnection(worker, connection, i);
         }
     }
+}
 
-    fn handle_request(self: *ServerListener, connection: Connection) void {
-        defer self.close_connection(connection);
-
-        var protocol = ProtocolHandler.init(self.allocator) catch return;
-        defer protocol.deinit();
-
-        // reading data from client and then try to parse to protocol.
-        const reader: std.net.Stream.Reader = connection.stream.reader();
-        const result: ZType = protocol.serialize(&reader) catch |err| {
-            self.logger.log_event(log.EType.Request, protocol.serializer.raw.items);
-
-            errors.handle(connection.stream, err, .{}, self.logger) catch {
-                self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
-            };
-
-            return;
-        };
-
-        self.logger.log_event(log.EType.Request, protocol.serializer.raw.items);
-
-        // command is always and array of bulk strings. Processing command below.
-        if (result != .array) {
-            errors.handle(connection.stream, error.UnknownCommand, .{}, self.logger) catch |err| {
-                self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
-            };
-            return;
-        }
-
-        const command_set = &result.array;
-        defer command_set.deinit();
-
-        var cmd_result = self.cmd_handler.process(command_set);
-        if (cmd_result != .ok) {
-            var args = errors.build_args(command_set);
-            errors.handle(connection.stream, cmd_result.err, args, self.logger) catch |err| {
-                self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{err});
-            };
-
-            std.debug.print("failed to process command: {any}\n", .{protocol.serializer.raw.items});
-            return;
-        }
-
-        // need to free if is map or array.
-        defer switch (cmd_result.ok) {
-            .map => cmd_result.ok.map.deinit(),
-            .array => cmd_result.ok.array.deinit(),
-            inline else => {},
-        };
-
-        var response = protocol.deserialize(cmd_result.ok) catch |err| {
-            errors.handle(connection.stream, err, .{}, self.logger) catch |er| {
-                self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{er});
-            };
-            return;
-        };
-        connection.stream.writer().writeAll(response) catch |err| {
-            errors.handle(connection.stream, err, .{}, self.logger) catch |er| {
-                self.logger.log(log.LogLevel.Error, "* failed to send error: {any}", .{er});
-            };
-        };
-
-        self.logger.log_event(log.EType.Response, response);
-    }
-
-    fn close_connection(self: *ServerListener, connection: Connection) void {
-        connection.stream.close();
-        self.connections -= 1;
-    }
-
-    pub fn deinit(self: *ServerListener) void {
-        self.server.deinit();
-    }
+const AcceptError = struct {
+    etype: anyerror,
+    fd: ?std.net.Stream,
 };
+const AcceptResult = union(enum) {
+    ok: void,
+    err: AcceptError,
+};
+fn handle_incoming(self: *Listener, worker: *Worker) AcceptResult {
+    const incoming = self.server.accept() catch |err| {
+        const result: AcceptResult = .{
+            .err = .{
+                .etype = err,
+                .fd = null,
+            },
+        };
+        // another thread must have gotten it, no big deal
+        if (err == error.WouldBlock) return .{
+            .err = .{
+                .etype = err,
+                .fd = null,
+            },
+        };
 
-// I dunno how to test this listener, so I'm just gonna test it manually
+        // this is actuall error.
+        self.context.logger.log(
+            .Error,
+            "# failed to accept new connection: {?}\n",
+            .{err},
+        );
+        return result;
+    };
+
+    // stop listening after fds array is full
+    if (worker.connections + 1 == worker.poll_fds.len) self.start = 1;
+
+    const access_control = AccessControl.init(self.context.config, self.context.logger);
+    access_control.verify(incoming.address) catch return .{
+        .err = .{
+            .etype = error.NotPermitted,
+            .fd = incoming.stream,
+        },
+    };
+
+    utils.set_nonblocking(incoming.stream.handle) catch |err| {
+        self.context.logger.log(
+            .Error,
+            "# failed to set client socket to non-blocking: {?}",
+            .{err},
+        );
+
+        return .{
+            .err = .{
+                .etype = error.ConnectionAborted,
+                .fd = incoming.stream,
+            },
+        };
+    };
+
+    self.context.logger.log(
+        .Debug,
+        "# new connection from: {any}",
+        .{incoming.address},
+    );
+
+    worker.poll_fds[worker.connections] = .{
+        .revents = 0,
+        .fd = incoming.stream.handle,
+        .events = std.os.POLL.IN,
+    };
+
+    var cbuffer = worker.allocator.alloc(u8, self.buffer_size) catch |err| {
+        self.context.logger.log(
+            .Error,
+            "# failed to allocate buffer for client: {?}",
+            .{err},
+        );
+
+        return .{
+            .err = .{
+                .etype = error.ConnectionAborted,
+                .fd = incoming.stream,
+            },
+        };
+    };
+
+    var connection = Connection{
+        .buffer = cbuffer,
+        .position = 0,
+        .stream = incoming.stream,
+        .address = incoming.address,
+        .allocator = &worker.allocator,
+    };
+
+    worker.states.put(incoming.stream.handle, connection) catch |err| {
+        self.context.logger.log(
+            .Error,
+            "# failed to put to states: {?}",
+            .{err},
+        );
+        connection.deinit();
+
+        return .{
+            .err = .{
+                .etype = error.ConnectionAborted,
+                .fd = incoming.stream,
+            },
+        };
+    };
+
+    worker.connections += 1;
+
+    return .{ .ok = void{} };
+}
+
+fn handle_connection(self: *const Listener, worker: *Worker, connection: *Connection) void {
+    while (true) {
+        self.handle_request(worker, connection) catch |err| {
+            switch (err) {
+                error.WouldBlock => return,
+                error.NotOpenForReading => return,
+                else => connection.close(),
+            }
+        };
+    }
+}
+
+fn handle_disconnection(self: *Listener, worker: *Worker, connection: *Connection, i: usize) void {
+    self.context.logger.log(
+        .Debug,
+        "# connection with client closed {any}",
+        .{connection.address},
+    );
+
+    self.start = 0;
+
+    // remove disconnected by overwiriting it with the last one.
+    if (i != worker.connections - 1) {
+        worker.poll_fds[i] = worker.poll_fds[worker.connections - 1];
+    }
+
+    if (worker.connections > 1) worker.connections -= 1;
+
+    connection.deinit();
+    const remove_result = worker.states.remove(connection.fd());
+    if (!remove_result) {
+        self.context.logger.log(
+            .Error,
+            "# failed to remove from states",
+            .{},
+        );
+        return;
+    }
+}
+
+fn handle_request(self: *const Listener, worker: *Worker, connection: *Connection) !void {
+    const read_size = try connection.stream.read(connection.buffer[connection.position..]);
+
+    if (read_size == 0) return error.ConnectionClosed;
+
+    const actual_size = connection.position + read_size;
+    // resize buffer if actuall is too small.
+    if (actual_size == connection.buffer.len) {
+        const new_size = actual_size + self.buffer_size;
+        connection.buffer = connection.allocator.realloc(
+            connection.buffer,
+            new_size,
+        ) catch |err| {
+            self.context.logger.log(
+                .Error,
+                "# failed to realloc: {?}",
+                .{err},
+            );
+            return err;
+        };
+
+        connection.buffer = connection.buffer.ptr[0..new_size];
+    }
+
+    _ = std.mem.indexOfScalarPos(
+        u8,
+        connection.buffer[0..actual_size],
+        connection.position,
+        '\n',
+    ) orelse {
+        // don't have a complete message yet
+        connection.position = actual_size;
+        return;
+    };
+
+    connection.position = 0;
+
+    var processor = RequestProcessor.init(
+        worker.allocator,
+        self.context,
+    );
+
+    self.context.logger.log_event(.Request, connection.buffer.ptr[0..read_size]);
+
+    // for now only 1 command - 1 response
+    processor.process(connection);
+}

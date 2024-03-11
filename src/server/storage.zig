@@ -1,72 +1,120 @@
 const std = @import("std");
 
-const Config = @import("config.zig").Config;
+const Config = @import("config.zig");
 const types = @import("../protocol/types.zig");
-const TracingAllocator = @import("tracing.zig").TracingAllocator;
+const TracingAllocator = @import("tracing.zig");
 const PersistanceHandler = @import("persistance.zig").PersistanceHandler;
 
-const log = @import("logger.zig");
+const Logger = @import("logger.zig");
 
 const ptrCast = @import("utils.zig").ptrCast;
 
-pub const MemoryStorage = struct {
-    internal: std.StringHashMap(types.ZType),
-    tracing_allocator: std.mem.Allocator,
+const MemoryStorage = @This();
 
-    arena: std.heap.ArenaAllocator,
+internal: std.StringHashMap(types.ZType),
+allocator: std.mem.Allocator,
 
-    persister: *PersistanceHandler,
+persister: *PersistanceHandler,
 
+config: Config,
+
+lock: std.Thread.RwLock,
+
+pub fn init(
+    allocator: std.mem.Allocator,
     config: Config,
+    persister: *PersistanceHandler,
+) MemoryStorage {
+    return MemoryStorage{
+        .internal = std.StringHashMap(types.ZType).init(allocator),
+        .allocator = allocator,
+        .config = config,
+        .lock = std.Thread.RwLock{},
+        .persister = persister,
+    };
+}
 
-    pub fn init(
-        tracing_allocator: std.mem.Allocator,
-        config: Config,
-        persister: *PersistanceHandler,
-    ) MemoryStorage {
-        return MemoryStorage{
-            .internal = std.StringHashMap(types.ZType).init(tracing_allocator),
-            .tracing_allocator = tracing_allocator,
-            .arena = std.heap.ArenaAllocator.init(tracing_allocator),
-            .config = config,
-            .persister = persister,
-        };
+pub fn put(self: *MemoryStorage, key: []const u8, value: types.ZType) !void {
+    const tracking = ptrCast(TracingAllocator, self.allocator.ptr);
+
+    self.lock.lock();
+    defer self.lock.unlock();
+
+    if (tracking.real_size >= self.config.maxmemory and self.config.maxmemory != 0) {
+        return error.MemoryLimitExceeded;
     }
 
-    pub fn put(self: *MemoryStorage, key: []const u8, value: types.ZType) !void {
-        const tracking = ptrCast(TracingAllocator, self.tracing_allocator.ptr);
+    switch (value) {
+        .err => return error.CantInsertError,
+        else => {
+            const zkey: []u8 = try self.allocator.dupe(u8, key);
+            const zvalue = try types.ztype_copy(value, self.allocator);
 
-        if (tracking.real_size >= self.config.max_memory and self.config.max_memory != 0) {
-            return error.MemoryLimitExceeded;
-        }
+            self.internal.put(zkey, zvalue) catch return error.InsertFailure;
+        },
+    }
+}
 
-        switch (value) {
-            .err => return error.CantInsertError,
-            else => {
-                var zkey: []u8 = try self.arena.allocator().dupe(u8, key);
-                var zvalue = try types.ztype_copy(value, &self.arena);
+pub fn get(self: *MemoryStorage, key: []const u8) !types.ZType {
+    self.lock.lockShared();
+    defer self.lock.unlock();
 
-                self.internal.put(zkey, zvalue) catch return error.InsertFailure;
-            },
-        }
+    return self.internal.get(key) orelse error.NotFound;
+}
+
+pub fn delete(self: *MemoryStorage, key: []const u8) bool {
+    self.lock.lock();
+    defer self.lock.unlock();
+
+    const kv = self.internal.fetchRemove(key) orelse return false;
+
+    var zkey: types.ZType = .{ .str = @constCast(kv.key) };
+    types.ztype_free(
+        &zkey,
+        self.allocator,
+    );
+
+    var zvalue: types.ZType = kv.value;
+    types.ztype_free(&zvalue, self.allocator);
+
+    return true;
+}
+
+pub fn flush(self: *MemoryStorage) void {
+    self.lock.lock();
+    defer self.lock.unlock();
+
+    var iter = self.internal.iterator();
+    while (iter.next()) |item| {
+        var key = .{ .str = @constCast(item.key_ptr.*) };
+        var value = item.value_ptr.*;
+
+        types.ztype_free(&key, self.allocator);
+        types.ztype_free(&value, self.allocator);
     }
 
-    pub fn get(self: *MemoryStorage, key: []const u8) !types.ZType {
-        const value = self.internal.get(key);
-        if (value == null) return error.NotFound;
-        return value.?;
-    }
+    self.internal.clearRetainingCapacity();
+}
 
-    pub fn delete(self: *MemoryStorage, key: []const u8) bool {
-        return self.internal.remove(key);
-    }
+pub fn size(self: *MemoryStorage) i64 {
+    self.lock.lockShared();
+    defer self.lock.unlock();
 
-    pub fn flush(self: *MemoryStorage) void {
-        self.internal.clearRetainingCapacity();
-    }
+    return self.internal.count();
+}
 
-    pub fn deinit(self: *MemoryStorage) void {
-        self.internal.deinit();
-        self.arena.deinit();
-    }
-};
+pub fn iterator(self: *MemoryStorage) std.io.iterator {
+    self.lock.lockShared();
+    defer self.lock.unlock();
+
+    return self.internal.iterator();
+}
+
+pub fn deinit(self: *MemoryStorage) void {
+    var value = .{ .map = self.internal };
+
+    types.ztype_free(
+        &value,
+        self.allocator,
+    );
+}

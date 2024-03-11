@@ -4,12 +4,15 @@ pub const Args = struct {
     @"config-path": ?[]const u8 = null,
     @"log-path": ?[]const u8 = null,
 
+    sout: bool = false,
+
     version: bool = false,
     help: bool = false,
 
     pub const shorthands = .{
         .c = "config-path",
         .l = "log-path",
+        .s = "sout",
         .v = "version",
         .h = "help",
     };

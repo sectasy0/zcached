@@ -1,11 +1,11 @@
 const std = @import("std");
 
-const Config = @import("../src/server/config.zig").Config;
-const MemoryStorage = @import("../src/server/storage.zig").MemoryStorage;
-const TracingAllocator = @import("../src/server/tracing.zig").TracingAllocator;
+const Config = @import("../src/server/config.zig");
+const MemoryStorage = @import("../src/server/storage.zig");
 const PersistanceHandler = @import("../src/server/persistance.zig").PersistanceHandler;
+const CMDHandler = @import("../src/server/cmd_handler.zig").CMDHandler;
 const types = @import("../src/protocol/types.zig");
-const log = @import("../src/server/logger.zig");
+const Logger = @import("../src/server/logger.zig");
 const activeTag = std.meta.activeTag;
 
 pub const STRING: []u8 = @constCast("Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.");
@@ -70,10 +70,10 @@ pub fn expectEqualZTypes(first: types.ZType, second: types.ZType) !void {
 
                     if (sitem == null) continue;
                     if (activeTag(fitem.?.value_ptr.*) == activeTag(sitem.?.value_ptr.*)) {
-                        try expectEqualZTypes(
+                        expectEqualZTypes(
                             fitem.?.value_ptr.*,
                             sitem.?.value_ptr.*,
-                        );
+                        ) catch continue;
                         equal_items += 1;
                     }
                 }

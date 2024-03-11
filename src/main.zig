@@ -1,25 +1,60 @@
 const std = @import("std");
 
 const server = @import("server/listener.zig");
-const Config = @import("server/config.zig").Config;
-const storage = @import("server/storage.zig");
+const Config = @import("server/config.zig");
+const MemoryStorage = @import("server/storage.zig");
 const cli = @import("server/cli.zig");
-const Logger = @import("server/logger.zig").Logger;
+const Logger = @import("server/logger.zig");
 const log = @import("server/logger.zig");
 
-const TracingAllocator = @import("server/tracing.zig").TracingAllocator;
+const TracingAllocator = @import("server/tracing.zig");
 const persistance = @import("server/persistance.zig");
 
-pub const io_mode = .evented;
+const Employer = @import("server/employer.zig");
+
+pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
+    @setCold(true);
+
+    log: {
+        const file = std.fs.cwd().createFile(
+            log.DEFAULT_PATH,
+            .{ .truncate = false },
+        ) catch |err| {
+            std.log.err("# failed to open log file: {?}", .{err});
+            break :log;
+        };
+
+        file.seekFromEnd(0) catch |err| {
+            std.log.err("# unable to seek log file eof: {?}", .{err});
+            break :log;
+        };
+
+        const debug_info = std.debug.getSelfDebugInfo() catch break :log;
+        const addr = ret_addr orelse @returnAddress();
+
+        std.debug.writeCurrentStackTrace(
+            file.writer(),
+            debug_info,
+            .no_color,
+            addr,
+        ) catch break :log;
+
+        file.writeAll("== END OF ERROR TRACE == \r\n") catch break :log;
+
+        std.log.err("# server panicked, please check logs in ./log/zcached.log", .{});
+    }
+
+    std.builtin.default_panic(msg, error_return_trace, ret_addr);
+}
 
 pub fn main() void {
     var gpa = std.heap.GeneralPurposeAllocator(.{
         .safety = true,
-        .verbose_log = true,
-        .retain_metadata = true,
+        // .verbose_log = true,
+        // .retain_metadata = true,
     }){};
-    var lalloc = std.heap.loggingAllocator(gpa.allocator());
-    var allocator = lalloc.allocator();
+    defer _ = gpa.deinit();
+    var allocator = gpa.allocator();
 
     const result = cli.Parser.parse(allocator) catch {
         cli.Parser.show_help() catch |err| {
@@ -32,7 +67,11 @@ pub fn main() void {
 
     handle_arguments(result.args) orelse return;
 
-    const logger = Logger.init(allocator, result.args.@"log-path") catch |err| {
+    const logger = Logger.init(
+        allocator,
+        result.args.@"log-path",
+        result.args.sout,
+    ) catch |err| {
         std.log.err("# failed to initialize logger: {}", .{err});
         return;
     };
@@ -54,7 +93,7 @@ pub fn main() void {
         null,
     ) catch |err| {
         logger.log(
-            log.LogLevel.Error,
+            .Error,
             "# failed to init PersistanceHandler: {?}",
             .{err},
         );
@@ -62,9 +101,9 @@ pub fn main() void {
     };
     defer persister.deinit();
 
-    var tracing_allocator = TracingAllocator.init(allocator);
-    var mem_storage = storage.MemoryStorage.init(
-        tracing_allocator.allocator(),
+    var tracing = TracingAllocator.init(allocator);
+    var mem_storage = MemoryStorage.init(
+        tracing.allocator(),
         config,
         &persister,
     );
@@ -73,19 +112,20 @@ pub fn main() void {
     persister.load(&mem_storage) catch |err| {
         if (err != error.FileNotFound) {
             logger.log(
-                log.LogLevel.Warning,
+                .Warning,
                 "# failed to restore data from latest .zcpf file: {?}",
                 .{err},
             );
         }
     };
 
-    run_server(.{
-        .allocator = allocator,
+    const context = Employer.Context{
         .config = &config,
         .logger = &logger,
         .storage = &mem_storage,
-    });
+    };
+
+    run_supervisor(allocator, context);
 }
 
 // null indicates that function should return from main
@@ -107,42 +147,15 @@ fn handle_arguments(args: cli.Args) ?void {
     }
 }
 
-const RunServerOptions = struct {
-    allocator: std.mem.Allocator,
-    config: *const Config,
-    logger: *const Logger,
-    storage: *storage.MemoryStorage,
-};
-fn run_server(options: RunServerOptions) void {
-    var thread_pool: std.Thread.Pool = undefined;
-    thread_pool.init(.{
-        .allocator = options.allocator,
-        .n_jobs = options.config.threads,
-    }) catch |err| {
-        options.logger.log(log.LogLevel.Error, "# failed to initialize thread pool: {?}", .{err});
-        return;
-    };
-    defer thread_pool.deinit();
-
-    options.logger.log(log.LogLevel.Info, "# starting zcached server on {?}", .{
-        options.config.address,
+fn run_supervisor(allocator: std.mem.Allocator, context: Employer.Context) void {
+    context.logger.log(.Info, "# starting zcached server on {?}", .{
+        context.config.address,
     });
 
-    var srv = server.ServerListener.init(
-        &options.config.address,
-        options.allocator,
-        &thread_pool,
-        options.storage,
-        options.config,
-        options.logger,
-    ) catch |err| {
-        options.logger.log(log.LogLevel.Error, "# failed to initialize server: {any}", .{err});
+    var employer = Employer.init(allocator, context) catch |err| {
+        context.logger.log(.Error, "# failed to initialize server: {any}", .{err});
         return;
     };
-    defer srv.deinit();
 
-    srv.listen() catch |err| {
-        options.logger.log(log.LogLevel.Error, "# failed to listen: {any}", .{err});
-        return;
-    };
+    employer.supervise();
 }

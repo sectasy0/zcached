@@ -86,6 +86,7 @@ for supported types and their encodings, see [types.md](types.md)
 - [x] Persistance mechanism, for further usage.
 - [x] Add `DBSIZE` command for getting the number of keys in the database.
 - [ ] Asynchronous save, `ASAVE`.
+- [ ] Handle all panics and write the backtrace into log file.
 - [x] Server events logging.
 - [x] Configurable server (port, max clients, max memory, etc.).
 - [x] Connections whitelisting.
