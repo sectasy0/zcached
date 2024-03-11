@@ -4,7 +4,7 @@ const Connection = @import("connection.zig");
 const proto = @import("../protocol/handler.zig");
 const CMDHandler = @import("cmd_handler.zig").CMDHandler;
 
-const log = @import("logger.zig");
+const Logger = @import("logger.zig");
 const errors = @import("err_handler.zig");
 const utils = @import("utils.zig");
 
@@ -44,7 +44,7 @@ pub fn process(self: *RequestProcessor, connection: *Connection) void {
             self.context.logger,
         ) catch {
             self.context.logger.log(
-                log.LogLevel.Error,
+                .Error,
                 "* failed to send error: {any}",
                 .{err},
             );
@@ -61,7 +61,7 @@ pub fn process(self: *RequestProcessor, connection: *Connection) void {
             self.context.logger,
         ) catch |err| {
             self.context.logger.log(
-                log.LogLevel.Error,
+                .Error,
                 "* failed to send error: {any}",
                 .{err},
             );
@@ -82,7 +82,7 @@ pub fn process(self: *RequestProcessor, connection: *Connection) void {
             self.context.logger,
         ) catch |err| {
             self.context.logger.log(
-                log.LogLevel.Error,
+                .Error,
                 "* failed to send error: {any}",
                 .{err},
             );
@@ -104,7 +104,7 @@ pub fn process(self: *RequestProcessor, connection: *Connection) void {
             self.context.logger,
         ) catch |er| {
             self.context.logger.log(
-                log.LogLevel.Error,
+                .Error,
                 "* failed to send error: {any}",
                 .{er},
             );
@@ -119,7 +119,7 @@ pub fn process(self: *RequestProcessor, connection: *Connection) void {
             self.context.logger,
         ) catch |er| {
             self.context.logger.log(
-                log.LogLevel.Error,
+                .Error,
                 "* failed to send error: {any}",
                 .{er},
             );

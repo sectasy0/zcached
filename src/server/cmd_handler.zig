@@ -4,7 +4,7 @@ const MemoryStorage = @import("storage.zig");
 const ZType = @import("../protocol/types.zig").ZType;
 const Config = @import("config.zig");
 const utils = @import("utils.zig");
-const log = @import("logger.zig");
+const Logger = @import("logger.zig");
 
 const TracingAllocator = @import("tracing.zig").TracingAllocator;
 const PersistanceHandler = @import("persistance.zig").PersistanceHandler;
@@ -24,14 +24,14 @@ pub const CMDHandler = struct {
     allocator: std.mem.Allocator,
     storage: *MemoryStorage,
 
-    logger: *const log.Logger,
+    logger: *const Logger,
 
     const HandlerResult = union(enum) { ok: ZType, err: anyerror };
 
     pub fn init(
         allocator: std.mem.Allocator,
         mstorage: *MemoryStorage,
-        logger: *const log.Logger,
+        logger: *const Logger,
     ) CMDHandler {
         return CMDHandler{
             .allocator = allocator,
@@ -121,11 +121,11 @@ pub const CMDHandler = struct {
             return .{ .ok = .{ .sstr = @constCast("OK") } };
 
         const size = self.storage.persister.save(self.storage) catch |err| {
-            self.logger.log(log.LogLevel.Error, "# failed to save data: {?}", .{err});
+            self.logger.log(.Error, "# failed to save data: {?}", .{err});
 
             return .{ .err = error.FailedToSave };
         };
-        self.logger.log(log.LogLevel.Debug, "# saved {d} bytes", .{size});
+        self.logger.log(.Debug, "# saved {d} bytes", .{size});
         return .{ .ok = .{ .sstr = @constCast("OK") } };
     }
 

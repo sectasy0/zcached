@@ -5,7 +5,7 @@ const MemoryStorage = @import("../src/server/storage.zig");
 const PersistanceHandler = @import("../src/server/persistance.zig").PersistanceHandler;
 const CMDHandler = @import("../src/server/cmd_handler.zig").CMDHandler;
 const types = @import("../src/protocol/types.zig");
-const log = @import("../src/server/logger.zig");
+const Logger = @import("../src/server/logger.zig");
 const activeTag = std.meta.activeTag;
 
 pub const STRING: []u8 = @constCast("Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.");

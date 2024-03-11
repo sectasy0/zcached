@@ -2,23 +2,23 @@ const std = @import("std");
 
 const Config = @import("../../src/server/config.zig");
 const types = @import("../../src/protocol/types.zig");
-const TracingAllocator = @import("../../src/server/tracing.zig").TracingAllocator;
+const TracingAllocator = @import("../../src/server/tracing.zig");
 const PersistanceHandler = @import("../../src/server/persistance.zig").PersistanceHandler;
-const log = @import("../../src/server/logger.zig");
+const Logger = @import("../../src/server/logger.zig");
 
 const MemoryStorage = @import("../../src/server/storage.zig");
 const helper = @import("../test_helper.zig");
 
 test "test logger debug" {
     std.fs.cwd().deleteTree("log") catch {};
-    var logger = try log.Logger.init(
+    var logger = try Logger.init(
         std.testing.allocator,
         null,
         false,
     );
-    logger.log(log.LogLevel.Debug, "{s}", .{"test"});
+    logger.log(.Debug, "{s}", .{"test"});
 
-    var file = try std.fs.cwd().openFile(log.DEFAULT_PATH, .{ .mode = .read_only });
+    var file = try std.fs.cwd().openFile(Logger.DEFAULT_PATH, .{ .mode = .read_only });
     defer file.close();
 
     const file_size = (try file.stat()).size;
@@ -35,10 +35,10 @@ test "test logger debug" {
 
 test "test logger info" {
     std.fs.cwd().deleteTree("log") catch {};
-    var logger = try log.Logger.init(std.testing.allocator, null, false);
-    logger.log(log.LogLevel.Info, "{s}", .{"test"});
+    var logger = try Logger.init(std.testing.allocator, null, false);
+    logger.log(.Info, "{s}", .{"test"});
 
-    var file = try std.fs.cwd().openFile(log.DEFAULT_PATH, .{ .mode = .read_only });
+    var file = try std.fs.cwd().openFile(Logger.DEFAULT_PATH, .{ .mode = .read_only });
     defer file.close();
 
     const file_size = (try file.stat()).size;
@@ -55,10 +55,10 @@ test "test logger info" {
 
 test "test logger warning" {
     std.fs.cwd().deleteTree("log") catch {};
-    var logger = try log.Logger.init(std.testing.allocator, null, false);
-    logger.log(log.LogLevel.Warning, "{s}", .{"test"});
+    var logger = try Logger.init(std.testing.allocator, null, false);
+    logger.log(.Warning, "{s}", .{"test"});
 
-    var file = try std.fs.cwd().openFile(log.DEFAULT_PATH, .{ .mode = .read_only });
+    var file = try std.fs.cwd().openFile(Logger.DEFAULT_PATH, .{ .mode = .read_only });
     defer file.close();
 
     const file_size = (try file.stat()).size;
@@ -75,10 +75,10 @@ test "test logger warning" {
 
 test "test logger error" {
     std.fs.cwd().deleteTree("log") catch {};
-    var logger = try log.Logger.init(std.testing.allocator, null, false);
-    logger.log(log.LogLevel.Error, "{s}", .{"test"});
+    var logger = try Logger.init(std.testing.allocator, null, false);
+    logger.log(.Error, "{s}", .{"test"});
 
-    var file = try std.fs.cwd().openFile(log.DEFAULT_PATH, .{ .mode = .read_only });
+    var file = try std.fs.cwd().openFile(Logger.DEFAULT_PATH, .{ .mode = .read_only });
     defer file.close();
 
     const file_size = (try file.stat()).size;

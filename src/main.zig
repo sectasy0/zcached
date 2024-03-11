@@ -4,10 +4,10 @@ const server = @import("server/listener.zig");
 const Config = @import("server/config.zig");
 const MemoryStorage = @import("server/storage.zig");
 const cli = @import("server/cli.zig");
-const Logger = @import("server/logger.zig").Logger;
+const Logger = @import("server/logger.zig");
 const log = @import("server/logger.zig");
 
-const TracingAllocator = @import("server/tracing.zig").TracingAllocator;
+const TracingAllocator = @import("server/tracing.zig");
 const persistance = @import("server/persistance.zig");
 
 const Employer = @import("server/employer.zig");
@@ -101,9 +101,9 @@ pub fn main() void {
     };
     defer persister.deinit();
 
-    var tracing_allocator = TracingAllocator.init(allocator);
+    var tracing = TracingAllocator.init(allocator);
     var mem_storage = MemoryStorage.init(
-        tracing_allocator.allocator(),
+        tracing.allocator(),
         config,
         &persister,
     );

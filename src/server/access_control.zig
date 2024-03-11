@@ -1,15 +1,15 @@
 const std = @import("std");
 
-const log = @import("logger.zig");
+const Logger = @import("logger.zig");
 const Config = @import("config.zig");
 const utils = @import("utils.zig");
 
 const AccessControl = @This();
 
-logger: *const log.Logger,
+logger: *const Logger,
 config: *const Config,
 
-pub fn init(config: *const Config, logger: *const log.Logger) AccessControl {
+pub fn init(config: *const Config, logger: *const Logger) AccessControl {
     return AccessControl{ .logger = logger, .config = config };
 }
 
@@ -29,7 +29,7 @@ fn check_whitelist(
         address,
     )) {
         self.logger.log(
-            log.LogLevel.Info,
+            .Info,
             "* connection from {any} is not whitelisted, rejected",
             .{address},
         );

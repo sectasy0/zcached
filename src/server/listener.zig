@@ -10,7 +10,7 @@ const AccessControl = @import("access_control.zig");
 const RequestProcessor = @import("request_processor.zig");
 
 const utils = @import("utils.zig");
-const log = @import("logger.zig");
+const Logger = @import("logger.zig");
 
 const DEFAULT_CLIENT_BUFFER: usize = 4096;
 

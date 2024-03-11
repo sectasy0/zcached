@@ -2,7 +2,7 @@ const std = @import("std");
 
 const Worker = @import("worker.zig");
 const Listener = @import("listener.zig");
-const log = @import("logger.zig");
+const Logger = @import("logger.zig");
 const utils = @import("utils.zig");
 
 const StreamServer = @import("stream_server.zig");
@@ -24,7 +24,7 @@ allocator: std.mem.Allocator,
 pub const Context = struct {
     storage: *MemoryStorage,
     config: *const Config,
-    logger: *const log.Logger,
+    logger: *const Logger,
 };
 
 pub fn init(allocator: Allocator, context: Context) !Employer {

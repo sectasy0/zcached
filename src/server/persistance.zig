@@ -10,7 +10,7 @@ const Deserializer = DeserializerT(std.io.FixedBufferStream([]u8).Reader);
 
 const types = @import("../protocol/types.zig");
 const utils = @import("utils.zig");
-const log = @import("logger.zig");
+const Logger = @import("logger.zig");
 const time = @import("std").time;
 
 const DEFAULT_PATH: []const u8 = "./persist/";
@@ -25,14 +25,14 @@ serializer: Serializer,
 deserializer: Deserializer,
 
 config: Config,
-logger: log.Logger,
+logger: Logger,
 
 path: ?[]const u8,
 
 pub fn init(
     allocator: std.mem.Allocator,
     config: Config,
-    logger: log.Logger,
+    logger: Logger,
     path: ?[]const u8,
 ) !PersistanceHandler {
     var persister = PersistanceHandler{
@@ -80,7 +80,7 @@ pub fn save(self: *PersistanceHandler, storage: *MemoryStorage) !usize {
         .{ .truncate = false },
     ) catch |err| {
         self.logger.log(
-            log.LogLevel.Error,
+            .Error,
             "failed to open persistance file: {?}",
             .{err},
         );
@@ -115,7 +115,7 @@ pub fn load(self: *PersistanceHandler, storage: *MemoryStorage) !void {
 
     const latest = self.get_latest_file(dir) catch |err| {
         self.logger.log(
-            log.LogLevel.Error,
+            .Error,
             "failed to get latest file from {s}: {?}",
             .{ self.path.?, err },
         );
@@ -132,7 +132,7 @@ pub fn load(self: *PersistanceHandler, storage: *MemoryStorage) !void {
 
     const file = std.fs.cwd().openFile(filename, .{ .mode = .read_only }) catch |err| {
         self.logger.log(
-            log.LogLevel.Error,
+            .Error,
             "failed to open file {s}: {?}",
             .{ filename, err },
         );
