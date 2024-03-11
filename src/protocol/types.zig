@@ -21,22 +21,18 @@ pub const ClientError = struct {
     message: []const u8,
 };
 
-pub fn ztype_copy(value: ZType, arena: *std.heap.ArenaAllocator) anyerror!ZType {
-    var allocator = arena.allocator();
+pub fn ztype_copy(value: ZType, allocator: std.mem.Allocator) anyerror!ZType {
     switch (value) {
         .str => return .{ .str = try allocator.dupe(u8, value.str) },
         .sstr => return .{ .sstr = try allocator.dupe(u8, value.sstr) },
         // we do not need to copy int, floats, bools and nulls
         // because we already have it content unless strings and others
-        .int => return value,
-        .float => return value,
-        .bool => return value,
-        .null => return value,
-        .array => {
+        .int, .float, .bool, .null => return value,
+        .array => |array| {
             var result = std.ArrayList(ZType).init(allocator);
 
-            for (value.array.items) |item| {
-                var copied = try ztype_copy(item, arena);
+            for (array.items) |item| {
+                var copied = try ztype_copy(item, allocator);
                 try result.append(copied);
             }
 
@@ -47,8 +43,8 @@ pub fn ztype_copy(value: ZType, arena: *std.heap.ArenaAllocator) anyerror!ZType 
 
             var iter = value.map.iterator();
             while (iter.next()) |item| {
-                const zkey = try ztype_copy(.{ .str = @constCast(item.key_ptr.*) }, arena);
-                const zvalue = try ztype_copy(item.value_ptr.*, arena);
+                const zkey = try ztype_copy(.{ .str = @constCast(item.key_ptr.*) }, allocator);
+                const zvalue = try ztype_copy(item.value_ptr.*, allocator);
 
                 try result.put(zkey.str, zvalue);
             }
@@ -57,5 +53,33 @@ pub fn ztype_copy(value: ZType, arena: *std.heap.ArenaAllocator) anyerror!ZType 
         },
         // we do not implement for err because errors wont be stored in MemoryStorage
         else => return error.UnsuportedType,
+    }
+
+    return value;
+}
+
+pub fn ztype_free(value: *ZType, allocator: std.mem.Allocator) void {
+    switch (value.*) {
+        .str, .sstr => |str| allocator.free(str),
+        .int, .float, .bool, .null => return,
+        .array => |array| {
+            defer array.deinit();
+
+            for (array.items) |item| ztype_free(@constCast(&item), allocator);
+        },
+        .map => |map| {
+            defer value.map.deinit();
+
+            var iter = map.iterator();
+
+            while (iter.next()) |item| {
+                var zkey: ZType = .{ .str = @constCast(item.key_ptr.*) };
+                var zvalue: ZType = item.value_ptr.*;
+
+                ztype_free(&zkey, allocator);
+                ztype_free(&zvalue, allocator);
+            }
+        },
+        else => return,
     }
 }
