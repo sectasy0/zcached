@@ -103,7 +103,7 @@ pub fn size(self: *MemoryStorage) i64 {
     return self.internal.count();
 }
 
-pub fn iterator(self: *MemoryStorage) std.io.iterator {
+pub fn iterator(self: *MemoryStorage) std.StringHashMap(types.ZType).Iterator {
     self.lock.lockShared();
     defer self.lock.unlock();
 
