@@ -43,6 +43,8 @@ pub fn init(allocator: std.mem.Allocator, file_path: ?[]const u8, sout: bool) !L
         .{ timestamp[0..t_size], logger.log_path },
     );
 
+    try logger.file.seekFromEnd(0);
+
     return logger;
 }
 
@@ -73,14 +75,9 @@ pub fn log(self: *const Logger, level: LogLevel, comptime format: []const u8, ar
         return;
     };
 
-    self.file.seekFromEnd(0) catch |err| {
-        std.log.err("# failed to seek to end of log file: {?}", .{err});
-        return;
-    };
-
     if (self.sout) std.debug.print("{s}", .{formatted});
 
-    self.file.writeAll(formatted) catch |err| {
+    _ = self.file.write(formatted) catch |err| {
         std.log.err("# failed to write log message: {?}", .{err});
         return;
     };
