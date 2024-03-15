@@ -292,7 +292,7 @@ test "should handle FLUSH command" {
     try command_set.append(.{ .str = @constCast("FLUSH") });
 
     var result = cmd_handler.process(&command_set);
-    try std.testing.expectEqual(result.ok, .{ .null = void{} });
+    try std.testing.expectEqual(result.ok, .{ .sstr = @constCast("OK") });
     try std.testing.expectEqual(mstorage.internal.count(), 0);
 }
 

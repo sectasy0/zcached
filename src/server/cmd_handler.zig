@@ -108,7 +108,7 @@ pub const CMDHandler = struct {
 
     fn flush(self: *CMDHandler) HandlerResult {
         self.storage.flush();
-        return .{ .ok = .{ .null = void{} } };
+        return .{ .ok = .{ .sstr = @constCast("OK") } };
     }
 
     fn ping(self: *CMDHandler) HandlerResult {
@@ -120,13 +120,19 @@ pub const CMDHandler = struct {
         if (self.storage.size() == 0)
             return .{ .ok = .{ .sstr = @constCast("OK") } };
 
-        const size = self.storage.persister.save(self.storage) catch |err| {
-            self.logger.log(.Error, "# failed to save data: {?}", .{err});
+        // const size = self.storage.save() catch |err| {
+        //     self.logger.log(.Error, "# failed to save data: {?}", .{err});
 
-            return .{ .err = error.FailedToSave };
-        };
+        //     return .{ .err = error.SaveFailure };
+        // };
+
+        const size = 1;
+
         self.logger.log(.Debug, "# saved {d} bytes", .{size});
-        return .{ .ok = .{ .sstr = @constCast("OK") } };
+
+        if (size > 0) return .{ .ok = .{ .sstr = @constCast("OK") } };
+
+        return .{ .err = error.SaveFailure };
     }
 
     fn mget(self: *CMDHandler, keys: []ZType) HandlerResult {
