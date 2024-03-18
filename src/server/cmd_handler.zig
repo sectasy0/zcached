@@ -120,13 +120,13 @@ pub const CMDHandler = struct {
         if (self.storage.size() == 0)
             return .{ .ok = .{ .sstr = @constCast("OK") } };
 
-        // const size = self.storage.save() catch |err| {
-        //     self.logger.log(.Error, "# failed to save data: {?}", .{err});
+        const size = self.storage.save() catch |err| {
+            self.logger.log(.Error, "# failed to save data: {?}", .{err});
 
-        //     return .{ .err = error.SaveFailure };
-        // };
+            return .{ .err = error.SaveFailure };
+        };
 
-        const size = 1;
+        // const size = 1;
 
         self.logger.log(.Debug, "# saved {d} bytes", .{size});
 

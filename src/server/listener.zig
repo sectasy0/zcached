@@ -79,7 +79,7 @@ pub fn listen(self: *Listener, worker: *Worker) void {
                     //
                     // NotPermitted is returned when:
                     // - access control fails (that means client is not permitted to connect)
-                    error.ConnectionAborted, error.NotPermitted => {
+                    error.ConnectionAborted, error.NotPermitted, error.MaxConnections => {
                         std.debug.print("{?}", .{err});
                         // also send message to the client
                         if (connection != null) connection.?.close();
@@ -138,6 +138,12 @@ fn handle_incoming(self: *Listener, worker: *Worker) AcceptResult {
 
     // stop listening after fds array is full
     if (worker.connections + 1 == worker.poll_fds.len) self.start = 1;
+    if (worker.connections + 1 > worker.poll_fds.len) return .{
+        .err = .{
+            .etype = error.MaxConnections,
+            .fd = incoming.stream,
+        },
+    };
 
     const access_control = AccessControl.init(self.context.config, self.context.logger);
     access_control.verify(incoming.address) catch return .{
