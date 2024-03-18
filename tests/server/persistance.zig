@@ -108,7 +108,7 @@ test "should not load invalid ext" {
     try file.writeAll(file_content);
     defer file.close();
 
-    try std.testing.expectEqual(persister.load(&storage), error.FileNotFound);
+    try std.testing.expectEqual(persister.load(&storage), error.InvalidFile);
 
     std.fs.cwd().deleteFile("./tmp/persist/invalid_ext/dump_latest_invalid.asdf") catch {};
     std.fs.cwd().deleteDir("./tmp/persist") catch {};
@@ -143,7 +143,7 @@ test "should not load corrupted file" {
     try file.writeAll(file_content);
     defer file.close();
 
-    try std.testing.expectEqual(persister.load(&storage), error.FileNotFound);
+    try std.testing.expectEqual(persister.load(&storage), error.InvalidFile);
 
     std.fs.cwd().deleteFile("./tmp/persist/corrupted/dump_latest_invalid.asdf") catch {};
     std.fs.cwd().deleteDir("./tmp/persist") catch {};
