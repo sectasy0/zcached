@@ -73,9 +73,9 @@ DBSIZE
 **Available since**: 1.0.0\
 **Time complexity**: O(N) where N is the total number of keys in databases
 
-The `SAVE` commands performs a `synchronous` save of the dataset producing a point in time snapshot of all the data inside the Redis instance, in the form of an RDB file.
+The `SAVE` commands performs a `synchronous` save of the dataset producing a point in time snapshot of all the data inside the zcached instance, in the form of an zcpf file.
 
-For asynchronous save check `asave`.
+For asynchronous save check `asave` (not implemented yet).
 
 ```
 SAVE
