@@ -102,3 +102,14 @@ Sets the given keys to their respective values. MSET replaces existing values wi
 ```
 MSET key value [key value ...]
 ```
+
+### KEYS
+
+**Available since**: 1.0.0\
+**Time complexity**: O(N) where N is the total number of keys in databases
+
+Returns all keys matching in database.
+
+```
+KEYS
+```
