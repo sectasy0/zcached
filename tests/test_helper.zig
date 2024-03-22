@@ -49,9 +49,18 @@ pub fn expectEqualZTypes(first: types.ZType, second: types.ZType) !void {
         .array => {
             if (first.array.items.len != second.array.items.len) return error.NotEqual;
 
-            for (first.array.items, second.array.items) |fitem, sitem| {
-                try expectEqualZTypes(fitem, sitem);
+            var equal_items: i64 = 0;
+
+            for (first.array.items) |fitem| {
+                for (second.array.items) |sitem| {
+                    if (activeTag(fitem) == activeTag(sitem)) {
+                        expectEqualZTypes(fitem, sitem) catch continue;
+                        equal_items += 1;
+                    }
+                }
             }
+
+            if (equal_items != first.array.items.len) return error.NotEqual;
         },
         .map => {
             if (first.map.count() != second.map.count()) return error.NotEqual;

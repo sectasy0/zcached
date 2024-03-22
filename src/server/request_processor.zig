@@ -96,6 +96,8 @@ pub fn process(self: *RequestProcessor, connection: *Connection) void {
         return;
     }
 
+    defer self.cmd_handler.free(command_set, &cmd_result);
+
     var response = protocol.deserialize(cmd_result.ok) catch |err| {
         errors.handle(
             connection.stream,

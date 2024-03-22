@@ -188,8 +188,6 @@ fn get_latest_file(self: *PersistanceHandler, dir: std.fs.IterableDir) !?FileEnt
         var iter = std.mem.splitBackwardsSequence(u8, file.name, ".");
         if (!std.mem.eql(u8, iter.first(), "zcpf")) continue;
 
-        std.debug.print("{s} \n", .{file.name});
-
         const file_path = try std.fmt.allocPrint(
             self.allocator,
             "{s}{s}",

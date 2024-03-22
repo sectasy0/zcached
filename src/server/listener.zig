@@ -80,7 +80,6 @@ pub fn listen(self: *Listener, worker: *Worker) void {
                     // NotPermitted is returned when:
                     // - access control fails (that means client is not permitted to connect)
                     error.ConnectionAborted, error.NotPermitted, error.MaxConnections => {
-                        std.debug.print("{?}", .{err});
                         // also send message to the client
                         if (connection != null) connection.?.close();
                         continue;

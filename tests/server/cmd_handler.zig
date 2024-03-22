@@ -524,3 +524,78 @@ test "should handle MSET and return KeyNotString" {
 
     try std.testing.expectEqual(result.err, error.KeyNotString);
 }
+
+test "should handle KEYS command" {
+    const config = try Config.load(std.testing.allocator, null, null);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+
+    var logger = try Logger.init(std.testing.allocator, null, false);
+
+    var persister = try PersistanceHandler.init(
+        std.testing.allocator,
+        config,
+        logger,
+        null,
+    );
+
+    defer persister.deinit();
+
+    var mstorage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer mstorage.deinit();
+
+    try mstorage.put("key", .{ .str = @constCast("value") });
+    try mstorage.put("key2", .{ .str = @constCast("value2") });
+
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
+
+    var command_set = std.ArrayList(ZType).init(std.testing.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("KEYS") });
+
+    var expected = std.ArrayList(ZType).init(std.testing.allocator);
+    defer expected.deinit();
+
+    try expected.append(.{ .str = @constCast("key") });
+    try expected.append(.{ .str = @constCast("key2") });
+
+    var result = cmd_handler.process(&command_set);
+    defer result.ok.array.deinit();
+
+    try helper.expectEqualZTypes(result.ok, .{ .array = expected });
+}
+
+test "should handle KEYS command no data in storage" {
+    const config = try Config.load(std.testing.allocator, null, null);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+
+    var logger = try Logger.init(std.testing.allocator, null, false);
+
+    var persister = try PersistanceHandler.init(
+        std.testing.allocator,
+        config,
+        logger,
+        null,
+    );
+
+    defer persister.deinit();
+
+    var mstorage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer mstorage.deinit();
+
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
+
+    var command_set = std.ArrayList(ZType).init(std.testing.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("KEYS") });
+
+    var expected = std.ArrayList(ZType).init(std.testing.allocator);
+    defer expected.deinit();
+
+    var result = cmd_handler.process(&command_set);
+    defer result.ok.array.deinit();
+
+    try std.testing.expectEqual(result.ok.array.items.len, expected.items.len);
+    try helper.expectEqualZTypes(result.ok, .{ .array = expected });
+}

@@ -110,6 +110,21 @@ pub fn save(self: *MemoryStorage) !usize {
     return try self.persister.save(self);
 }
 
+pub fn keys(self: *MemoryStorage) !std.ArrayList(types.ZType) {
+    self.lock.lockShared();
+    defer self.lock.unlock();
+
+    var result = std.ArrayList(types.ZType).init(self.allocator);
+
+    var iter = self.internal.keyIterator();
+    while (iter.next()) |key| {
+        var zkey: types.ZType = .{ .str = @constCast(key.*) };
+        try result.append(zkey);
+    }
+
+    return result;
+}
+
 pub fn deinit(self: *MemoryStorage) void {
     var value = .{ .map = self.internal };
 

@@ -19,6 +19,7 @@ const Commands = enum {
     MSET,
     DBSIZE,
     SAVE,
+    KEYS,
 };
 pub const CMDHandler = struct {
     allocator: std.mem.Allocator,
@@ -74,6 +75,7 @@ pub const CMDHandler = struct {
             .SAVE => return self.save(),
             .MGET => return self.mget(command_set.items[1..command_set.items.len]),
             .MSET => return self.mset(command_set.items[1..command_set.items.len]),
+            .KEYS => return self.zkeys(),
         };
     }
 
@@ -126,8 +128,6 @@ pub const CMDHandler = struct {
             return .{ .err = error.SaveFailure };
         };
 
-        // const size = 1;
-
         self.logger.log(.Debug, "# saved {d} bytes", .{size});
 
         if (size > 0) return .{ .ok = .{ .sstr = @constCast("OK") } };
@@ -166,5 +166,25 @@ pub const CMDHandler = struct {
             };
         }
         return .{ .ok = .{ .sstr = @constCast("OK") } };
+    }
+
+    fn zkeys(self: *CMDHandler) HandlerResult {
+        var result = self.storage.keys() catch |err| {
+            return .{ .err = err };
+        };
+        return .{ .ok = .{ .array = result } };
+    }
+
+    // method to free data needs to be freeded, for example keys command
+    // is creating std.ArrayList so it have to be freed after
+    pub fn free(self: *CMDHandler, command_set: *const std.ArrayList(ZType), result: *HandlerResult) void {
+        _ = self;
+        var cmd_upper: []u8 = utils.to_uppercase(command_set.items[0].str);
+        const command_type = std.meta.stringToEnum(Commands, cmd_upper) orelse return;
+
+        switch (command_type) {
+            .KEYS => result.ok.array.deinit(),
+            else => return,
+        }
     }
 };
