@@ -118,6 +118,7 @@ for supported types and their encodings, see [types.md](types.md)
 - feat(command): `SAVE` for dumping db to disk.
 - feat(command): `MSET` and `MGET` for seting and geting multiple keys at once.
 - fix: arrays and maps should be freed after returning to the client.
+- feat(command): `KEYS` command for getting all database keys.
 
 ### [version 0.0.1] - 11-12-2023
 - feat: first working version.
