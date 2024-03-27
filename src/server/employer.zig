@@ -30,9 +30,9 @@ pub const Context = struct {
 pub fn init(allocator: Allocator, context: Context) !Employer {
     return .{
         .server = StreamServer.init(.{
-            .kernel_backlog = 128,
             .reuse_address = true,
             .reuse_port = true,
+            .force_nonblocking = true,
         }),
         .context = context,
         .workers = try allocator.alloc(Worker, context.config.workers),
@@ -46,14 +46,6 @@ pub fn supervise(self: *Employer) void {
         self.context.logger.log(
             .Error,
             "# failed to run server listener: {?}",
-            .{err},
-        );
-    };
-
-    utils.set_nonblocking(self.server.sockfd.?) catch |err| {
-        self.context.logger.log(
-            .Error,
-            "# failed to set server fd to non-blocking: {?}",
             .{err},
         );
     };

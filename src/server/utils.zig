@@ -58,8 +58,3 @@ pub fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
     _ = std.mem.replace(u8, value, "\r\n", "\\r\\n", output);
     return output;
 }
-
-pub fn set_nonblocking(fd: std.os.socket_t) !void {
-    const flags = try std.os.fcntl(fd, std.os.F.GETFL, 0);
-    _ = try std.os.fcntl(fd, std.os.F.SETFL, flags | std.os.O.NONBLOCK);
-}

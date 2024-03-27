@@ -9,11 +9,12 @@ const StreamServer = @This();
 kernel_backlog: u31,
 reuse_address: bool,
 reuse_port: bool,
+force_nonblocking: bool,
 
 /// `undefined` until `listen` returns successfully.
 listen_address: std.net.Address,
 
-sockfd: ?os.socket_t,
+sockfd: ?std.os.socket_t,
 
 pub const Options = struct {
     /// How many connections the kernel will accept on the application's behalf.
@@ -26,6 +27,9 @@ pub const Options = struct {
 
     /// Enable SO.REUSEPORT on the socket.
     reuse_port: bool = false,
+
+    /// Force non-blocking mode.
+    force_nonblocking: bool = false,
 };
 
 /// After this call succeeds, resources have been acquired and must
@@ -36,6 +40,7 @@ pub fn init(options: Options) StreamServer {
         .kernel_backlog = options.kernel_backlog,
         .reuse_address = options.reuse_address,
         .reuse_port = options.reuse_port,
+        .force_nonblocking = options.force_nonblocking,
         .listen_address = undefined,
     };
 }
@@ -47,11 +52,13 @@ pub fn deinit(self: *StreamServer) void {
 }
 
 pub fn listen(self: *StreamServer, address: std.net.Address) !void {
-    const nonblock = if (std.io.is_async) os.SOCK.NONBLOCK else 0;
+    const nonblock = 0;
     const sock_flags = os.SOCK.STREAM | os.SOCK.CLOEXEC | nonblock;
+    var use_sock_flags: u32 = sock_flags;
+    if (self.force_nonblocking) use_sock_flags |= os.SOCK.NONBLOCK;
     const proto = if (address.any.family == os.AF.UNIX) @as(u32, 0) else os.IPPROTO.TCP;
 
-    const sockfd = try os.socket(address.any.family, sock_flags, proto);
+    const sockfd = try os.socket(address.any.family, use_sock_flags, proto);
     self.sockfd = sockfd;
     errdefer {
         os.closeSocket(sockfd);
@@ -101,14 +108,17 @@ pub const AcceptError = error{
     /// The system-wide limit on the total number of open files has been reached.
     SystemFdQuotaExceeded,
 
-    /// Not enough free memory.  This often means that the memory allocation  is  limited
-    /// by the socket buffer limits, not by the system memory.
+    /// Not enough free memory. This often means that the memory allocation
+    /// is limited by the socket buffer limits, not by the system memory.
     SystemResources,
 
     /// Socket is not listening for new connections.
     SocketNotListening,
 
     ProtocolFailure,
+
+    /// Socket is in non-blocking mode and there is no connection to accept.
+    WouldBlock,
 
     /// Firewall rules forbid connection.
     BlockedByFirewall,
@@ -120,7 +130,6 @@ pub const AcceptError = error{
     NetworkSubsystemFailed,
 
     OperationNotSupported,
-    WouldBlock,
 } || os.UnexpectedError;
 
 pub const Connection = struct {
@@ -132,21 +141,14 @@ pub const Connection = struct {
 pub fn accept(self: *StreamServer) AcceptError!Connection {
     var accepted_addr: std.net.Address = undefined;
     var adr_len: os.socklen_t = @sizeOf(std.net.Address);
-    const accept_result = blk: {
-        if (std.io.is_async) {
-            const loop = std.event.Loop.instance orelse return error.UnexpectedError;
-            break :blk loop.accept(self.sockfd.?, &accepted_addr.any, &adr_len, os.SOCK.CLOEXEC);
-        } else {
-            break :blk os.accept(self.sockfd.?, &accepted_addr.any, &adr_len, os.SOCK.CLOEXEC);
-        }
-    };
+    const accept_result = os.accept(self.sockfd.?, &accepted_addr.any, &adr_len, os.SOCK.CLOEXEC);
 
     if (accept_result) |fd| {
         return Connection{
             .stream = std.net.Stream{ .handle = fd },
             .address = accepted_addr,
         };
-    } else |err| switch (err) {
-        else => |e| return e,
+    } else |err| {
+        return err;
     }
 }

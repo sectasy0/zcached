@@ -152,21 +152,6 @@ fn handle_incoming(self: *Listener, worker: *Worker) AcceptResult {
         },
     };
 
-    utils.set_nonblocking(incoming.stream.handle) catch |err| {
-        self.context.logger.log(
-            .Error,
-            "# failed to set client socket to non-blocking: {?}",
-            .{err},
-        );
-
-        return .{
-            .err = .{
-                .etype = error.ConnectionAborted,
-                .fd = incoming.stream,
-            },
-        };
-    };
-
     self.context.logger.log(
         .Debug,
         "# new connection from: {any}",
