@@ -139,9 +139,20 @@ pub const Connection = struct {
 
 /// If this function succeeds, the returned `Connection` is a caller-managed resource.
 pub fn accept(self: *StreamServer) AcceptError!Connection {
+    const nonblock = 0;
+
     var accepted_addr: std.net.Address = undefined;
     var adr_len: os.socklen_t = @sizeOf(std.net.Address);
-    const accept_result = os.accept(self.sockfd.?, &accepted_addr.any, &adr_len, os.SOCK.CLOEXEC);
+
+    const sock_flags = os.SOCK.CLOEXEC | nonblock;
+    var use_sock_flags: u32 = sock_flags;
+    if (self.force_nonblocking) use_sock_flags |= os.SOCK.NONBLOCK;
+    const accept_result = os.accept(
+        self.sockfd.?,
+        &accepted_addr.any,
+        &adr_len,
+        use_sock_flags,
+    );
 
     if (accept_result) |fd| {
         return Connection{
