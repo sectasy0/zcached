@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const server = @import("server/listener.zig");
 const Config = @import("server/config.zig");
@@ -48,6 +49,8 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
 }
 
 pub fn main() void {
+    if (builtin.os.tag == .windows) @compileError("windows not supported");
+
     var gpa = std.heap.GeneralPurposeAllocator(.{
         .safety = true,
         // .verbose_log = true,
