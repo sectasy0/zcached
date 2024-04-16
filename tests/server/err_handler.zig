@@ -85,11 +85,19 @@ test "NotFound with key name" {
     var stream = std.io.fixedBufferStream(&buffer);
 
     const logger = try Logger.init(std.testing.allocator, null, false);
-    try err_handler.handle(&stream, error.NotFound, .{ .key = "user_cache_12345" }, &logger);
+    var array = std.ArrayList(ZType).initCapacity(std.heap.page_allocator, 2) catch {
+        return error.AllocatorError;
+    };
+    try array.append(.{ .str = @constCast("help") });
+    try array.append(.{ .str = @constCast("user_cache_12345") });
+
+    const args = err_handler.build_args(&array);
+    try err_handler.handle(&stream, error.NotFound, args, &logger);
 
     try std.testing.expectFmt(
         stream.getWritten(),
         "-ERR '{s}' not found\r\n",
         .{"user_cache_12345"},
     );
+    array.deinit();
 }
