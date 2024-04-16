@@ -11,7 +11,7 @@ const Args = struct {
 
 pub fn build_args(command_set: *const std.ArrayList(ZType)) Args {
     var args: Args = Args{};
-    
+
     if (command_set.items.len < 1) return args;
     if (command_set.items[0] == .str) args.command = command_set.items[0].str;
     if (command_set.items.len < 2) return args;
