@@ -32,7 +32,6 @@ test "UnknownCommand" {
     var expected: []u8 = @constCast("-ERR unknown command\r\n");
 
     try std.testing.expectEqualStrings(expected, stream.getWritten());
-    array.deinit();
 }
 
 test "UnknownCommand with command name" {
@@ -53,7 +52,6 @@ test "UnknownCommand with command name" {
         "-ERR unknown command '{s}'\r\n",
         .{"help"},
     );
-    array.deinit();
 }
 
 test "unexpected error" {
@@ -99,5 +97,4 @@ test "NotFound with key name" {
         "-ERR '{s}' not found\r\n",
         .{"user_cache_12345"},
     );
-    array.deinit();
 }
