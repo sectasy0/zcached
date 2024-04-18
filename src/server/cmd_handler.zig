@@ -20,6 +20,7 @@ const Commands = enum {
     DBSIZE,
     SAVE,
     KEYS,
+    LASTSAVE,
 };
 pub const CMDHandler = struct {
     allocator: std.mem.Allocator,
@@ -76,6 +77,7 @@ pub const CMDHandler = struct {
             .MGET => return self.mget(command_set.items[1..command_set.items.len]),
             .MSET => return self.mset(command_set.items[1..command_set.items.len]),
             .KEYS => return self.zkeys(),
+            .LASTSAVE => return .{ .ok = .{ .int = self.storage.last_save } },
         };
     }
 
