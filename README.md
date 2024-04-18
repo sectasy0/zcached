@@ -120,7 +120,7 @@ for supported types and their encodings, see [types.md](types.md)
 - fix: arrays and maps should be freed after returning to the client.
 - feat(command): `KEYS` command for getting all database keys.
 - fix: panic caused by unhandled command_set length.
-- feat(command): `LASTSAVE` command to get the. last save timestamp.
+- feat(command): `LASTSAVE` command to get the last db save timestamp.
 
 ### [version 0.0.1] - 11-12-2023
 - feat: first working version.
