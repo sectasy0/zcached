@@ -122,8 +122,6 @@ pub const CMDHandler = struct {
 
     fn save(self: *CMDHandler) HandlerResult {
         if (self.storage.size() == 0) {
-            // Yeah, it doesn't create a file here, so after a server restart it won't load this timestamp.
-            // In such a case, the server may return 0 for LASTSAVE even if it "made" a correct save.
             self.storage.last_save = std.time.timestamp();
             return .{ .ok = .{ .sstr = @constCast("OK") } };
         }

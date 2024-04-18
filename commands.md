@@ -120,7 +120,7 @@ KEYS
 **Time complexity**: O(1)
 
 Returns the Unix timestamp of the last DB save executed with success.
-If there was no successful save, then the server returns `0`.
+If there was no successful save, then the server returns startup timestamp.
 Because of this, the operation never fails.
 
 ```
