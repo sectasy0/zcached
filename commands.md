@@ -119,8 +119,7 @@ KEYS
 **Available since**: 1.0.0\
 **Time complexity**: O(1)
 
-Returns the Unix timestamp of the last DB save executed with success.
-If there was no successful save, then the server returns startup timestamp.
+Returns the Unix timestamp of the last successful DB save during the server runtime. If there wasn't any successful save, it returns the startup timestamp.
 Because of this, the operation never fails.
 
 ```
