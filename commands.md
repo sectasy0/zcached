@@ -113,3 +113,16 @@ Returns all keys matching in database.
 ```
 KEYS
 ```
+
+### LASTSAVE
+
+**Available since**: 1.0.0\
+**Time complexity**: O(1)
+
+Return the Unix timestamp of the last DB save executed with success.
+If there was no successful save, then the server returns `0`.
+Because of this, the operation never fails.
+
+```
+LASTSAVE
+```
