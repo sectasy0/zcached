@@ -20,7 +20,7 @@ config: Config,
 
 lock: std.Thread.RwLock,
 
-last_save: i64,
+last_save: i64 = 0,
 
 pub fn init(
     allocator: std.mem.Allocator,
@@ -33,7 +33,6 @@ pub fn init(
         .config = config,
         .lock = std.Thread.RwLock{},
         .persister = persister,
-        .last_save = 0,
     };
 }
 
