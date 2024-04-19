@@ -599,3 +599,62 @@ test "should handle KEYS command no data in storage" {
     try std.testing.expectEqual(result.ok.array.items.len, expected.items.len);
     try helper.expectEqualZTypes(result.ok, .{ .array = expected });
 }
+
+test "should handle LASTSAVE command" {
+    const config = try Config.load(std.testing.allocator, null, null);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+
+    var logger = try Logger.init(std.testing.allocator, null, false);
+
+    var persister = try PersistanceHandler.init(
+        std.testing.allocator,
+        config,
+        logger,
+        null,
+    );
+
+    defer persister.deinit();
+
+    var mstorage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer mstorage.deinit();
+    const expected: i64 = mstorage.last_save;
+
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
+
+    var command_set = std.ArrayList(ZType).init(std.testing.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("LASTSAVE") });
+
+    var result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = expected });
+}
+
+test "should SAVE return error.SaveFailure when there is no data" {
+    const config = try Config.load(std.testing.allocator, null, null);
+    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
+
+    var logger = try Logger.init(std.testing.allocator, null, false);
+
+    var persister = try PersistanceHandler.init(
+        std.testing.allocator,
+        config,
+        logger,
+        null,
+    );
+
+    defer persister.deinit();
+
+    var mstorage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    defer mstorage.deinit();
+
+    var cmd_handler = CMDHandler.init(std.testing.allocator, &mstorage, &logger);
+
+    var command_set = std.ArrayList(ZType).init(std.testing.allocator);
+    defer command_set.deinit();
+    try command_set.append(.{ .str = @constCast("SAVE") });
+
+    var result = cmd_handler.process(&command_set);
+
+    try std.testing.expectEqual(result.err, error.SaveFailure);
+}
