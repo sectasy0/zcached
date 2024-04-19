@@ -121,10 +121,7 @@ pub const CMDHandler = struct {
     }
 
     fn save(self: *CMDHandler) HandlerResult {
-        if (self.storage.size() == 0) {
-            self.logger.log(.Error, "# failed to save data: No data to save.", .{});
-            return .{ .err = error.SaveFailure };
-        }
+        if (self.storage.size() == 0) return .{ .err = error.SaveFailure };
 
         const size = self.storage.save() catch |err| {
             self.logger.log(.Error, "# failed to save data: {?}", .{err});
