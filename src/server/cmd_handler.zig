@@ -122,8 +122,8 @@ pub const CMDHandler = struct {
 
     fn save(self: *CMDHandler) HandlerResult {
         if (self.storage.size() == 0) {
-            self.storage.last_save = std.time.timestamp();
-            return .{ .ok = .{ .sstr = @constCast("OK") } };
+            self.logger.log(.Error, "# failed to save data: No data to save.", .{});
+            return .{ .err = error.SaveFailure };
         }
 
         const size = self.storage.save() catch |err| {
