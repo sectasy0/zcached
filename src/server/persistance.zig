@@ -155,7 +155,7 @@ pub fn load(self: *PersistanceHandler, storage: *MemoryStorage) !void {
     if (readed_size != latest.?.size) return error.InvalidFile;
     if (!std.mem.eql(u8, buffer[0..4], "zcpf")) return error.InvalidFile;
     const file_name = latest.?.name;
-    
+
     const underscore_index: usize = std.mem.indexOf(u8, file_name, "_").?;
     const dot_index: usize = std.mem.indexOf(u8, file_name, ".").?;
     const str_timestamp: []const u8 = file_name[underscore_index + 1 .. dot_index];
