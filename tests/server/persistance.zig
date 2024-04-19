@@ -33,7 +33,7 @@ test "should load" {
     try std.testing.expectEqual(storage.internal.count(), 0);
 
     const file_content = "zcpf%4\r\n$5\r\ntest2\r\n$8\r\ntesttest\r\n$5\r\ntest1\r\n$8\r\ntesttest\r\n$5\r\ntest3\r\n$8\r\ntesttest\r\n$5\r\ntest4\r\n$8\r\ntesttest\r\n";
-    const file = try std.fs.cwd().createFile("./tmp/persist/dump_latest.zcpf", .{});
+    const file = try std.fs.cwd().createFile("./tmp/persist/dump_123.zcpf", .{});
     try file.writeAll(file_content);
     defer file.close();
 
