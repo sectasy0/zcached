@@ -129,8 +129,6 @@ pub fn load(self: *PersistanceHandler, storage: *MemoryStorage) !void {
     var latest_file = latest orelse return error.InvalidFile;
     defer self.allocator.free(latest_file.name);
 
-    // std.debug.print("{s}{s}\n", .{ self.path.?, latest.?.name });
-
     const filename = try std.fmt.allocPrint(
         self.allocator,
         "{s}{s}",
@@ -156,11 +154,13 @@ pub fn load(self: *PersistanceHandler, storage: *MemoryStorage) !void {
     const readed_size = try file.read(buffer);
     if (readed_size != latest.?.size) return error.InvalidFile;
     if (!std.mem.eql(u8, buffer[0..4], "zcpf")) return error.InvalidFile;
+    const file_name = latest.?.name;
+    
+    const underscore_index: usize = std.mem.indexOf(u8, file_name, "_").?;
+    const dot_index: usize = std.mem.indexOf(u8, file_name, ".").?;
+    const str_timestamp: []const u8 = file_name[underscore_index + 1 .. dot_index];
 
-    const file_timestamp: i64 = @as(i64, @intCast(latest.?.ctime));
-    // latest.?.ctime returns the timestamp in nanoseconds.
-    // However, we want everything in seconds.
-    storage.last_save = @divTrunc(file_timestamp, 1_000_000_000);
+    storage.last_save = try std.fmt.parseInt(i64, str_timestamp, 10);
 
     var stream = std.io.fixedBufferStream(buffer[4..buffer.len]);
     var reader = stream.reader();
