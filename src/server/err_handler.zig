@@ -36,6 +36,7 @@ pub fn handle(stream: anytype, err: anyerror, args: Args, logger: *const Logger)
         error.MaxClientsReached => try out.writeAll("-ERR max number of clients reached\r\n"),
         error.BulkTooLarge => try out.writeAll("-ERR bulk too large\r\n"),
         error.NotWhitelisted => try out.writeAll("-ERR not whitelisted\r\n"),
+        error.SaveFailure => try out.writeAll("-ERR there is no data to save\r\n"),
         else => try out.writeAll("-ERR unexpected\r\n"),
     };
 }
