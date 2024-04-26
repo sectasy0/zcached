@@ -78,7 +78,6 @@ pub fn main() void {
         std.log.err("# failed to initialize logger: {}", .{err});
         return;
     };
-    logger.log(log.LogLevel.Error, "test", .{});
 
     const config = Config.load(
         allocator,

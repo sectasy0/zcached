@@ -141,9 +141,7 @@ pub fn get_log_file(self: *Logger, fetch_latest_file_size: bool) !std.fs.File {
 
     if (fetch_latest_file_size) {
         // This should be done only at the startup.
-        const file: std.fs.File = try std.fs.cwd().createFile(file_path, .{
-            .read = true,
-        });
+        const file: std.fs.File = try std.fs.cwd().createFile(file_path, .{ .read = true, .truncate = false });
         const file_stat = try file.stat();
         self.file_size = file_stat.size;
 
