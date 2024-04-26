@@ -6,10 +6,10 @@ const utils = @import("utils.zig");
 
 const AccessControl = @This();
 
-logger: *const Logger,
+logger: *Logger,
 config: *const Config,
 
-pub fn init(config: *const Config, logger: *const Logger) AccessControl {
+pub fn init(config: *const Config, logger: *Logger) AccessControl {
     return AccessControl{ .logger = logger, .config = config };
 }
 

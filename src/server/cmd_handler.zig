@@ -26,14 +26,14 @@ pub const CMDHandler = struct {
     allocator: std.mem.Allocator,
     storage: *MemoryStorage,
 
-    logger: *const Logger,
+    logger: *Logger,
 
     const HandlerResult = union(enum) { ok: ZType, err: anyerror };
 
     pub fn init(
         allocator: std.mem.Allocator,
         mstorage: *MemoryStorage,
-        logger: *const Logger,
+        logger: *Logger,
     ) CMDHandler {
         return CMDHandler{
             .allocator = allocator,

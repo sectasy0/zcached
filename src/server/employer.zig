@@ -24,7 +24,7 @@ allocator: std.mem.Allocator,
 pub const Context = struct {
     storage: *MemoryStorage,
     config: *const Config,
-    logger: *const Logger,
+    logger: *Logger,
 };
 
 pub fn init(allocator: Allocator, context: Context) !Employer {

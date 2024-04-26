@@ -70,7 +70,7 @@ pub fn main() void {
 
     handle_arguments(result.args) orelse return;
 
-    const logger = Logger.init(
+    var logger = Logger.init(
         allocator,
         result.args.@"log-path",
         result.args.sout,
@@ -78,6 +78,7 @@ pub fn main() void {
         std.log.err("# failed to initialize logger: {}", .{err});
         return;
     };
+    logger.log(log.LogLevel.Error, "test", .{});
 
     const config = Config.load(
         allocator,
