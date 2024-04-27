@@ -4,7 +4,7 @@ const utils = @import("utils.zig");
 const Logger = @This();
 
 pub const DEFAULT_PATH: []const u8 = "./logs/zcached.log";
-const MAX_FILE_SIZE: usize = 30_000_000;
+const MAX_FILE_SIZE: usize = 30 * 1048576; // 30Mb in binary.
 const BUFFER_SIZE: usize = 4096;
 
 pub const LogLevel = enum {
