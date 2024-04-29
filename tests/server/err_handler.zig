@@ -10,7 +10,7 @@ test "BadRequest" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
 
-    const logger = try Logger.init(std.testing.allocator, null, false);
+    var logger = try Logger.init(std.testing.allocator, null, false);
     try err_handler.handle(&stream, error.BadRequest, .{}, &logger);
 
     var expected: []u8 = @constCast("-ERR bad request\r\n");
@@ -22,8 +22,8 @@ test "UnknownCommand" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
 
-    const logger = try Logger.init(std.testing.allocator, null, false);
-    var array = std.ArrayList(ZType).initCapacity(std.heap.page_allocator, 0) catch {
+    var logger = try Logger.init(std.testing.allocator, null, false);
+    var array = std.ArrayList(ZType).initCapacity(std.testing.allocator, 0) catch {
         return error.AllocatorError;
     };
     const args = err_handler.build_args(&array);
@@ -38,11 +38,12 @@ test "UnknownCommand with command name" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
 
-    const logger = try Logger.init(std.testing.allocator, null, false);
-    var array = std.ArrayList(ZType).initCapacity(std.heap.page_allocator, 1) catch {
+    var logger = try Logger.init(std.testing.allocator, null, false);
+    var array = std.ArrayList(ZType).initCapacity(std.testing.allocator, 1) catch {
         return error.AllocatorError;
     };
     try array.append(.{ .str = @constCast("help") });
+    defer array.deinit();
 
     const args = err_handler.build_args(&array);
     try err_handler.handle(&stream, error.UnknownCommand, args, &logger);
@@ -58,7 +59,7 @@ test "unexpected error" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
 
-    const logger = try Logger.init(std.testing.allocator, null, false);
+    var logger = try Logger.init(std.testing.allocator, null, false);
     try err_handler.handle(&stream, error.Unexpected, .{}, &logger);
 
     var expected: []u8 = @constCast("-ERR unexpected\r\n");
@@ -70,7 +71,7 @@ test "max clients reached" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
 
-    const logger = try Logger.init(std.testing.allocator, null, false);
+    var logger = try Logger.init(std.testing.allocator, null, false);
     try err_handler.handle(&stream, error.MaxClientsReached, .{}, &logger);
 
     var expected: []u8 = @constCast("-ERR max number of clients reached\r\n");
@@ -82,12 +83,13 @@ test "NotFound with key name" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
 
-    const logger = try Logger.init(std.testing.allocator, null, false);
-    var array = std.ArrayList(ZType).initCapacity(std.heap.page_allocator, 2) catch {
+    var logger = try Logger.init(std.testing.allocator, null, false);
+    var array = std.ArrayList(ZType).initCapacity(std.testing.allocator, 2) catch {
         return error.AllocatorError;
     };
     try array.append(.{ .str = @constCast("help") });
     try array.append(.{ .str = @constCast("user_cache_12345") });
+    defer array.deinit();
 
     const args = err_handler.build_args(&array);
     try err_handler.handle(&stream, error.NotFound, args, &logger);

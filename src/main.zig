@@ -70,7 +70,7 @@ pub fn main() void {
 
     handle_arguments(result.args) orelse return;
 
-    const logger = Logger.init(
+    var logger = Logger.init(
         allocator,
         result.args.@"log-path",
         result.args.sout,
