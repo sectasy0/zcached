@@ -37,7 +37,7 @@ test "should handle SET command" {
     try command_set.append(.{ .str = @constCast("key") });
     try command_set.append(.{ .str = @constCast("value") });
 
-    var result = cmd_handler.process(&command_set);
+    const result = cmd_handler.process(&command_set);
 
     try std.testing.expectEqual(result.ok, .{ .sstr = @constCast("OK") });
     try std.testing.expectEqualStrings((try mstorage.get("key")).str, @constCast("value"));
@@ -69,7 +69,7 @@ test "should SET return error.InvalidCommand when passed 2 args" {
     try command_set.append(.{ .str = @constCast("SET") });
     try command_set.append(.{ .str = @constCast("key") });
 
-    var result = cmd_handler.process(&command_set);
+    const result = cmd_handler.process(&command_set);
 
     try std.testing.expectEqual(result.err, error.InvalidCommand);
 }
@@ -99,7 +99,7 @@ test "should SET return error.InvalidCommand when passed 1 args" {
 
     try command_set.append(.{ .str = @constCast("SET") });
 
-    var result = cmd_handler.process(&command_set);
+    const result = cmd_handler.process(&command_set);
 
     try std.testing.expectEqual(result.err, error.InvalidCommand);
 }
@@ -132,7 +132,7 @@ test "should handle GET command" {
     try command_set.append(.{ .str = @constCast("GET") });
     try command_set.append(.{ .str = @constCast("key") });
 
-    var result = cmd_handler.process(&command_set);
+    const result = cmd_handler.process(&command_set);
     try std.testing.expectEqualStrings(result.ok.str, @constCast("value"));
 }
 
@@ -163,7 +163,7 @@ test "should SET return error.InvalidCommand when missing key" {
 
     try command_set.append(.{ .str = @constCast("GET") });
 
-    var result = cmd_handler.process(&command_set);
+    const result = cmd_handler.process(&command_set);
     try std.testing.expectEqual(result.err, error.InvalidCommand);
 }
 
@@ -196,7 +196,7 @@ test "should handle DELETE command" {
     try command_set.append(.{ .str = @constCast("DELETE") });
     try command_set.append(.{ .str = @constCast("key") });
 
-    var result = cmd_handler.process(&command_set);
+    const result = cmd_handler.process(&command_set);
     try std.testing.expectEqual(result, .{ .ok = .{ .sstr = @constCast("OK") } });
     try std.testing.expectEqual(mstorage.get("key"), error.NotFound);
 }
@@ -227,7 +227,7 @@ test "should return error.NotFound for non existing during DELETE command" {
     try command_set.append(.{ .str = @constCast("DELETE") });
     try command_set.append(.{ .str = @constCast("key") });
 
-    var result = cmd_handler.process(&command_set);
+    const result = cmd_handler.process(&command_set);
     try std.testing.expectEqual(result, .{ .err = error.NotFound });
 }
 
@@ -259,7 +259,7 @@ test "should DELETE return error.InvalidCommand when missing key" {
 
     try command_set.append(.{ .str = @constCast("DELETE") });
 
-    var result = cmd_handler.process(&command_set);
+    const result = cmd_handler.process(&command_set);
     try std.testing.expectEqual(result.err, error.InvalidCommand);
 }
 
@@ -291,7 +291,7 @@ test "should handle FLUSH command" {
 
     try command_set.append(.{ .str = @constCast("FLUSH") });
 
-    var result = cmd_handler.process(&command_set);
+    const result = cmd_handler.process(&command_set);
     try std.testing.expectEqual(result.ok, .{ .sstr = @constCast("OK") });
     try std.testing.expectEqual(mstorage.internal.count(), 0);
 }
@@ -324,7 +324,7 @@ test "should handle PING command" {
 
     try command_set.append(.{ .str = @constCast("PING") });
 
-    var result = cmd_handler.process(&command_set);
+    const result = cmd_handler.process(&command_set);
     try std.testing.expectEqual(result.ok, .{ .sstr = @constCast("PONG") });
 }
 
@@ -356,7 +356,7 @@ test "should handle DBSIZE command" {
 
     try command_set.append(.{ .str = @constCast("DBSIZE") });
 
-    var result = cmd_handler.process(&command_set);
+    const result = cmd_handler.process(&command_set);
     try std.testing.expectEqual(result.ok, .{ .int = 2 });
 }
 
@@ -426,7 +426,7 @@ test "should handle MSET command" {
     try command_set.append(.{ .str = @constCast("key") });
     try command_set.append(.{ .str = @constCast("value123") });
 
-    var result = cmd_handler.process(&command_set);
+    const result = cmd_handler.process(&command_set);
 
     try std.testing.expectEqual(result.ok, .{ .sstr = @constCast("OK") });
     try std.testing.expectEqualStrings((try mstorage.get("key")).str, command_set.items[2].str);
@@ -457,7 +457,7 @@ test "should handle MSET return InvalidArgs when empty" {
 
     try command_set.append(.{ .str = @constCast("MSET") });
 
-    var result = cmd_handler.process(&command_set);
+    const result = cmd_handler.process(&command_set);
 
     try std.testing.expectEqual(result.err, error.InvalidArgs);
 }
@@ -488,7 +488,7 @@ test "should handle MSET and return InvalidArgs when not even" {
     try command_set.append(.{ .str = @constCast("MSET") });
     try command_set.append(.{ .str = @constCast("key") });
 
-    var result = cmd_handler.process(&command_set);
+    const result = cmd_handler.process(&command_set);
 
     try std.testing.expectEqual(result.err, error.InvalidArgs);
 }
@@ -520,7 +520,7 @@ test "should handle MSET and return KeyNotString" {
     try command_set.append(.{ .sstr = @constCast("key") });
     try command_set.append(.{ .sstr = @constCast("value") });
 
-    var result = cmd_handler.process(&command_set);
+    const result = cmd_handler.process(&command_set);
 
     try std.testing.expectEqual(result.err, error.KeyNotString);
 }
@@ -626,7 +626,7 @@ test "should handle LASTSAVE command" {
 
     try command_set.append(.{ .str = @constCast("LASTSAVE") });
 
-    var result = cmd_handler.process(&command_set);
+    const result = cmd_handler.process(&command_set);
     try helper.expectEqualZTypes(result.ok, .{ .int = expected });
 }
 
@@ -654,7 +654,7 @@ test "should SAVE return error.SaveFailure when there is no data" {
     defer command_set.deinit();
     try command_set.append(.{ .str = @constCast("SAVE") });
 
-    var result = cmd_handler.process(&command_set);
+    const result = cmd_handler.process(&command_set);
 
     try std.testing.expectEqual(result.err, error.SaveFailure);
 }

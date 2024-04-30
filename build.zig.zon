@@ -1,5 +1,7 @@
-.{
-    .name = "zcached",
-    .version = "0.0.1",
-    .dependencies = .{},
-}
+.{ .name = "zcached", .version = "0.1.0", .dependencies = .{}, .paths = .{
+    "src",
+    "build.zig",
+    "build.zig.zon",
+    "zcached.conf.example",
+    "README.md",
+} }

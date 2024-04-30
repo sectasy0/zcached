@@ -32,7 +32,7 @@ pub fn ztype_copy(value: ZType, allocator: std.mem.Allocator) anyerror!ZType {
             var result = std.ArrayList(ZType).init(allocator);
 
             for (array.items) |item| {
-                var copied = try ztype_copy(item, allocator);
+                const copied = try ztype_copy(item, allocator);
                 try result.append(copied);
             }
 

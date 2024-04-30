@@ -2,6 +2,7 @@ const std = @import("std");
 const mem = std.mem;
 const os = std.os;
 const io = std.io;
+const posix = std.posix;
 
 const StreamServer = @This();
 
@@ -14,7 +15,7 @@ force_nonblocking: bool,
 /// `undefined` until `listen` returns successfully.
 listen_address: std.net.Address,
 
-sockfd: ?std.os.socket_t,
+sockfd: ?std.posix.socket_t,
 
 pub const Options = struct {
     /// How many connections the kernel will accept on the application's behalf.
@@ -53,39 +54,39 @@ pub fn deinit(self: *StreamServer) void {
 
 pub fn listen(self: *StreamServer, address: std.net.Address) !void {
     const nonblock = 0;
-    const sock_flags = os.SOCK.STREAM | os.SOCK.CLOEXEC | nonblock;
+    const sock_flags = posix.SOCK.STREAM | posix.SOCK.CLOEXEC | nonblock;
     var use_sock_flags: u32 = sock_flags;
-    if (self.force_nonblocking) use_sock_flags |= os.SOCK.NONBLOCK;
-    const proto = if (address.any.family == os.AF.UNIX) @as(u32, 0) else os.IPPROTO.TCP;
+    if (self.force_nonblocking) use_sock_flags |= posix.SOCK.NONBLOCK;
+    const proto = if (address.any.family == posix.AF.UNIX) @as(u32, 0) else posix.IPPROTO.TCP;
 
-    const sockfd = try os.socket(address.any.family, use_sock_flags, proto);
+    const sockfd = try posix.socket(address.any.family, use_sock_flags, proto);
     self.sockfd = sockfd;
     errdefer {
-        os.closeSocket(sockfd);
+        posix.close(sockfd);
         self.sockfd = null;
     }
 
     if (self.reuse_address) {
-        try os.setsockopt(
+        try posix.setsockopt(
             sockfd,
-            os.SOL.SOCKET,
-            os.SO.REUSEADDR,
+            posix.SOL.SOCKET,
+            posix.SO.REUSEADDR,
             &mem.toBytes(@as(c_int, 1)),
         );
     }
-    if (@hasDecl(os.SO, "REUSEPORT") and self.reuse_port) {
-        try os.setsockopt(
+    if (@hasDecl(posix.SO, "REUSEPORT") and self.reuse_port) {
+        try posix.setsockopt(
             sockfd,
-            os.SOL.SOCKET,
-            os.SO.REUSEPORT,
+            posix.SOL.SOCKET,
+            posix.SO.REUSEPORT,
             &mem.toBytes(@as(c_int, 1)),
         );
     }
 
     var socklen = address.getOsSockLen();
-    try os.bind(sockfd, &address.any, socklen);
-    try os.listen(sockfd, self.kernel_backlog);
-    try os.getsockname(sockfd, &self.listen_address.any, &socklen);
+    try posix.bind(sockfd, &address.any, socklen);
+    try posix.listen(sockfd, self.kernel_backlog);
+    try posix.getsockname(sockfd, &self.listen_address.any, &socklen);
 }
 
 /// Stop listening. It is still necessary to call `deinit` after stopping listening.
@@ -130,7 +131,7 @@ pub const AcceptError = error{
     NetworkSubsystemFailed,
 
     OperationNotSupported,
-} || os.UnexpectedError;
+} || posix.UnexpectedError;
 
 pub const Connection = struct {
     stream: std.net.Stream,
@@ -142,12 +143,12 @@ pub fn accept(self: *StreamServer) AcceptError!Connection {
     const nonblock = 0;
 
     var accepted_addr: std.net.Address = undefined;
-    var adr_len: os.socklen_t = @sizeOf(std.net.Address);
+    var adr_len: posix.socklen_t = @sizeOf(std.net.Address);
 
-    const sock_flags = os.SOCK.CLOEXEC | nonblock;
+    const sock_flags = posix.SOCK.CLOEXEC | nonblock;
     var use_sock_flags: u32 = sock_flags;
-    if (self.force_nonblocking) use_sock_flags |= os.SOCK.NONBLOCK;
-    const accept_result = os.accept(
+    if (self.force_nonblocking) use_sock_flags |= posix.SOCK.NONBLOCK;
+    const accept_result = posix.accept(
         self.sockfd.?,
         &accepted_addr.any,
         &adr_len,

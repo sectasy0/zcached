@@ -111,9 +111,10 @@ pub fn save(self: *PersistanceHandler, storage: *MemoryStorage) !usize {
 
 // have to load latest file from `self.path`
 pub fn load(self: *PersistanceHandler, storage: *MemoryStorage) !void {
-    var dir = try std.fs.cwd().openIterableDir(self.path.?, .{
+    var dir = try std.fs.cwd().openDir(self.path.?, .{
         .no_follow = true,
         .access_sub_paths = false,
+        .iterate = true,
     });
     defer dir.close();
 
@@ -126,7 +127,7 @@ pub fn load(self: *PersistanceHandler, storage: *MemoryStorage) !void {
         return;
     };
 
-    var latest_file = latest orelse return error.InvalidFile;
+    const latest_file = latest orelse return error.InvalidFile;
     defer self.allocator.free(latest_file.name);
 
     const filename = try std.fmt.allocPrint(
@@ -184,7 +185,7 @@ pub fn load(self: *PersistanceHandler, storage: *MemoryStorage) !void {
     }
 }
 
-fn get_latest_file(self: *PersistanceHandler, dir: std.fs.IterableDir) !?FileEntry {
+fn get_latest_file(self: *PersistanceHandler, dir: std.fs.Dir) !?FileEntry {
     var latest: ?FileEntry = null;
 
     var iterator = dir.iterate();
@@ -201,7 +202,7 @@ fn get_latest_file(self: *PersistanceHandler, dir: std.fs.IterableDir) !?FileEnt
         );
         defer self.allocator.free(file_path);
 
-        var filename = try self.allocator.dupe(u8, file.name);
+        const filename = try self.allocator.dupe(u8, file.name);
 
         const stat = try std.fs.cwd().statFile(file_path);
         if (latest == null) {

@@ -2,7 +2,7 @@
 
 Welcome to `zcached`, a nimble and efficient in-memory caching system resembling databases like Redis. This README acts as a comprehensive guide, aiding in comprehension, setup, and optimal utilization.
 
-![zig](https://img.shields.io/badge/Zig-v0.11-0074C1?logo=zig&logoColor=white&color=%230074C1)
+![zig](https://img.shields.io/badge/Zig-v0.12-0074C1?logo=zig&logoColor=white&color=%230074C1)
 ![tests](https://github.com/sectasy0/zcached/actions/workflows/zcached-tests.yml/badge.svg)
 ![build](https://github.com/sectasy0/zcached/actions/workflows/zcached-build.yml/badge.svg)
 
@@ -20,7 +20,7 @@ Crafted using Zig, a versatile, modern, compiled programming language, `zcached`
 
 ## Installation
 ### Prerequisites
-- [zig](https://ziglang.org/download/) (0.11.0 or newer)
+- [zig](https://ziglang.org/download/) (0.12.0 or newer)
 
 ### Building from Source
 1. Clone the repository
@@ -40,7 +40,6 @@ zig build
 Run this command in the root directory of the project:
 ```bash
 zig test --main-pkg-path .. tests/run.zig -lc
-
 ```
 
 ## Usage

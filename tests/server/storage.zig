@@ -12,7 +12,7 @@ const helper = @import("../test_helper.zig");
 test "should get existing and not get non-existing key" {
     var config = try Config.load(std.testing.allocator, null, null);
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    const logger = try Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -50,7 +50,7 @@ test "should get existing and not get non-existing key" {
 
     try storage.put("foo6", .{ .array = array });
 
-    var getted = try storage.get("foo6");
+    const getted = try storage.get("foo6");
     try helper.expectEqualZTypes(getted, .{ .array = array });
 
     // map
@@ -59,7 +59,7 @@ test "should get existing and not get non-existing key" {
 
     try storage.put("foo7", .{ .map = map });
 
-    var getted_map = try storage.get("foo7");
+    const getted_map = try storage.get("foo7");
     try helper.expectEqualZTypes(getted_map, .{ .map = map });
 
     try std.testing.expectEqual(storage.get("baz"), error.NotFound);
@@ -68,7 +68,7 @@ test "should get existing and not get non-existing key" {
 test "should delete existing key" {
     var config = try Config.load(std.testing.allocator, null, null);
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    const logger = try Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -90,8 +90,8 @@ test "should delete existing key" {
         config.deinit();
     }
 
-    var string = "Die meisten Menschen sind nichts als Bauern auf einem Schachbrett, das von einer unbekannten Hand geführt wird.";
-    var value: types.ZType = .{ .str = @constCast(string) };
+    const string = "Die meisten Menschen sind nichts als Bauern auf einem Schachbrett, das von einer unbekannten Hand geführt wird.";
+    const value: types.ZType = .{ .str = @constCast(string) };
 
     try storage.put("foo", .{ .int = 42 });
     try storage.put("bar", value);
@@ -104,7 +104,7 @@ test "should delete existing key" {
 test "should not delete non-existing key" {
     var config = try Config.load(std.testing.allocator, null, null);
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    const logger = try Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -132,7 +132,7 @@ test "should not delete non-existing key" {
 test "should flush storage" {
     var config = try Config.load(std.testing.allocator, null, null);
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    const logger = try Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -154,8 +154,8 @@ test "should flush storage" {
         config.deinit();
     }
 
-    var string = "Es gibt Momente im Leben, da muss man verstehen, dass die Entscheidungen, die man trifft, nicht nur das eigene Schicksal angehen.";
-    var value: types.ZType = .{ .str = @constCast(string) };
+    const string = "Es gibt Momente im Leben, da muss man verstehen, dass die Entscheidungen, die man trifft, nicht nur das eigene Schicksal angehen.";
+    const value: types.ZType = .{ .str = @constCast(string) };
 
     try storage.put("foo", .{ .int = 42 });
     try storage.put("bar", value);
@@ -169,7 +169,7 @@ test "should flush storage" {
 test "should not store error" {
     var config = try Config.load(std.testing.allocator, null, null);
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    const logger = try Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -200,7 +200,7 @@ test "should return error.MemoryLimitExceeded" {
     defer config.deinit();
     config.maxmemory = 1048576;
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    const logger = try Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -221,10 +221,10 @@ test "should return error.MemoryLimitExceeded" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
-    var string = "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.";
-    var value: types.ZType = .{ .str = @constCast(string) };
+    const string = "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.";
+    const value: types.ZType = .{ .str = @constCast(string) };
     for (0..6554) |i| {
-        var key = try std.fmt.allocPrint(arena.allocator(), "key-{d}", .{i});
+        const key = try std.fmt.allocPrint(arena.allocator(), "key-{d}", .{i});
         try storage.put(key, value);
     }
 
@@ -236,7 +236,7 @@ test "should not return error.MemoryLimitExceed when max but deleted some" {
     defer config.deinit();
     config.maxmemory = 1048576;
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    const logger = try Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -260,10 +260,10 @@ test "should not return error.MemoryLimitExceed when max but deleted some" {
     const tracking = utils.ptrCast(TracingAllocator, storage.allocator.ptr);
     std.debug.print("{d}\n", .{tracking.real_size});
 
-    var string = "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.";
-    var value: types.ZType = .{ .str = @constCast(string) };
+    const string = "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.";
+    const value: types.ZType = .{ .str = @constCast(string) };
     for (0..1) |i| {
-        var key = try std.fmt.allocPrint(arena.allocator(), "key-{d}", .{i});
+        const key = try std.fmt.allocPrint(arena.allocator(), "key-{d}", .{i});
         try storage.put(key, value);
     }
 
@@ -280,7 +280,7 @@ test "should not return error.MemoryLimitExceed when max but deleted some" {
     std.debug.print("{d}\n", .{@sizeOf(@TypeOf(storage.internal)) + @sizeOf(@TypeOf(storage.internal).KV) * storage.internal.count()});
     // std.debug.print("{d}\n", .{storage.internal.});
 
-    var result = storage.put("test key", value);
+    const result = storage.put("test key", value);
     std.debug.print("aaaaaaaaaaaaaaaaaaaaaaaa {any}\n", .{result});
 
     try std.testing.expectEqual(void{}, result);

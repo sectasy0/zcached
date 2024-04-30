@@ -116,7 +116,7 @@ pub fn get_latest_file_path(self: *const Logger) ![]const u8 {
     // In theory, we could use the remaining elements in the iterator to determine the path,
     // but this is easier way (i'm lazy).
     const dir_path: []const u8 = fs.path.dirname(self.log_path).?;
-    const dir: fs.IterableDir = try fs.cwd().openIterableDir(dir_path, .{});
+    const dir: fs.Dir = try fs.cwd().openDir(dir_path, .{ .iterate = true });
 
     var dir_iterator = dir.iterate();
     var file_index: usize = 1;

@@ -121,7 +121,7 @@ pub fn keys(self: *MemoryStorage) !std.ArrayList(types.ZType) {
 
     var iter = self.internal.keyIterator();
     while (iter.next()) |key| {
-        var zkey: types.ZType = .{ .str = @constCast(key.*) };
+        const zkey: types.ZType = .{ .str = @constCast(key.*) };
         try result.append(zkey);
     }
 

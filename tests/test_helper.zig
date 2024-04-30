@@ -70,12 +70,12 @@ pub fn expectEqualZTypes(first: types.ZType, second: types.ZType) !void {
             var equal_items: i64 = 0;
 
             for (0..first.map.count()) |_| {
-                var fitem = fiter.next();
+                const fitem = fiter.next();
                 var siter = second.map.iterator();
                 if (fitem == null) continue;
 
                 for (0..second.map.count()) |_| {
-                    var sitem = siter.next();
+                    const sitem = siter.next();
 
                     if (sitem == null) continue;
                     if (activeTag(fitem.?.value_ptr.*) == activeTag(sitem.?.value_ptr.*)) {

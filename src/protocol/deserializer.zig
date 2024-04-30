@@ -122,7 +122,7 @@ pub const Deserializer = struct {
         result = array_prefix;
 
         for (input.array.items) |item| {
-            var bytes = try self.process(item);
+            const bytes = try self.process(item);
             const res = try std.mem.concat(
                 self.arena.allocator(),
                 u8,

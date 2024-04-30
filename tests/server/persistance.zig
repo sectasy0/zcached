@@ -16,7 +16,7 @@ test "should load" {
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    const logger = try Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -50,7 +50,7 @@ test "should not load without header" {
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    const logger = try Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -85,7 +85,7 @@ test "should not load invalid ext" {
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    const logger = try Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -120,7 +120,7 @@ test "should not load corrupted file" {
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    const logger = try Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -155,7 +155,7 @@ test "should save" {
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    const logger = try Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,

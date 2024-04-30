@@ -25,7 +25,7 @@ test "test logger debug" {
     defer file.close();
 
     const file_size = (try file.stat()).size;
-    var buffer = try std.testing.allocator.alloc(u8, file_size);
+    const buffer = try std.testing.allocator.alloc(u8, file_size);
     const readed = try file.readAll(buffer);
     _ = readed;
     defer std.testing.allocator.free(buffer);
@@ -47,7 +47,7 @@ test "test logger info" {
     defer file.close();
 
     const file_size = (try file.stat()).size;
-    var buffer = try std.testing.allocator.alloc(u8, file_size);
+    const buffer = try std.testing.allocator.alloc(u8, file_size);
     const readed = try file.readAll(buffer);
     _ = readed;
     defer std.testing.allocator.free(buffer);
@@ -69,7 +69,7 @@ test "test logger warning" {
     defer file.close();
 
     const file_size = (try file.stat()).size;
-    var buffer = try std.testing.allocator.alloc(u8, file_size);
+    const buffer = try std.testing.allocator.alloc(u8, file_size);
     const readed = try file.readAll(buffer);
     _ = readed;
     defer std.testing.allocator.free(buffer);
@@ -92,7 +92,7 @@ test "test logger error" {
     defer file.close();
 
     const file_size = (try file.stat()).size;
-    var buffer = try std.testing.allocator.alloc(u8, file_size);
+    const buffer = try std.testing.allocator.alloc(u8, file_size);
     const readed = try file.readAll(buffer);
     _ = readed;
     defer std.testing.allocator.free(buffer);

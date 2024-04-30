@@ -57,7 +57,7 @@ pub fn main() void {
         // .retain_metadata = true,
     }){};
     defer _ = gpa.deinit();
-    var allocator = gpa.allocator();
+    const allocator = gpa.allocator();
 
     const result = cli.Parser.parse(allocator) catch {
         cli.Parser.show_help() catch |err| {
