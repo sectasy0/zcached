@@ -1,33 +1,27 @@
 const std = @import("std");
 
-const Config = @import("../../server/config.zig");
 const types = @import("../../protocol/types.zig");
-const TracingAllocator = @import("../../server/tracing.zig");
-const PersistanceHandler = @import("../../server/persistance.zig").PersistanceHandler;
-const Logger = @import("../../server/logger.zig");
-
-const MemoryStorage = @import("../../server/storage.zig");
 const helper = @import("../helper.zig");
+
+const Fixtures = @import("../fixtures.zig");
+const PersistanceHandler = @import("../../server/persistance.zig").PersistanceHandler;
 
 test "should load" {
     std.fs.cwd().makePath("./tmp/persist") catch {};
     std.fs.cwd().deleteFile("./tmp/persist/dump_123.zcpf") catch {};
 
-    var config = try Config.load(std.testing.allocator, null, null);
-    defer config.deinit();
-
-    const logger = try Logger.init(std.testing.allocator, null, false);
+    var fixtures = try Fixtures.init();
+    defer fixtures.deinit();
 
     var persister = try PersistanceHandler.init(
-        std.testing.allocator,
-        config,
-        logger,
+        fixtures.allocator,
+        fixtures.config,
+        fixtures.logger,
         "./tmp/persist/",
     );
     defer persister.deinit();
 
-    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
-    var storage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    var storage = fixtures.create_memory_storage();
     defer storage.deinit();
 
     try std.testing.expectEqual(storage.internal.count(), 0);
@@ -47,21 +41,18 @@ test "should load" {
 
 test "should not load without header" {
     std.fs.cwd().makePath("./tmp/persist") catch {};
-    var config = try Config.load(std.testing.allocator, null, null);
-    defer config.deinit();
-
-    const logger = try Logger.init(std.testing.allocator, null, false);
+    var fixtures = try Fixtures.init();
+    defer fixtures.deinit();
 
     var persister = try PersistanceHandler.init(
-        std.testing.allocator,
-        config,
-        logger,
+        fixtures.allocator,
+        fixtures.config,
+        fixtures.logger,
         "./tmp/persist/without_header/",
     );
     defer persister.deinit();
 
-    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
-    var storage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    var storage = fixtures.create_memory_storage();
     defer storage.deinit();
 
     std.fs.cwd().makeDir("./tmp/persist/without_header") catch {};
@@ -82,21 +73,18 @@ test "should not load without header" {
 test "should not load invalid ext" {
     std.fs.cwd().makePath("./tmp/persist") catch {};
 
-    var config = try Config.load(std.testing.allocator, null, null);
-    defer config.deinit();
-
-    const logger = try Logger.init(std.testing.allocator, null, false);
+    var fixtures = try Fixtures.init();
+    defer fixtures.deinit();
 
     var persister = try PersistanceHandler.init(
-        std.testing.allocator,
-        config,
-        logger,
+        fixtures.allocator,
+        fixtures.config,
+        fixtures.logger,
         "./tmp/persist/invalid_ext/",
     );
     defer persister.deinit();
 
-    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
-    var storage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    var storage = fixtures.create_memory_storage();
     defer storage.deinit();
 
     std.fs.cwd().makeDir("./tmp/persist/invalid_ext") catch {};
@@ -117,21 +105,18 @@ test "should not load invalid ext" {
 test "should not load corrupted file" {
     std.fs.cwd().makePath("./tmp/persist") catch {};
 
-    var config = try Config.load(std.testing.allocator, null, null);
-    defer config.deinit();
-
-    const logger = try Logger.init(std.testing.allocator, null, false);
+    var fixtures = try Fixtures.init();
+    defer fixtures.deinit();
 
     var persister = try PersistanceHandler.init(
-        std.testing.allocator,
-        config,
-        logger,
+        fixtures.allocator,
+        fixtures.config,
+        fixtures.logger,
         "./tmp/persist/corrupted/",
     );
     defer persister.deinit();
 
-    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
-    var storage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    var storage = fixtures.create_memory_storage();
     defer storage.deinit();
 
     std.fs.cwd().makeDir("./tmp/persist/corrupted") catch {};
@@ -152,22 +137,19 @@ test "should not load corrupted file" {
 test "should save" {
     std.fs.cwd().makePath("./tmp/persist") catch {};
 
-    var config = try Config.load(std.testing.allocator, null, null);
-    defer config.deinit();
-
-    const logger = try Logger.init(std.testing.allocator, null, false);
+    var fixtures = try Fixtures.init();
+    defer fixtures.deinit();
 
     var persister = try PersistanceHandler.init(
-        std.testing.allocator,
-        config,
-        logger,
+        fixtures.allocator,
+        fixtures.config,
+        fixtures.logger,
         null,
     );
 
     defer persister.deinit();
 
-    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
-    var storage = MemoryStorage.init(tracing_allocator.allocator(), config, &persister);
+    var storage = fixtures.create_memory_storage();
     defer storage.deinit();
 
     try storage.put("test1", .{ .str = @constCast("testtest") });

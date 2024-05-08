@@ -1,38 +1,15 @@
 const std = @import("std");
 
-const Config = @import("../../server/config.zig");
+const Fixtures = @import("../fixtures.zig");
 const types = @import("../../protocol/types.zig");
-const TracingAllocator = @import("../../server/tracing.zig");
-const PersistanceHandler = @import("../../server/persistance.zig").PersistanceHandler;
-const Logger = @import("../../server/logger.zig");
-
-const MemoryStorage = @import("../../server/storage.zig");
 const helper = @import("../helper.zig");
 
 test "should get existing and not get non-existing key" {
-    var config = try Config.load(std.testing.allocator, null, null);
+    var fixtures = try Fixtures.init();
+    defer fixtures.deinit();
 
-    const logger = try Logger.init(std.testing.allocator, null, false);
-
-    var persister = try PersistanceHandler.init(
-        std.testing.allocator,
-        config,
-        logger,
-        null,
-    );
-
-    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
-    var storage = MemoryStorage.init(
-        tracing_allocator.allocator(),
-        config,
-        &persister,
-    );
-
-    defer {
-        storage.deinit();
-        persister.deinit();
-        config.deinit();
-    }
+    var storage = fixtures.create_memory_storage();
+    defer storage.deinit();
 
     try helper.setup_storage(&storage);
 
@@ -45,7 +22,7 @@ test "should get existing and not get non-existing key" {
     try std.testing.expectEqualStrings((try storage.get("bar")).str, helper.STRING);
 
     // array
-    var array = try helper.setup_array(std.testing.allocator);
+    var array = try helper.setup_array(fixtures.allocator);
     defer array.deinit();
 
     try storage.put("foo6", .{ .array = array });
@@ -54,7 +31,7 @@ test "should get existing and not get non-existing key" {
     try helper.expectEqualZTypes(getted, .{ .array = array });
 
     // map
-    var map = try helper.setup_map(std.testing.allocator);
+    var map = try helper.setup_map(fixtures.allocator);
     defer map.deinit();
 
     try storage.put("foo7", .{ .map = map });
@@ -66,29 +43,11 @@ test "should get existing and not get non-existing key" {
 }
 
 test "should delete existing key" {
-    var config = try Config.load(std.testing.allocator, null, null);
+    var fixtures = try Fixtures.init();
+    defer fixtures.deinit();
 
-    const logger = try Logger.init(std.testing.allocator, null, false);
-
-    var persister = try PersistanceHandler.init(
-        std.testing.allocator,
-        config,
-        logger,
-        null,
-    );
-
-    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
-    var storage = MemoryStorage.init(
-        tracing_allocator.allocator(),
-        config,
-        &persister,
-    );
-
-    defer {
-        storage.deinit();
-        persister.deinit();
-        config.deinit();
-    }
+    var storage = fixtures.create_memory_storage();
+    defer storage.deinit();
 
     const string = "Die meisten Menschen sind nichts als Bauern auf einem Schachbrett, das von einer unbekannten Hand geführt wird.";
     const value: types.ZType = .{ .str = @constCast(string) };
@@ -102,57 +61,21 @@ test "should delete existing key" {
 }
 
 test "should not delete non-existing key" {
-    var config = try Config.load(std.testing.allocator, null, null);
+    var fixtures = try Fixtures.init();
+    defer fixtures.deinit();
 
-    const logger = try Logger.init(std.testing.allocator, null, false);
-
-    var persister = try PersistanceHandler.init(
-        std.testing.allocator,
-        config,
-        logger,
-        null,
-    );
-
-    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
-    var storage = MemoryStorage.init(
-        tracing_allocator.allocator(),
-        config,
-        &persister,
-    );
-
-    defer {
-        storage.deinit();
-        persister.deinit();
-        config.deinit();
-    }
+    var storage = fixtures.create_memory_storage();
+    defer storage.deinit();
 
     try std.testing.expectEqual(storage.delete("foo"), false);
 }
 
 test "should flush storage" {
-    var config = try Config.load(std.testing.allocator, null, null);
+    var fixtures = try Fixtures.init();
+    defer fixtures.deinit();
 
-    const logger = try Logger.init(std.testing.allocator, null, false);
-
-    var persister = try PersistanceHandler.init(
-        std.testing.allocator,
-        config,
-        logger,
-        null,
-    );
-
-    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
-    var storage = MemoryStorage.init(
-        tracing_allocator.allocator(),
-        config,
-        &persister,
-    );
-
-    defer {
-        storage.deinit();
-        persister.deinit();
-        config.deinit();
-    }
+    var storage = fixtures.create_memory_storage();
+    defer storage.deinit();
 
     const string = "Es gibt Momente im Leben, da muss man verstehen, dass die Entscheidungen, die man trifft, nicht nur das eigene Schicksal angehen.";
     const value: types.ZType = .{ .str = @constCast(string) };
@@ -167,58 +90,26 @@ test "should flush storage" {
 }
 
 test "should not store error" {
-    var config = try Config.load(std.testing.allocator, null, null);
+    var fixtures = try Fixtures.init();
+    defer fixtures.deinit();
 
-    const logger = try Logger.init(std.testing.allocator, null, false);
-
-    var persister = try PersistanceHandler.init(
-        std.testing.allocator,
-        config,
-        logger,
-        null,
-    );
-
-    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
-    var storage = MemoryStorage.init(
-        tracing_allocator.allocator(),
-        config,
-        &persister,
-    );
-
-    defer {
-        storage.deinit();
-        persister.deinit();
-        config.deinit();
-    }
+    var storage = fixtures.create_memory_storage();
+    defer storage.deinit();
 
     const err_value = .{ .err = .{ .message = "random error" } };
     try std.testing.expectEqual(storage.put("test", err_value), error.CantInsertError);
 }
 
 test "should return error.MemoryLimitExceeded" {
-    var config = try Config.load(std.testing.allocator, null, null);
-    defer config.deinit();
-    config.maxmemory = 1048576;
+    var fixtures = try Fixtures.init();
+    defer fixtures.deinit();
 
-    const logger = try Logger.init(std.testing.allocator, null, false);
+    fixtures.config.maxmemory = 1048576;
 
-    var persister = try PersistanceHandler.init(
-        std.testing.allocator,
-        config,
-        logger,
-        null,
-    );
-    persister.deinit();
-
-    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
-    var storage = MemoryStorage.init(
-        tracing_allocator.allocator(),
-        config,
-        &persister,
-    );
+    var storage = fixtures.create_memory_storage();
     defer storage.deinit();
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    var arena = std.heap.ArenaAllocator.init(fixtures.allocator);
     defer arena.deinit();
 
     const string = "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.";
@@ -232,27 +123,13 @@ test "should return error.MemoryLimitExceeded" {
 }
 
 test "should not return error.MemoryLimitExceed when max but deleted some" {
-    var config = try Config.load(std.testing.allocator, null, null);
-    defer config.deinit();
-    config.maxmemory = 1048576;
+    var fixtures = try Fixtures.init();
+    defer fixtures.deinit();
 
-    const logger = try Logger.init(std.testing.allocator, null, false);
-
-    var persister = try PersistanceHandler.init(
-        std.testing.allocator,
-        config,
-        logger,
-        null,
-    );
-    persister.deinit();
-
-    var tracing_allocator = TracingAllocator.init(std.testing.allocator);
-    var storage = MemoryStorage.init(
-        tracing_allocator.allocator(),
-        config,
-        &persister,
-    );
+    var storage = fixtures.create_memory_storage();
     defer storage.deinit();
+
+    fixtures.config.maxmemory = 1048576;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
