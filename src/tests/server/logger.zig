@@ -1,13 +1,13 @@
 const std = @import("std");
 
-const Config = @import("../../src/server/config.zig");
-const types = @import("../../src/protocol/types.zig");
-const TracingAllocator = @import("../../src/server/tracing.zig");
-const PersistanceHandler = @import("../../src/server/persistance.zig").PersistanceHandler;
-const Logger = @import("../../src/server/logger.zig");
+const Config = @import("../../server/config.zig");
+const types = @import("../../protocol/types.zig");
+const TracingAllocator = @import("../../server/tracing.zig");
+const PersistanceHandler = @import("../../server/persistance.zig").PersistanceHandler;
+const Logger = @import("../../server/logger.zig");
 
-const MemoryStorage = @import("../../src/server/storage.zig");
-const helper = @import("../test_helper.zig");
+const MemoryStorage = @import("../../server/storage.zig");
+const helper = @import("../helper.zig");
 
 test "test logger debug" {
     std.fs.cwd().deleteTree("logs") catch {};

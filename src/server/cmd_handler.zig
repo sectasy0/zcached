@@ -28,7 +28,7 @@ pub const CMDHandler = struct {
 
     logger: *Logger,
 
-    const HandlerResult = union(enum) { ok: ZType, err: anyerror };
+    pub const HandlerResult = union(enum) { ok: ZType, err: anyerror };
 
     pub fn init(
         allocator: std.mem.Allocator,

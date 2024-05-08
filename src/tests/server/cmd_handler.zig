@@ -1,14 +1,14 @@
 const std = @import("std");
 
-const Config = @import("../../src/server/config.zig");
-const ZType = @import("../../src/protocol/types.zig").ZType;
-const TracingAllocator = @import("../../src/server/tracing.zig");
-const PersistanceHandler = @import("../../src/server/persistance.zig").PersistanceHandler;
-const CMDHandler = @import("../../src/server/cmd_handler.zig").CMDHandler;
-const Logger = @import("../../src/server/logger.zig");
+const Config = @import("../../server/config.zig");
+const ZType = @import("../../protocol/types.zig").ZType;
+const TracingAllocator = @import("../../server/tracing.zig");
+const PersistanceHandler = @import("../../server/persistance.zig").PersistanceHandler;
+const CMDHandler = @import("../../server/cmd_handler.zig").CMDHandler;
+const Logger = @import("../../server/logger.zig");
 
-const MemoryStorage = @import("../../src/server/storage.zig");
-const helper = @import("../test_helper.zig");
+const MemoryStorage = @import("../../server/storage.zig");
+const helper = @import("../helper.zig");
 
 test "should handle SET command" {
     const config = try Config.load(std.testing.allocator, null, null);
@@ -39,7 +39,7 @@ test "should handle SET command" {
 
     const result = cmd_handler.process(&command_set);
 
-    try std.testing.expectEqual(result.ok, .{ .sstr = @constCast("OK") });
+    try std.testing.expectEqual(result.ok, ZType{ .sstr = @constCast("OK") });
     try std.testing.expectEqualStrings((try mstorage.get("key")).str, @constCast("value"));
 }
 
@@ -197,7 +197,7 @@ test "should handle DELETE command" {
     try command_set.append(.{ .str = @constCast("key") });
 
     const result = cmd_handler.process(&command_set);
-    try std.testing.expectEqual(result, .{ .ok = .{ .sstr = @constCast("OK") } });
+    try std.testing.expectEqual(result, CMDHandler.HandlerResult{ .ok = .{ .sstr = @constCast("OK") } });
     try std.testing.expectEqual(mstorage.get("key"), error.NotFound);
 }
 
@@ -228,7 +228,7 @@ test "should return error.NotFound for non existing during DELETE command" {
     try command_set.append(.{ .str = @constCast("key") });
 
     const result = cmd_handler.process(&command_set);
-    try std.testing.expectEqual(result, .{ .err = error.NotFound });
+    try std.testing.expectEqual(result, CMDHandler.HandlerResult{ .err = error.NotFound });
 }
 
 test "should DELETE return error.InvalidCommand when missing key" {
@@ -292,7 +292,7 @@ test "should handle FLUSH command" {
     try command_set.append(.{ .str = @constCast("FLUSH") });
 
     const result = cmd_handler.process(&command_set);
-    try std.testing.expectEqual(result.ok, .{ .sstr = @constCast("OK") });
+    try std.testing.expectEqual(result.ok, ZType{ .sstr = @constCast("OK") });
     try std.testing.expectEqual(mstorage.internal.count(), 0);
 }
 
@@ -325,7 +325,7 @@ test "should handle PING command" {
     try command_set.append(.{ .str = @constCast("PING") });
 
     const result = cmd_handler.process(&command_set);
-    try std.testing.expectEqual(result.ok, .{ .sstr = @constCast("PONG") });
+    try std.testing.expectEqual(result.ok, ZType{ .sstr = @constCast("PONG") });
 }
 
 test "should handle DBSIZE command" {
@@ -357,7 +357,7 @@ test "should handle DBSIZE command" {
     try command_set.append(.{ .str = @constCast("DBSIZE") });
 
     const result = cmd_handler.process(&command_set);
-    try std.testing.expectEqual(result.ok, .{ .int = 2 });
+    try std.testing.expectEqual(result.ok, ZType{ .int = 2 });
 }
 
 test "should handle MGET command" {
@@ -396,7 +396,7 @@ test "should handle MGET command" {
     try std.testing.expectEqual(std.meta.activeTag(result.ok), .map);
     try std.testing.expectEqualStrings(result.ok.map.get("key").?.str, @constCast("value"));
     try std.testing.expectEqualStrings(result.ok.map.get("key2").?.str, @constCast("value2"));
-    try std.testing.expectEqual(result.ok.map.get("key3").?.null, .{ .null = void{} });
+    try std.testing.expectEqual(result.ok.map.get("key3").?, ZType{ .null = void{} });
 }
 
 test "should handle MSET command" {
@@ -428,7 +428,7 @@ test "should handle MSET command" {
 
     const result = cmd_handler.process(&command_set);
 
-    try std.testing.expectEqual(result.ok, .{ .sstr = @constCast("OK") });
+    try std.testing.expectEqual(result.ok, ZType{ .sstr = @constCast("OK") });
     try std.testing.expectEqualStrings((try mstorage.get("key")).str, command_set.items[2].str);
 }
 
@@ -556,8 +556,8 @@ test "should handle KEYS command" {
     var expected = std.ArrayList(ZType).init(std.testing.allocator);
     defer expected.deinit();
 
-    try expected.append(.{ .str = @constCast("key") });
     try expected.append(.{ .str = @constCast("key2") });
+    try expected.append(.{ .str = @constCast("key") });
 
     var result = cmd_handler.process(&command_set);
     defer result.ok.array.deinit();

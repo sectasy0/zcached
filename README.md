@@ -39,7 +39,7 @@ zig build
 ## Running Tests
 Run this command in the root directory of the project:
 ```bash
-zig test --main-pkg-path .. tests/run.zig -lc
+zig test src/test.zig -lc
 ```
 
 ## Usage

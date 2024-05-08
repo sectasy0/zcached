@@ -1,8 +1,8 @@
 const std = @import("std");
 
-const serializer = @import("../../src/protocol/serializer.zig");
-const types = @import("../../src/protocol/types.zig");
-const helpers = @import("../test_helper.zig");
+const serializer = @import("../../protocol/serializer.zig");
+const types = @import("../../protocol/types.zig");
+const helpers = @import("../helper.zig");
 
 test "ProtocolHandler handle simple command" {
     var stream = std.io.fixedBufferStream("*3\r\n$3\r\nSET\r\n$9\r\nmycounter\r\n:42\r\n");
@@ -17,7 +17,7 @@ test "ProtocolHandler handle simple command" {
     const result_array = result.array.items;
     try std.testing.expectEqualStrings("SET", result_array[0].str);
     try std.testing.expectEqualStrings("mycounter", result_array[1].str);
-    try std.testing.expectEqual(.{ .int = 42 }, result_array[2].int);
+    try std.testing.expectEqual(42, result_array[2].int);
 }
 
 test "ProtocolHandler handle empty bufferr" {
@@ -56,7 +56,7 @@ test "ProtocolHandler handle integer" {
     defer handler.deinit();
 
     const result = try handler.process(reader);
-    try std.testing.expectEqual(.{ .int = 42 }, result.int);
+    try std.testing.expectEqual(types.ZType{ .int = 42 }, result);
 }
 
 test "ProtocolHandler handle integer without value" {
@@ -121,7 +121,7 @@ test "ProtocolHandler handle boolean f value" {
     defer handler.deinit();
 
     const result = handler.process(reader);
-    try std.testing.expectEqual(result, .{ .bool = false });
+    try std.testing.expectEqual(result, types.ZType{ .bool = false });
 }
 
 test "ProtocolHandler handle boolean t value" {
@@ -134,7 +134,7 @@ test "ProtocolHandler handle boolean t value" {
     defer handler.deinit();
 
     const result = handler.process(reader);
-    try std.testing.expectEqual(result, .{ .bool = true });
+    try std.testing.expectEqual(result, types.ZType{ .bool = true });
 }
 
 test "ProtocolHandler handle boolean invalid value" {
@@ -160,7 +160,7 @@ test "ProtocolHandler handle null" {
     defer handler.deinit();
 
     const result = handler.process(reader);
-    try std.testing.expectEqual(result, .{ .null = void{} });
+    try std.testing.expectEqual(result, types.ZType{ .null = void{} });
 }
 
 test "ProtocolHandler handle error" {
@@ -186,12 +186,12 @@ test "serialize float" {
     defer handler.deinit();
 
     const result = try handler.process(reader);
-    try std.testing.expectEqual(.{ .float = 3.14 }, result.float);
+    try std.testing.expectEqual(types.ZType{ .float = 3.14 }, result);
 }
 
 test "not serialize too large bulk" {
     serializer.MAX_BULK_LEN = 10;
-    const stream = std.io.fixedBufferStream("$80\r\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    var stream = std.io.fixedBufferStream("$80\r\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     const reader = stream.reader();
 
     const HandlerType = serializer.SerializerT(@TypeOf(reader));

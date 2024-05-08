@@ -1,7 +1,7 @@
 const std = @import("std");
 
-const Deserializer = @import("../../src/protocol/deserializer.zig").Deserializer;
-const types = @import("../../src/protocol/types.zig");
+const Deserializer = @import("../../protocol/deserializer.zig").Deserializer;
+const types = @import("../../protocol/types.zig");
 
 test "deserialize string" {
     var deserializer = Deserializer.init(std.testing.allocator);

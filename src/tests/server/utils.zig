@@ -1,6 +1,6 @@
 const std = @import("std");
 const ctime = @cImport(@cInclude("time.h"));
-const utils = @import("../../src/server/utils.zig");
+const utils = @import("../../server/utils.zig");
 
 test "to_uppercase" {
     const str = @constCast("hello world");

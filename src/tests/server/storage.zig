@@ -1,13 +1,13 @@
 const std = @import("std");
 
-const Config = @import("../../src/server/config.zig");
-const types = @import("../../src/protocol/types.zig");
-const TracingAllocator = @import("../../src/server/tracing.zig");
-const PersistanceHandler = @import("../../src/server/persistance.zig").PersistanceHandler;
-const Logger = @import("../../src/server/logger.zig");
+const Config = @import("../../server/config.zig");
+const types = @import("../../protocol/types.zig");
+const TracingAllocator = @import("../../server/tracing.zig");
+const PersistanceHandler = @import("../../server/persistance.zig").PersistanceHandler;
+const Logger = @import("../../server/logger.zig");
 
-const MemoryStorage = @import("../../src/server/storage.zig");
-const helper = @import("../test_helper.zig");
+const MemoryStorage = @import("../../server/storage.zig");
+const helper = @import("../helper.zig");
 
 test "should get existing and not get non-existing key" {
     var config = try Config.load(std.testing.allocator, null, null);
@@ -36,10 +36,10 @@ test "should get existing and not get non-existing key" {
 
     try helper.setup_storage(&storage);
 
-    try std.testing.expectEqual(storage.get("foo"), .{ .int = 42 });
-    try std.testing.expectEqual(storage.get("foo2"), .{ .float = 123.45 });
-    try std.testing.expectEqual(storage.get("foo3"), .{ .bool = true });
-    try std.testing.expectEqual(storage.get("foo4"), .{ .null = void{} });
+    try std.testing.expectEqual(storage.get("foo"), types.ZType{ .int = 42 });
+    try std.testing.expectEqual(storage.get("foo2"), types.ZType{ .float = 123.45 });
+    try std.testing.expectEqual(storage.get("foo3"), types.ZType{ .bool = true });
+    try std.testing.expectEqual(storage.get("foo4"), types.ZType{ .null = void{} });
     // we have to compare values cause it's not same place in memory
     try std.testing.expectEqualStrings((try storage.get("foo5")).sstr, helper.SIMPLE_STRING);
     try std.testing.expectEqualStrings((try storage.get("bar")).str, helper.STRING);
@@ -256,9 +256,8 @@ test "should not return error.MemoryLimitExceed when max but deleted some" {
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const utils = @import("../../src/server/utils.zig");
-    const tracking = utils.ptrCast(TracingAllocator, storage.allocator.ptr);
-    std.debug.print("{d}\n", .{tracking.real_size});
+    // const utils = @import("../../server/utils.zig");
+    // const tracking = utils.ptrCast(TracingAllocator, storage.allocator.ptr);
 
     const string = "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.";
     const value: types.ZType = .{ .str = @constCast(string) };
@@ -267,21 +266,7 @@ test "should not return error.MemoryLimitExceed when max but deleted some" {
         try storage.put(key, value);
     }
 
-    // for (0..1) |i| {
-    //     var key = try std.fmt.allocPrint(arena.allocator(), "key-{d}", .{i});
-    //     var dresult = storage.delete(key);
-
-    //     try std.testing.expectEqual(dresult, true);
-    // }
-
-    // storage.flush();
-
-    std.debug.print("{d}\n", .{tracking.real_size});
-    std.debug.print("{d}\n", .{@sizeOf(@TypeOf(storage.internal)) + @sizeOf(@TypeOf(storage.internal).KV) * storage.internal.count()});
-    // std.debug.print("{d}\n", .{storage.internal.});
-
     const result = storage.put("test key", value);
-    std.debug.print("aaaaaaaaaaaaaaaaaaaaaaaa {any}\n", .{result});
 
     try std.testing.expectEqual(void{}, result);
 }

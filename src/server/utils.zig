@@ -58,3 +58,7 @@ pub fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
     _ = std.mem.replace(u8, value, "\r\n", "\\r\\n", output);
     return output;
 }
+
+test {
+    std.testing.refAllDecls(@This());
+}

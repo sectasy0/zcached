@@ -1,8 +1,8 @@
 const std = @import("std");
 
-const Logger = @import("../../src/server/logger.zig");
-const Config = @import("../../src/server/config.zig");
-const AccessControl = @import("../../src/server/access_control.zig");
+const Logger = @import("../../server/logger.zig");
+const Config = @import("../../server/config.zig");
+const AccessControl = @import("../../server/access_control.zig");
 
 test "should not return errors" {
     const config = try Config.load(std.testing.allocator, null, null);

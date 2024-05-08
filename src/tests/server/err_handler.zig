@@ -1,10 +1,10 @@
 const std = @import("std");
-const Logger = @import("../../src/server/logger.zig");
-const ZType = @import("../../src/protocol/types.zig").ZType;
+const Logger = @import("../../server/logger.zig");
+const ZType = @import("../../protocol/types.zig").ZType;
 
 const BUFF_SIZE: u8 = 150;
 
-const err_handler = @import("../../src/server/err_handler.zig");
+const err_handler = @import("../../server/err_handler.zig");
 
 test "BadRequest" {
     var buffer: [BUFF_SIZE]u8 = undefined;

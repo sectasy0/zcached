@@ -1,11 +1,11 @@
 const std = @import("std");
 
-const Config = @import("../src/server/config.zig");
-const MemoryStorage = @import("../src/server/storage.zig");
-const PersistanceHandler = @import("../src/server/persistance.zig").PersistanceHandler;
-const CMDHandler = @import("../src/server/cmd_handler.zig").CMDHandler;
-const types = @import("../src/protocol/types.zig");
-const Logger = @import("../src/server/logger.zig");
+const Config = @import("../server/config.zig");
+const MemoryStorage = @import("../server/storage.zig");
+const PersistanceHandler = @import("../server/persistance.zig").PersistanceHandler;
+const CMDHandler = @import("../server/cmd_handler.zig").CMDHandler;
+const types = @import("../protocol/types.zig");
+const Logger = @import("../server/logger.zig");
 const activeTag = std.meta.activeTag;
 
 pub const STRING: []u8 = @constCast("Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.");
@@ -90,7 +90,13 @@ pub fn expectEqualZTypes(first: types.ZType, second: types.ZType) !void {
 
             if (equal_items != first.map.count()) return error.NotEqual;
         },
-        .str => try std.testing.expectEqualStrings(first.str, second.str),
+        .str => {
+            if (std.mem.eql(u8, first.str, second.str)) {
+                return;
+            } else {
+                return error.NotEqual;
+            }
+        },
         .sstr => try std.testing.expectEqualStrings(first.sstr, second.sstr),
         .int => try std.testing.expectEqual(first, second),
         .float => try std.testing.expectEqual(first, second),
