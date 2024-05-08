@@ -13,7 +13,7 @@ pub fn deinit(self: *Connection) void {
     self.allocator.free(self.buffer);
 }
 
-pub fn fd(self: *Connection) std.os.socket_t {
+pub fn fd(self: *Connection) std.posix.socket_t {
     return self.stream.handle;
 }
 

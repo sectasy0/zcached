@@ -1,9 +1,9 @@
 const std = @import("std");
 
-const ProtocolHandlerT = @import("../../src/protocol/handler.zig").ProtocolHandlerT;
-const types = @import("../../src/protocol/types.zig");
-const SerializerT = @import("../../src/protocol/serializer.zig").SerializerT;
-const Deserializer = @import("../../src/protocol/deserializer.zig").Deserializer;
+const ProtocolHandlerT = @import("../../protocol/handler.zig").ProtocolHandlerT;
+const types = @import("../../protocol/types.zig");
+const SerializerT = @import("../../protocol/serializer.zig").SerializerT;
+const Deserializer = @import("../../protocol/deserializer.zig").Deserializer;
 
 test "serialize" {
     var stream = std.io.fixedBufferStream("*3\r\n$3\r\nSET\r\n$9\r\nmycounter\r\n:42\r\n");
@@ -14,11 +14,11 @@ test "serialize" {
     var handler = try HandlerType.init(std.testing.allocator);
     defer handler.deinit();
 
-    var result = try handler.serialize(&reader);
-    var result_array = result.array.items;
+    const result = try handler.serialize(&reader);
+    const result_array = result.array.items;
     try std.testing.expectEqualStrings("SET", result_array[0].str);
     try std.testing.expectEqualStrings("mycounter", result_array[1].str);
-    try std.testing.expectEqual(.{ .int = 42 }, result_array[2].int);
+    try std.testing.expectEqual(42, result_array[2].int);
 }
 
 test "deserialize" {
@@ -33,7 +33,7 @@ test "deserialize" {
     var handler = try HandlerType.init(std.testing.allocator);
     defer handler.deinit();
 
-    var result = try handler.deserialize(.{ .array = array });
+    const result = try handler.deserialize(.{ .array = array });
     const expected = "*3\r\n$5\r\nfirst\r\n$6\r\nsecond\r\n$5\r\nthird\r\n";
     try std.testing.expectEqualStrings(expected, result);
 }

@@ -65,7 +65,7 @@ pub fn supervise(self: *Employer) void {
             // .verbose_log = true,
             // .retain_metadata = true,
         }){};
-        var allocator = gpa.allocator();
+        const allocator = gpa.allocator();
 
         // + 1 becouse first index is always listener fd
         self.workers[i] = Worker.init(allocator, fds_size + 1) catch |err| {

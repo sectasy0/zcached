@@ -18,11 +18,11 @@ jobs:
 
     - name: Install Zig
       run: |
-        curl -sSfL https://ziglang.org/download/0.11.0/zig-linux-x86_64-0.11.0.tar.xz | tar -xJ
+        curl -sSfL https://ziglang.org/download/0.12.0/zig-linux-x86_64-0.12.0.tar.xz | tar -xJ
       shell: bash
 
     - name: Lint Code
-      run: zig-linux-x86_64-0.11.0/zig fmt --check .
+      run: zig-linux-x86_64-0.12.0/zig fmt --check .
 
     - name: Build
-      run: zig-linux-x86_64-0.11.0/zig build
+      run: zig-linux-x86_64-0.12.0/zig build

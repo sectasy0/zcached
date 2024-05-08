@@ -1,6 +1,6 @@
 const std = @import("std");
 const ctime = @cImport(@cInclude("time.h"));
-const utils = @import("../../src/server/utils.zig");
+const utils = @import("../../server/utils.zig");
 
 test "to_uppercase" {
     const str = @constCast("hello world");
@@ -150,9 +150,9 @@ test "is_whitelisted should return fallse for non whitelisted address ipv6" {
     try std.testing.expectEqual(false, utils.is_whitelisted(whitelist, addrToCheck));
 }
 test "repr" {
-    var expected: []const u8 = "Hello\\r\\nWorld";
-    var input: []const u8 = "Hello\r\nWorld";
-    var actual = try utils.repr(std.testing.allocator, input);
+    const expected: []const u8 = "Hello\\r\\nWorld";
+    const input: []const u8 = "Hello\r\nWorld";
+    const actual = try utils.repr(std.testing.allocator, input);
     defer std.testing.allocator.free(actual);
 
     try std.testing.expectEqualStrings(expected, actual);

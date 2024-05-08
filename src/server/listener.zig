@@ -43,11 +43,11 @@ pub fn listen(self: *Listener, worker: *Worker) void {
     worker.poll_fds[0] = .{
         .revents = 0,
         .fd = self.server.sockfd.?,
-        .events = std.os.POLL.IN,
+        .events = std.posix.POLL.IN,
     };
 
     while (true) {
-        _ = std.os.poll(worker.poll_fds[self.start..worker.connections], -1) catch |err| {
+        _ = std.posix.poll(worker.poll_fds[self.start..worker.connections], -1) catch |err| {
             self.context.logger.log(
                 .Error,
                 "# std.os.poll failure: {?}\n",
@@ -89,8 +89,8 @@ pub fn listen(self: *Listener, worker: *Worker) void {
             }
 
             // file descriptor is ready for reading.
-            if (pollfd.revents == std.os.POLL.IN) {
-                var connection = worker.states.getPtr(pollfd.fd) orelse continue;
+            if (pollfd.revents == std.posix.POLL.IN) {
+                const connection = worker.states.getPtr(pollfd.fd) orelse continue;
                 self.handle_connection(worker, connection);
                 continue;
             }
@@ -161,10 +161,10 @@ fn handle_incoming(self: *Listener, worker: *Worker) AcceptResult {
     worker.poll_fds[worker.connections] = .{
         .revents = 0,
         .fd = incoming.stream.handle,
-        .events = std.os.POLL.IN,
+        .events = std.posix.POLL.IN,
     };
 
-    var cbuffer = worker.allocator.alloc(u8, self.buffer_size) catch |err| {
+    const cbuffer = worker.allocator.alloc(u8, self.buffer_size) catch |err| {
         self.context.logger.log(
             .Error,
             "# failed to allocate buffer for client: {?}",

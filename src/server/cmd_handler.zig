@@ -28,7 +28,7 @@ pub const CMDHandler = struct {
 
     logger: *Logger,
 
-    const HandlerResult = union(enum) { ok: ZType, err: anyerror };
+    pub const HandlerResult = union(enum) { ok: ZType, err: anyerror };
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -50,7 +50,7 @@ pub const CMDHandler = struct {
             return .{ .err = error.UnknownCommand };
         }
 
-        var cmd_upper: []u8 = utils.to_uppercase(command_set.items[0].str);
+        const cmd_upper: []u8 = utils.to_uppercase(command_set.items[0].str);
         const command_type = std.meta.stringToEnum(Commands, cmd_upper) orelse {
             return .{ .err = error.UnknownCommand };
         };
@@ -160,7 +160,7 @@ pub const CMDHandler = struct {
             if (index & 1 == 1 or index + 1 == entries.len) continue;
             if (entry != .str) return .{ .err = error.KeyNotString };
 
-            var value = entries[index + 1];
+            const value = entries[index + 1];
 
             self.storage.put(entry.str, value) catch |err| {
                 return .{ .err = err };
@@ -170,7 +170,7 @@ pub const CMDHandler = struct {
     }
 
     fn zkeys(self: *CMDHandler) HandlerResult {
-        var result = self.storage.keys() catch |err| {
+        const result = self.storage.keys() catch |err| {
             return .{ .err = err };
         };
         return .{ .ok = .{ .array = result } };
@@ -180,7 +180,7 @@ pub const CMDHandler = struct {
     // is creating std.ArrayList so it have to be freed after
     pub fn free(self: *CMDHandler, command_set: *const std.ArrayList(ZType), result: *HandlerResult) void {
         _ = self;
-        var cmd_upper: []u8 = utils.to_uppercase(command_set.items[0].str);
+        const cmd_upper: []u8 = utils.to_uppercase(command_set.items[0].str);
         const command_type = std.meta.stringToEnum(Commands, cmd_upper) orelse return;
 
         switch (command_type) {

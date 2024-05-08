@@ -52,7 +52,7 @@ pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]c
     defer file.close();
 
     const file_size = (try file.stat()).size;
-    var buffer = try config._arena.allocator().alloc(u8, file_size);
+    const buffer = try config._arena.allocator().alloc(u8, file_size);
     defer config._arena.allocator().free(buffer);
 
     const readed_size = try file.read(buffer);
@@ -101,7 +101,7 @@ fn assign_field_value(config: *Config, key_value: std.ArrayList([]const u8)) !vo
     // I don't like how many nested things are here, but there is no other way
     inline for (std.meta.fields(Config)) |field| {
         if (std.mem.eql(u8, field.name, key_value.items[0])) {
-            var value = config._arena.allocator().alloc(u8, key_value.items[1].len) catch |err| {
+            const value = config._arena.allocator().alloc(u8, key_value.items[1].len) catch |err| {
                 std.debug.print(
                     "ERROR [{d}] * failed to allocate memory {?}\n",
                     .{ std.time.timestamp(), err },
@@ -109,7 +109,7 @@ fn assign_field_value(config: *Config, key_value: std.ArrayList([]const u8)) !vo
                 return;
             };
 
-            std.mem.copy(u8, value, key_value.items[1]);
+            @memcpy(value, key_value.items[1]);
 
             if (value.len == 0) return;
 

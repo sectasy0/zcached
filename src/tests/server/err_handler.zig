@@ -1,10 +1,10 @@
 const std = @import("std");
-const Logger = @import("../../src/server/logger.zig");
-const ZType = @import("../../src/protocol/types.zig").ZType;
+const Logger = @import("../../server/logger.zig");
+const ZType = @import("../../protocol/types.zig").ZType;
 
 const BUFF_SIZE: u8 = 150;
 
-const err_handler = @import("../../src/server/err_handler.zig");
+const err_handler = @import("../../server/err_handler.zig");
 
 test "BadRequest" {
     var buffer: [BUFF_SIZE]u8 = undefined;
@@ -13,7 +13,7 @@ test "BadRequest" {
     var logger = try Logger.init(std.testing.allocator, null, false);
     try err_handler.handle(&stream, error.BadRequest, .{}, &logger);
 
-    var expected: []u8 = @constCast("-ERR bad request\r\n");
+    const expected: []u8 = @constCast("-ERR bad request\r\n");
 
     try std.testing.expectEqualStrings(expected, stream.getWritten());
 }
@@ -29,7 +29,7 @@ test "UnknownCommand" {
     const args = err_handler.build_args(&array);
     try err_handler.handle(&stream, error.UnknownCommand, args, &logger);
 
-    var expected: []u8 = @constCast("-ERR unknown command\r\n");
+    const expected: []u8 = @constCast("-ERR unknown command\r\n");
 
     try std.testing.expectEqualStrings(expected, stream.getWritten());
 }
@@ -62,7 +62,7 @@ test "unexpected error" {
     var logger = try Logger.init(std.testing.allocator, null, false);
     try err_handler.handle(&stream, error.Unexpected, .{}, &logger);
 
-    var expected: []u8 = @constCast("-ERR unexpected\r\n");
+    const expected: []u8 = @constCast("-ERR unexpected\r\n");
 
     try std.testing.expectEqualStrings(expected, stream.getWritten());
 }
@@ -74,7 +74,7 @@ test "max clients reached" {
     var logger = try Logger.init(std.testing.allocator, null, false);
     try err_handler.handle(&stream, error.MaxClientsReached, .{}, &logger);
 
-    var expected: []u8 = @constCast("-ERR max number of clients reached\r\n");
+    const expected: []u8 = @constCast("-ERR max number of clients reached\r\n");
 
     try std.testing.expectEqualStrings(expected, stream.getWritten());
 }

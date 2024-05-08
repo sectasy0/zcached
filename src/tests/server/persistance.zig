@@ -1,13 +1,13 @@
 const std = @import("std");
 
-const Config = @import("../../src/server/config.zig");
-const types = @import("../../src/protocol/types.zig");
-const TracingAllocator = @import("../../src/server/tracing.zig");
-const PersistanceHandler = @import("../../src/server/persistance.zig").PersistanceHandler;
-const Logger = @import("../../src/server/logger.zig");
+const Config = @import("../../server/config.zig");
+const types = @import("../../protocol/types.zig");
+const TracingAllocator = @import("../../server/tracing.zig");
+const PersistanceHandler = @import("../../server/persistance.zig").PersistanceHandler;
+const Logger = @import("../../server/logger.zig");
 
-const MemoryStorage = @import("../../src/server/storage.zig");
-const helper = @import("../test_helper.zig");
+const MemoryStorage = @import("../../server/storage.zig");
+const helper = @import("../helper.zig");
 
 test "should load" {
     std.fs.cwd().makePath("./tmp/persist") catch {};
@@ -16,7 +16,7 @@ test "should load" {
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    const logger = try Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -50,7 +50,7 @@ test "should not load without header" {
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    const logger = try Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -85,7 +85,7 @@ test "should not load invalid ext" {
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    const logger = try Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -120,7 +120,7 @@ test "should not load corrupted file" {
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    const logger = try Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,
@@ -155,7 +155,7 @@ test "should save" {
     var config = try Config.load(std.testing.allocator, null, null);
     defer config.deinit();
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    const logger = try Logger.init(std.testing.allocator, null, false);
 
     var persister = try PersistanceHandler.init(
         std.testing.allocator,

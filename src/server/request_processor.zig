@@ -74,7 +74,7 @@ pub fn process(self: *RequestProcessor, connection: *Connection) void {
 
     var cmd_result = self.cmd_handler.process(command_set);
     if (cmd_result != .ok) {
-        var args = errors.build_args(command_set);
+        const args = errors.build_args(command_set);
         errors.handle(
             connection.stream,
             cmd_result.err,
@@ -98,7 +98,7 @@ pub fn process(self: *RequestProcessor, connection: *Connection) void {
 
     defer self.cmd_handler.free(command_set, &cmd_result);
 
-    var response = protocol.deserialize(cmd_result.ok) catch |err| {
+    const response = protocol.deserialize(cmd_result.ok) catch |err| {
         errors.handle(
             connection.stream,
             err,

@@ -1,7 +1,7 @@
 const std = @import("std");
 
-const Config = @import("../../src/server/config.zig");
-const DEFAULT_PATH = @import("../../src/server/config.zig").DEFAULT_PATH;
+const Config = @import("../../server/config.zig");
+const DEFAULT_PATH = @import("../../server/config.zig").DEFAULT_PATH;
 
 test "config default values ipv4" {
     var config = try Config.load(std.testing.allocator, null, null);

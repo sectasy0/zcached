@@ -1,7 +1,7 @@
 const std = @import("std");
 
-const Deserializer = @import("../../src/protocol/deserializer.zig").Deserializer;
-const types = @import("../../src/protocol/types.zig");
+const Deserializer = @import("../../protocol/deserializer.zig").Deserializer;
+const types = @import("../../protocol/types.zig");
 
 test "deserialize string" {
     var deserializer = Deserializer.init(std.testing.allocator);
@@ -102,9 +102,9 @@ test "deserialize array" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
 
-    var value = types.ZType{ .array = array };
+    const value = types.ZType{ .array = array };
 
-    var result = try deserializer.process(value);
+    const result = try deserializer.process(value);
     const expected = "*3\r\n$5\r\nfirst\r\n$6\r\nsecond\r\n$5\r\nthird\r\n";
     try std.testing.expectEqualStrings(expected, result);
 }
@@ -120,9 +120,9 @@ test "serialize map" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
 
-    var value = types.ZType{ .map = map };
+    const value = types.ZType{ .map = map };
 
-    var result = try deserializer.process(value);
+    const result = try deserializer.process(value);
     // it's not guaranteed that the order of the map will be the same
     const expected = "%3\r\n$1\r\nb\r\n$6\r\nsecond\r\n$1\r\na\r\n$5\r\nfirst\r\n$1\r\nc\r\n$5\r\nthird\r\n";
     try std.testing.expectEqualStrings(expected, result);

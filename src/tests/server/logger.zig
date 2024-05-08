@@ -1,13 +1,13 @@
 const std = @import("std");
 
-const Config = @import("../../src/server/config.zig");
-const types = @import("../../src/protocol/types.zig");
-const TracingAllocator = @import("../../src/server/tracing.zig");
-const PersistanceHandler = @import("../../src/server/persistance.zig").PersistanceHandler;
-const Logger = @import("../../src/server/logger.zig");
+const Config = @import("../../server/config.zig");
+const types = @import("../../protocol/types.zig");
+const TracingAllocator = @import("../../server/tracing.zig");
+const PersistanceHandler = @import("../../server/persistance.zig").PersistanceHandler;
+const Logger = @import("../../server/logger.zig");
 
-const MemoryStorage = @import("../../src/server/storage.zig");
-const helper = @import("../test_helper.zig");
+const MemoryStorage = @import("../../server/storage.zig");
+const helper = @import("../helper.zig");
 
 test "test logger debug" {
     std.fs.cwd().deleteTree("logs") catch {};
@@ -25,7 +25,7 @@ test "test logger debug" {
     defer file.close();
 
     const file_size = (try file.stat()).size;
-    var buffer = try std.testing.allocator.alloc(u8, file_size);
+    const buffer = try std.testing.allocator.alloc(u8, file_size);
     const readed = try file.readAll(buffer);
     _ = readed;
     defer std.testing.allocator.free(buffer);
@@ -47,7 +47,7 @@ test "test logger info" {
     defer file.close();
 
     const file_size = (try file.stat()).size;
-    var buffer = try std.testing.allocator.alloc(u8, file_size);
+    const buffer = try std.testing.allocator.alloc(u8, file_size);
     const readed = try file.readAll(buffer);
     _ = readed;
     defer std.testing.allocator.free(buffer);
@@ -69,7 +69,7 @@ test "test logger warning" {
     defer file.close();
 
     const file_size = (try file.stat()).size;
-    var buffer = try std.testing.allocator.alloc(u8, file_size);
+    const buffer = try std.testing.allocator.alloc(u8, file_size);
     const readed = try file.readAll(buffer);
     _ = readed;
     defer std.testing.allocator.free(buffer);
@@ -92,7 +92,7 @@ test "test logger error" {
     defer file.close();
 
     const file_size = (try file.stat()).size;
-    var buffer = try std.testing.allocator.alloc(u8, file_size);
+    const buffer = try std.testing.allocator.alloc(u8, file_size);
     const readed = try file.readAll(buffer);
     _ = readed;
     defer std.testing.allocator.free(buffer);
