@@ -131,7 +131,7 @@ test "should not return error.MemoryLimitExceed when max but deleted some" {
 
     fixtures.config.maxmemory = 1048576;
 
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    var arena = std.heap.ArenaAllocator.init(fixtures.allocator);
     defer arena.deinit();
     // const utils = @import("../../server/utils.zig");
     // const tracking = utils.ptrCast(TracingAllocator, storage.allocator.ptr);
