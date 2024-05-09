@@ -8,7 +8,7 @@ const CMDHandler = @import("../../server/cmd_handler.zig").CMDHandler;
 test "should handle SET command" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
-    fixture.create_memory_storage();
+    try fixture.create_memory_storage();
 
     var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
@@ -27,8 +27,8 @@ test "should handle SET command" {
 
 test "should SET return error.InvalidCommand when passed 2 args" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
@@ -45,8 +45,8 @@ test "should SET return error.InvalidCommand when passed 2 args" {
 
 test "should SET return error.InvalidCommand when passed 1 args" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
@@ -62,8 +62,8 @@ test "should SET return error.InvalidCommand when passed 1 args" {
 
 test "should handle GET command" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
@@ -81,8 +81,8 @@ test "should handle GET command" {
 
 test "should SET return error.InvalidCommand when missing key" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     try fixture.memory_storage.?.put("key", .{ .str = @constCast("value") });
 
@@ -99,8 +99,8 @@ test "should SET return error.InvalidCommand when missing key" {
 
 test "should handle DELETE command" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     try fixture.memory_storage.?.put("key", .{ .str = @constCast("value") });
 
@@ -119,8 +119,8 @@ test "should handle DELETE command" {
 
 test "should return error.NotFound for non existing during DELETE command" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
@@ -136,8 +136,8 @@ test "should return error.NotFound for non existing during DELETE command" {
 
 test "should DELETE return error.InvalidCommand when missing key" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     try fixture.memory_storage.?.put("key", .{ .str = @constCast("value") });
 
@@ -154,8 +154,8 @@ test "should DELETE return error.InvalidCommand when missing key" {
 
 test "should handle FLUSH command" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     try fixture.memory_storage.?.put("key", .{ .str = @constCast("value") });
 
@@ -173,8 +173,8 @@ test "should handle FLUSH command" {
 
 test "should handle PING command" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     try fixture.memory_storage.?.put("key", .{ .str = @constCast("value") });
 
@@ -191,8 +191,8 @@ test "should handle PING command" {
 
 test "should handle DBSIZE command" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     try fixture.memory_storage.?.put("key", .{ .str = @constCast("value") });
 
@@ -209,8 +209,8 @@ test "should handle DBSIZE command" {
 
 test "should handle MGET command" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     try fixture.memory_storage.?.put("key", .{ .str = @constCast("value") });
     try fixture.memory_storage.?.put("key2", .{ .str = @constCast("value2") });
@@ -236,8 +236,8 @@ test "should handle MGET command" {
 
 test "should handle MSET command" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
@@ -256,8 +256,8 @@ test "should handle MSET command" {
 
 test "should handle MSET return InvalidArgs when empty" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
@@ -273,8 +273,8 @@ test "should handle MSET return InvalidArgs when empty" {
 
 test "should handle MSET and return InvalidArgs when not even" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
@@ -291,8 +291,8 @@ test "should handle MSET and return InvalidArgs when not even" {
 
 test "should handle MSET and return KeyNotString" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
@@ -310,8 +310,8 @@ test "should handle MSET and return KeyNotString" {
 
 test "should handle KEYS command" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     try fixture.memory_storage.?.put("key", .{ .str = @constCast("value") });
     try fixture.memory_storage.?.put("key2", .{ .str = @constCast("value2") });
@@ -337,8 +337,8 @@ test "should handle KEYS command" {
 
 test "should handle KEYS command no data in storage" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
@@ -359,8 +359,8 @@ test "should handle KEYS command no data in storage" {
 
 test "should handle LASTSAVE command" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     const expected: i64 = fixture.memory_storage.?.last_save;
 
@@ -377,8 +377,8 @@ test "should handle LASTSAVE command" {
 
 test "should SAVE return error.SaveFailure when there is no data" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 

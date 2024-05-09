@@ -8,8 +8,8 @@ test "should load" {
 
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
-    fixture.create_memory_storage();
-    fixture.persistance.path = "./tmp/persist/";
+    try fixture.create_memory_storage();
+    fixture.persistance.?.path = "./tmp/persist/";
 
     try std.testing.expectEqual(fixture.memory_storage.?.internal.count(), 0);
 
@@ -18,7 +18,7 @@ test "should load" {
     try file.writeAll(file_content);
     defer file.close();
 
-    try fixture.persistance.load(&fixture.memory_storage.?);
+    try fixture.persistance.?.load(&fixture.memory_storage.?);
 
     try std.testing.expectEqual(fixture.memory_storage.?.internal.count(), 4);
 
@@ -31,8 +31,8 @@ test "should not load without header" {
 
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
-    fixture.create_memory_storage();
-    fixture.persistance.path = "./tmp/persist/without_header/";
+    try fixture.create_memory_storage();
+    fixture.persistance.?.path = "./tmp/persist/without_header/";
 
     std.fs.cwd().makeDir("./tmp/persist/without_header") catch {};
 
@@ -43,7 +43,7 @@ test "should not load without header" {
     try file.writeAll(file_content);
     defer file.close();
 
-    try std.testing.expectEqual(fixture.persistance.load(&fixture.memory_storage.?), error.InvalidFile);
+    try std.testing.expectEqual(fixture.persistance.?.load(&fixture.memory_storage.?), error.InvalidFile);
 
     std.fs.cwd().deleteFile("./tmp/persist/without_header/dump_123.zcpf") catch {};
     std.fs.cwd().deleteDir("./tmp/persist") catch {};
@@ -54,8 +54,8 @@ test "should not load invalid ext" {
 
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
-    fixture.create_memory_storage();
-    fixture.persistance.path = "./tmp/persist/invalid_ext/";
+    try fixture.create_memory_storage();
+    fixture.persistance.?.path = "./tmp/persist/invalid_ext/";
 
     std.fs.cwd().makeDir("./tmp/persist/invalid_ext") catch {};
 
@@ -66,7 +66,7 @@ test "should not load invalid ext" {
     try file.writeAll(file_content);
     defer file.close();
 
-    try std.testing.expectEqual(fixture.persistance.load(&fixture.memory_storage.?), error.InvalidFile);
+    try std.testing.expectEqual(fixture.persistance.?.load(&fixture.memory_storage.?), error.InvalidFile);
 
     std.fs.cwd().deleteFile("./tmp/persist/invalid_ext/dump_123.asdf") catch {};
     std.fs.cwd().deleteDir("./tmp/persist") catch {};
@@ -77,8 +77,8 @@ test "should not load corrupted file" {
 
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
-    fixture.create_memory_storage();
-    fixture.persistance.path = "./tmp/persist/corrupted/";
+    try fixture.create_memory_storage();
+    fixture.persistance.?.path = "./tmp/persist/corrupted/";
 
     std.fs.cwd().makeDir("./tmp/persist/corrupted") catch {};
 
@@ -89,7 +89,7 @@ test "should not load corrupted file" {
     try file.writeAll(file_content);
     defer file.close();
 
-    try std.testing.expectEqual(fixture.persistance.load(&fixture.memory_storage.?), error.InvalidFile);
+    try std.testing.expectEqual(fixture.persistance.?.load(&fixture.memory_storage.?), error.InvalidFile);
 
     std.fs.cwd().deleteFile("./tmp/persist/corrupted/dump_123.asdf") catch {};
     std.fs.cwd().deleteDir("./tmp/persist") catch {};
@@ -100,14 +100,14 @@ test "should save" {
 
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
-    fixture.create_memory_storage();
+    try fixture.create_memory_storage();
 
     try fixture.memory_storage.?.put("test1", .{ .str = @constCast("testtest") });
     try fixture.memory_storage.?.put("test2", .{ .str = @constCast("testtest") });
     try fixture.memory_storage.?.put("test3", .{ .str = @constCast("testtest") });
     try fixture.memory_storage.?.put("test4", .{ .str = @constCast("testtest") });
 
-    const result = try fixture.persistance.save(&fixture.memory_storage.?);
+    const result = try fixture.persistance.?.save(&fixture.memory_storage.?);
 
     try std.testing.expectEqual(result, 108);
 

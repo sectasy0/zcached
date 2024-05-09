@@ -12,7 +12,7 @@ pub const ContextFixture = struct {
     tracing_allocator: TracingAllocator,
     logger: Logger,
     config: Config,
-    persistance: PersistanceHandler,
+    persistance: ?PersistanceHandler,
     memory_storage: ?MemoryStorage,
 
     pub fn init() !ContextFixture {
@@ -21,27 +21,32 @@ pub const ContextFixture = struct {
 
         const logger: Logger = try Logger.init(allocator, null, false);
         const config: Config = try Config.load(allocator, null, null);
-        const persistance: PersistanceHandler = try PersistanceHandler.init(allocator, config, logger, null);
 
         return ContextFixture{
             .allocator = allocator,
             .tracing_allocator = tracing_allocator,
             .logger = logger,
             .config = config,
-            .persistance = persistance,
+            .persistance = null,
             .memory_storage = null,
         };
     }
 
-    pub fn create_memory_storage(self: *ContextFixture) void {
+    pub fn create_memory_storage(self: *ContextFixture) !void {
         if (self.memory_storage != null) self.memory_storage.?.deinit();
+        if (self.persistance == null) try self.create_persistance();
 
-        self.memory_storage = MemoryStorage.init(self.tracing_allocator.allocator(), self.config, &self.persistance);
+        self.memory_storage = MemoryStorage.init(self.tracing_allocator.allocator(), self.config, &self.persistance.?);
+    }
+    pub fn create_persistance(self: *ContextFixture) !void {
+        if (self.persistance != null) self.persistance.?.deinit();
+
+        self.persistance = try PersistanceHandler.init(self.allocator, self.config, self.logger, null);
     }
 
     pub fn deinit(self: *ContextFixture) void {
         self.config.deinit();
-        self.persistance.deinit();
+        if (self.persistance != null) self.persistance.?.deinit();
         if (self.memory_storage != null) self.memory_storage.?.deinit();
     }
 };

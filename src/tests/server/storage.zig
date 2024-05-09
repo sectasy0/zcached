@@ -6,8 +6,8 @@ const helper = @import("../helper.zig");
 
 test "should get existing and not get non-existing key" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     try helper.setup_storage(&fixture.memory_storage.?);
 
@@ -42,8 +42,8 @@ test "should get existing and not get non-existing key" {
 
 test "should delete existing key" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     const string = "Die meisten Menschen sind nichts als Bauern auf einem Schachbrett, das von einer unbekannten Hand geführt wird.";
     const value: types.ZType = .{ .str = @constCast(string) };
@@ -58,16 +58,16 @@ test "should delete existing key" {
 
 test "should not delete non-existing key" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     try std.testing.expectEqual(fixture.memory_storage.?.delete("foo"), false);
 }
 
 test "should flush storage" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     const string = "Es gibt Momente im Leben, da muss man verstehen, dass die Entscheidungen, die man trifft, nicht nur das eigene Schicksal angehen.";
     const value: types.ZType = .{ .str = @constCast(string) };
@@ -83,8 +83,8 @@ test "should flush storage" {
 
 test "should not store error" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     const err_value = .{ .err = .{ .message = "random error" } };
     try std.testing.expectEqual(fixture.memory_storage.?.put("test", err_value), error.CantInsertError);
@@ -94,7 +94,7 @@ test "should return error.MemoryLimitExceeded" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
     fixture.config.maxmemory = 1048576;
-    fixture.create_memory_storage();
+    try fixture.create_memory_storage();
 
     var arena = std.heap.ArenaAllocator.init(fixture.allocator);
     defer arena.deinit();
@@ -111,8 +111,8 @@ test "should return error.MemoryLimitExceeded" {
 
 test "should not return error.MemoryLimitExceed when max but deleted some" {
     var fixture = try ContextFixture.init();
-    fixture.create_memory_storage();
     defer fixture.deinit();
+    try fixture.create_memory_storage();
 
     fixture.config.maxmemory = 1048576;
 
