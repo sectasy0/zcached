@@ -1,11 +1,9 @@
 const std = @import("std");
+const helper = @import("../helper.zig");
 
 const Fixtures = @import("../fixtures.zig");
-
 const ZType = @import("../../protocol/types.zig").ZType;
 const CMDHandler = @import("../../server/cmd_handler.zig").CMDHandler;
-
-const helper = @import("../helper.zig");
 
 test "should handle SET command" {
     var fixtures = try Fixtures.init();

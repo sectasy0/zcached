@@ -1,10 +1,6 @@
 const std = @import("std");
 
-const types = @import("../../protocol/types.zig");
-const helper = @import("../helper.zig");
-
 const Fixtures = @import("../fixtures.zig");
-const PersistanceHandler = @import("../../server/persistance.zig").PersistanceHandler;
 
 test "should load" {
     std.fs.cwd().makePath("./tmp/persist") catch {};
@@ -12,14 +8,7 @@ test "should load" {
 
     var fixtures = try Fixtures.init();
     defer fixtures.deinit();
-
-    var persister = try PersistanceHandler.init(
-        fixtures.allocator,
-        fixtures.config,
-        fixtures.logger,
-        "./tmp/persist/",
-    );
-    defer persister.deinit();
+    fixtures.persistance.path = "./tmp/persist/";
 
     var storage = fixtures.create_memory_storage();
     defer storage.deinit();
@@ -31,7 +20,7 @@ test "should load" {
     try file.writeAll(file_content);
     defer file.close();
 
-    try persister.load(&storage);
+    try fixtures.persistance.load(&storage);
 
     try std.testing.expectEqual(storage.internal.count(), 4);
 
@@ -43,14 +32,7 @@ test "should not load without header" {
     std.fs.cwd().makePath("./tmp/persist") catch {};
     var fixtures = try Fixtures.init();
     defer fixtures.deinit();
-
-    var persister = try PersistanceHandler.init(
-        fixtures.allocator,
-        fixtures.config,
-        fixtures.logger,
-        "./tmp/persist/without_header/",
-    );
-    defer persister.deinit();
+    fixtures.persistance.path = "./tmp/persist/without_header/";
 
     var storage = fixtures.create_memory_storage();
     defer storage.deinit();
@@ -64,7 +46,7 @@ test "should not load without header" {
     try file.writeAll(file_content);
     defer file.close();
 
-    try std.testing.expectEqual(persister.load(&storage), error.InvalidFile);
+    try std.testing.expectEqual(fixtures.persistance.load(&storage), error.InvalidFile);
 
     std.fs.cwd().deleteFile("./tmp/persist/without_header/dump_123.zcpf") catch {};
     std.fs.cwd().deleteDir("./tmp/persist") catch {};
@@ -75,14 +57,7 @@ test "should not load invalid ext" {
 
     var fixtures = try Fixtures.init();
     defer fixtures.deinit();
-
-    var persister = try PersistanceHandler.init(
-        fixtures.allocator,
-        fixtures.config,
-        fixtures.logger,
-        "./tmp/persist/invalid_ext/",
-    );
-    defer persister.deinit();
+    fixtures.persistance.path = "./tmp/persist/invalid_ext/";
 
     var storage = fixtures.create_memory_storage();
     defer storage.deinit();
@@ -96,7 +71,7 @@ test "should not load invalid ext" {
     try file.writeAll(file_content);
     defer file.close();
 
-    try std.testing.expectEqual(persister.load(&storage), error.InvalidFile);
+    try std.testing.expectEqual(fixtures.persistance.load(&storage), error.InvalidFile);
 
     std.fs.cwd().deleteFile("./tmp/persist/invalid_ext/dump_123.asdf") catch {};
     std.fs.cwd().deleteDir("./tmp/persist") catch {};
@@ -107,14 +82,7 @@ test "should not load corrupted file" {
 
     var fixtures = try Fixtures.init();
     defer fixtures.deinit();
-
-    var persister = try PersistanceHandler.init(
-        fixtures.allocator,
-        fixtures.config,
-        fixtures.logger,
-        "./tmp/persist/corrupted/",
-    );
-    defer persister.deinit();
+    fixtures.persistance.path = "./tmp/persist/corrupted/";
 
     var storage = fixtures.create_memory_storage();
     defer storage.deinit();
@@ -128,7 +96,7 @@ test "should not load corrupted file" {
     try file.writeAll(file_content);
     defer file.close();
 
-    try std.testing.expectEqual(persister.load(&storage), error.InvalidFile);
+    try std.testing.expectEqual(fixtures.persistance.load(&storage), error.InvalidFile);
 
     std.fs.cwd().deleteFile("./tmp/persist/corrupted/dump_123.asdf") catch {};
     std.fs.cwd().deleteDir("./tmp/persist") catch {};
@@ -140,15 +108,6 @@ test "should save" {
     var fixtures = try Fixtures.init();
     defer fixtures.deinit();
 
-    var persister = try PersistanceHandler.init(
-        fixtures.allocator,
-        fixtures.config,
-        fixtures.logger,
-        null,
-    );
-
-    defer persister.deinit();
-
     var storage = fixtures.create_memory_storage();
     defer storage.deinit();
 
@@ -157,7 +116,7 @@ test "should save" {
     try storage.put("test3", .{ .str = @constCast("testtest") });
     try storage.put("test4", .{ .str = @constCast("testtest") });
 
-    const result = try persister.save(&storage);
+    const result = try fixtures.persistance.save(&storage);
 
     try std.testing.expectEqual(result, 108);
 
