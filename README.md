@@ -120,7 +120,9 @@ for supported types and their encodings, see [types.md](types.md)
 - feat(command): `KEYS` command for getting all database keys.
 - fix: panic caused by unhandled command_set length.
 - feat(command): `LASTSAVE` command to get the last db save timestamp.
-- refactor(logger): Create a new log file if the previous one is too big.
+- refactor(logger): create a new log file if the previous one is too big.
+- feat: update zcached to use 0.12.0 zig version.
+- feat: add fixtures for tests.
 
 ### [version 0.0.1] - 11-12-2023
 - feat: first working version.

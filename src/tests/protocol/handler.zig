@@ -2,8 +2,6 @@ const std = @import("std");
 
 const ProtocolHandlerT = @import("../../protocol/handler.zig").ProtocolHandlerT;
 const types = @import("../../protocol/types.zig");
-const SerializerT = @import("../../protocol/serializer.zig").SerializerT;
-const Deserializer = @import("../../protocol/deserializer.zig").Deserializer;
 
 test "serialize" {
     var stream = std.io.fixedBufferStream("*3\r\n$3\r\nSET\r\n$9\r\nmycounter\r\n:42\r\n");
