@@ -1,6 +1,7 @@
 const std = @import("std");
 
-const ContextFixture = @import("../fixtures.zig").ContextFixture;
+const fixtures = @import("../fixtures.zig");
+const ContextFixture = fixtures.ContextFixture;
 
 test "should load" {
     std.fs.cwd().makePath("./tmp/persist") catch {};

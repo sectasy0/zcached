@@ -1,7 +1,9 @@
 const std = @import("std");
 const helper = @import("../helper.zig");
 
-const ContextFixture = @import("../fixtures.zig").ContextFixture;
+const fixtures = @import("../fixtures.zig");
+const ContextFixture = fixtures.ContextFixture;
+
 const ZType = @import("../../protocol/types.zig").ZType;
 const CMDHandler = @import("../../server/cmd_handler.zig").CMDHandler;
 

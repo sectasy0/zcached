@@ -1,6 +1,8 @@
 const std = @import("std");
 
-const ContextFixture = @import("../fixtures.zig").ContextFixture;
+const fixtures = @import("../fixtures.zig");
+const ContextFixture = fixtures.ContextFixture;
+
 const AccessControl = @import("../../server/access_control.zig");
 
 test "should not return errors" {
