@@ -1,20 +1,18 @@
 const std = @import("std");
 const helper = @import("../helper.zig");
 
-const Fixtures = @import("../fixtures.zig");
+const ContextFixture = @import("../fixtures.zig").ContextFixture;
 const ZType = @import("../../protocol/types.zig").ZType;
 const CMDHandler = @import("../../server/cmd_handler.zig").CMDHandler;
 
 test "should handle SET command" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    fixture.create_memory_storage();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("SET") });
@@ -24,19 +22,17 @@ test "should handle SET command" {
     const result = cmd_handler.process(&command_set);
 
     try std.testing.expectEqual(result.ok, ZType{ .sstr = @constCast("OK") });
-    try std.testing.expectEqualStrings((try storage.get("key")).str, @constCast("value"));
+    try std.testing.expectEqualStrings((try fixture.memory_storage.?.get("key")).str, @constCast("value"));
 }
 
 test "should SET return error.InvalidCommand when passed 2 args" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("SET") });
@@ -48,15 +44,13 @@ test "should SET return error.InvalidCommand when passed 2 args" {
 }
 
 test "should SET return error.InvalidCommand when passed 1 args" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("SET") });
@@ -67,18 +61,16 @@ test "should SET return error.InvalidCommand when passed 1 args" {
 }
 
 test "should handle GET command" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    try storage.put("key", .{ .str = @constCast("value") });
-
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
+
+    try fixture.memory_storage.?.put("key", .{ .str = @constCast("value") });
 
     try command_set.append(.{ .str = @constCast("GET") });
     try command_set.append(.{ .str = @constCast("key") });
@@ -88,17 +80,15 @@ test "should handle GET command" {
 }
 
 test "should SET return error.InvalidCommand when missing key" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    try fixture.memory_storage.?.put("key", .{ .str = @constCast("value") });
 
-    try storage.put("key", .{ .str = @constCast("value") });
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("GET") });
@@ -108,17 +98,15 @@ test "should SET return error.InvalidCommand when missing key" {
 }
 
 test "should handle DELETE command" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    try fixture.memory_storage.?.put("key", .{ .str = @constCast("value") });
 
-    try storage.put("key", .{ .str = @constCast("value") });
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("DELETE") });
@@ -126,19 +114,17 @@ test "should handle DELETE command" {
 
     const result = cmd_handler.process(&command_set);
     try std.testing.expectEqual(result, CMDHandler.HandlerResult{ .ok = .{ .sstr = @constCast("OK") } });
-    try std.testing.expectEqual(storage.get("key"), error.NotFound);
+    try std.testing.expectEqual(fixture.memory_storage.?.get("key"), error.NotFound);
 }
 
 test "should return error.NotFound for non existing during DELETE command" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("DELETE") });
@@ -149,17 +135,15 @@ test "should return error.NotFound for non existing during DELETE command" {
 }
 
 test "should DELETE return error.InvalidCommand when missing key" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    try fixture.memory_storage.?.put("key", .{ .str = @constCast("value") });
 
-    try storage.put("key", .{ .str = @constCast("value") });
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("DELETE") });
@@ -169,38 +153,34 @@ test "should DELETE return error.InvalidCommand when missing key" {
 }
 
 test "should handle FLUSH command" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    try fixture.memory_storage.?.put("key", .{ .str = @constCast("value") });
 
-    try storage.put("key", .{ .str = @constCast("value") });
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("FLUSH") });
 
     const result = cmd_handler.process(&command_set);
     try std.testing.expectEqual(result.ok, ZType{ .sstr = @constCast("OK") });
-    try std.testing.expectEqual(storage.internal.count(), 0);
+    try std.testing.expectEqual(fixture.memory_storage.?.internal.count(), 0);
 }
 
 test "should handle PING command" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    try fixture.memory_storage.?.put("key", .{ .str = @constCast("value") });
 
-    try storage.put("key", .{ .str = @constCast("value") });
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("PING") });
@@ -210,17 +190,15 @@ test "should handle PING command" {
 }
 
 test "should handle DBSIZE command" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    try fixture.memory_storage.?.put("key", .{ .str = @constCast("value") });
 
-    try storage.put("key", .{ .str = @constCast("value") });
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("DBSIZE") });
@@ -230,18 +208,16 @@ test "should handle DBSIZE command" {
 }
 
 test "should handle MGET command" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    try fixture.memory_storage.?.put("key", .{ .str = @constCast("value") });
+    try fixture.memory_storage.?.put("key2", .{ .str = @constCast("value2") });
 
-    try storage.put("key", .{ .str = @constCast("value") });
-    try storage.put("key2", .{ .str = @constCast("value2") });
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("MGET") });
@@ -259,15 +235,13 @@ test "should handle MGET command" {
 }
 
 test "should handle MSET command" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("MSET") });
@@ -277,19 +251,17 @@ test "should handle MSET command" {
     const result = cmd_handler.process(&command_set);
 
     try std.testing.expectEqual(result.ok, ZType{ .sstr = @constCast("OK") });
-    try std.testing.expectEqualStrings((try storage.get("key")).str, command_set.items[2].str);
+    try std.testing.expectEqualStrings((try fixture.memory_storage.?.get("key")).str, command_set.items[2].str);
 }
 
 test "should handle MSET return InvalidArgs when empty" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("MSET") });
@@ -300,15 +272,13 @@ test "should handle MSET return InvalidArgs when empty" {
 }
 
 test "should handle MSET and return InvalidArgs when not even" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("MSET") });
@@ -320,15 +290,13 @@ test "should handle MSET and return InvalidArgs when not even" {
 }
 
 test "should handle MSET and return KeyNotString" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("MSET") });
@@ -341,23 +309,21 @@ test "should handle MSET and return KeyNotString" {
 }
 
 test "should handle KEYS command" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    try fixture.memory_storage.?.put("key", .{ .str = @constCast("value") });
+    try fixture.memory_storage.?.put("key2", .{ .str = @constCast("value2") });
 
-    try storage.put("key", .{ .str = @constCast("value") });
-    try storage.put("key2", .{ .str = @constCast("value2") });
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("KEYS") });
 
-    var expected = std.ArrayList(ZType).init(fixtures.allocator);
+    var expected = std.ArrayList(ZType).init(fixture.allocator);
     defer expected.deinit();
 
     try expected.append(.{ .str = @constCast("key2") });
@@ -370,20 +336,18 @@ test "should handle KEYS command" {
 }
 
 test "should handle KEYS command no data in storage" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("KEYS") });
 
-    var expected = std.ArrayList(ZType).init(fixtures.allocator);
+    var expected = std.ArrayList(ZType).init(fixture.allocator);
     defer expected.deinit();
 
     var result = cmd_handler.process(&command_set);
@@ -394,17 +358,15 @@ test "should handle KEYS command no data in storage" {
 }
 
 test "should handle LASTSAVE command" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    const expected: i64 = fixture.memory_storage.?.last_save;
 
-    const expected: i64 = storage.last_save;
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("LASTSAVE") });
@@ -414,15 +376,13 @@ test "should handle LASTSAVE command" {
 }
 
 test "should SAVE return error.SaveFailure when there is no data" {
-    var fixtures = try Fixtures.init();
-    defer fixtures.deinit();
+    var fixture = try ContextFixture.init();
+    fixture.create_memory_storage();
+    defer fixture.deinit();
 
-    var storage = fixtures.create_memory_storage();
-    defer storage.deinit();
+    var cmd_handler = CMDHandler.init(fixture.allocator, &fixture.memory_storage.?, &fixture.logger);
 
-    var cmd_handler = CMDHandler.init(fixtures.allocator, &storage, &fixtures.logger);
-
-    var command_set = std.ArrayList(ZType).init(fixtures.allocator);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
     defer command_set.deinit();
     try command_set.append(.{ .str = @constCast("SAVE") });
 
