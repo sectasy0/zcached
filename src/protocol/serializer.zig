@@ -11,26 +11,24 @@ pub fn SerializerT(comptime GenericReader: type) type {
         const Self = @This();
 
         const HandlerFunc = fn (self: *Self, reader: GenericReader) anyerror!types.ZType;
-        handlers: std.StringHashMap(*const HandlerFunc),
+        const types_map = std.ComptimeStringMap(*const HandlerFunc, .{
+            .{ "+", serialize_sstr },
+            .{ "$", serialize_str },
+            .{ ",", serialize_float },
+            .{ "*", serialize_array },
+            .{ "-", serialize_error },
+            .{ "#", serialize_bool },
+            .{ "_", serialize_null },
+            .{ "%", serialize_map },
+            .{ ":", serialize_int },
+        });
+
         arena: std.heap.ArenaAllocator,
 
         pub fn init(allocator: std.mem.Allocator) !Self {
-            var handler = Self{
-                .handlers = std.StringHashMap(*const HandlerFunc).init(allocator),
+            return Self{
                 .arena = std.heap.ArenaAllocator.init(allocator),
             };
-
-            try handler.handlers.put("+", serialize_sstr);
-            try handler.handlers.put("$", serialize_str);
-            try handler.handlers.put(",", serialize_float);
-            try handler.handlers.put("*", serialize_array);
-            try handler.handlers.put("-", serialize_error);
-            try handler.handlers.put("#", serialize_bool);
-            try handler.handlers.put("_", serialize_null);
-            try handler.handlers.put("%", serialize_map);
-            try handler.handlers.put(":", serialize_int);
-
-            return handler;
         }
 
         pub fn process(self: *Self, reader: GenericReader) !types.ZType {
@@ -39,12 +37,11 @@ pub fn SerializerT(comptime GenericReader: type) type {
 
             if (size == 0) return error.BadRequest;
 
-            const handler_ref = self.handlers.get(&request_type) orelse return error.BadRequest;
+            const handler_ref = types_map.get(&request_type) orelse return error.BadRequest;
             return try handler_ref(self, reader);
         }
 
         pub fn deinit(self: *Self) void {
-            self.handlers.deinit();
             self.arena.deinit();
         }
 
