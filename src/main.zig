@@ -104,7 +104,15 @@ pub fn main() void {
     };
     defer persister.deinit();
 
-    var tracing = TracingAllocator.init(allocator);
+    // allocator for database inner database data purposes.
+    var dbgpa = std.heap.GeneralPurposeAllocator(.{
+        .safety = true,
+        // .verbose_log = true,
+        // .retain_metadata = true,
+    }){};
+    defer _ = dbgpa.deinit();
+
+    var tracing = TracingAllocator.init(dbgpa.allocator());
     var mem_storage = MemoryStorage.init(
         tracing.allocator(),
         config,
