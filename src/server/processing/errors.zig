@@ -1,7 +1,7 @@
 const std = @import("std");
-const Logger = @import("logger.zig");
+const Logger = @import("../logger.zig");
 
-const ZType = @import("../protocol/types.zig").ZType;
+const ZType = @import("../../protocol/types.zig").ZType;
 // That handler exists because I wanna have control over what is sent to the client
 
 const Args = struct {

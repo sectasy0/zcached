@@ -1,16 +1,18 @@
 const std = @import("std");
 
-const Worker = @import("worker.zig");
-const StreamServer = @import("stream_server.zig");
-const Connection = @import("connection.zig");
-const MemoryStorage = @import("storage.zig");
-const Context = @import("employer.zig").Context;
+const StreamServer = @import("../network/stream_server.zig");
+const Connection = @import("../network/connection.zig");
 
-const AccessControl = @import("access_control.zig");
-const RequestProcessor = @import("request_processor.zig");
+const Worker = @import("../processing/worker.zig");
+const Context = @import("../processing/employer.zig").Context;
+const requests = @import("../processing/requests.zig");
 
-const utils = @import("utils.zig");
-const Logger = @import("logger.zig");
+const Memory = @import("../storage/memory.zig");
+
+const AccessMiddleware = @import("../middleware/access.zig");
+
+const utils = @import("../utils.zig");
+const Logger = @import("../logger.zig");
 
 const DEFAULT_CLIENT_BUFFER: usize = 4096;
 
@@ -144,7 +146,7 @@ fn handle_incoming(self: *Listener, worker: *Worker) AcceptResult {
         },
     };
 
-    const access_control = AccessControl.init(self.context.config, self.context.logger);
+    const access_control = AccessMiddleware.init(self.context.config, self.context.logger);
     access_control.verify(incoming.address) catch return .{
         .err = .{
             .etype = error.NotPermitted,
@@ -285,7 +287,7 @@ fn handle_request(self: *const Listener, worker: *Worker, connection: *Connectio
 
     connection.position = 0;
 
-    var processor = RequestProcessor.init(
+    var processor = requests.Processor.init(
         worker.allocator,
         self.context,
     );

@@ -1,16 +1,16 @@
 const std = @import("std");
 
-const Config = @import("config.zig");
-const MemoryStorage = @import("storage.zig");
+const Config = @import("../config.zig");
+const Memory = @import("memory.zig");
 
 // Context changes
-const Serializer = @import("../protocol/deserializer.zig").Deserializer;
-const DeserializerT = @import("../protocol/serializer.zig").SerializerT;
+const types = @import("../../protocol/types.zig");
+const Serializer = @import("../../protocol/deserializer.zig").Deserializer;
+const DeserializerT = @import("../../protocol/serializer.zig").SerializerT;
 const Deserializer = DeserializerT(std.io.FixedBufferStream([]u8).Reader);
 
-const types = @import("../protocol/types.zig");
-const utils = @import("utils.zig");
-const Logger = @import("logger.zig");
+const utils = @import("../utils.zig");
+const Logger = @import("../logger.zig");
 const time = @import("std").time;
 
 const DEFAULT_PATH: []const u8 = "./persist/";
@@ -51,7 +51,7 @@ pub fn deinit(self: *PersistanceHandler) void {
     self.deserializer.deinit();
 }
 
-pub fn save(self: *PersistanceHandler, storage: *MemoryStorage) !usize {
+pub fn save(self: *PersistanceHandler, memory: *Memory) !usize {
     var serializer = Serializer.init(self.allocator);
     defer serializer.deinit();
 
@@ -61,7 +61,7 @@ pub fn save(self: *PersistanceHandler, storage: *MemoryStorage) !usize {
     const header = try std.fmt.allocPrint(
         self.allocator,
         "zcpf%{d}\r\n",
-        .{storage.size()},
+        .{memory.size()},
     );
     defer self.allocator.free(header);
 
@@ -90,7 +90,7 @@ pub fn save(self: *PersistanceHandler, storage: *MemoryStorage) !usize {
     };
     defer file.close();
 
-    var iterator = storage.internal.iterator();
+    var iterator = memory.internal.iterator();
     while (iterator.next()) |item| {
         const key = try serializer.process(.{ .str = @constCast(item.key_ptr.*) });
         try bytes.appendSlice(key);
@@ -104,13 +104,13 @@ pub fn save(self: *PersistanceHandler, storage: *MemoryStorage) !usize {
     defer self.allocator.free(payload);
 
     try file.writeAll(payload);
-    storage.last_save = timestamp;
+    memory.last_save = timestamp;
 
     return payload.len;
 }
 
 // have to load latest file from `self.path`
-pub fn load(self: *PersistanceHandler, storage: *MemoryStorage) !void {
+pub fn load(self: *PersistanceHandler, memory: *Memory) !void {
     var dir = try std.fs.cwd().openDir(self.path.?, .{
         .no_follow = true,
         .access_sub_paths = false,
@@ -161,7 +161,7 @@ pub fn load(self: *PersistanceHandler, storage: *MemoryStorage) !void {
     const dot_index: usize = std.mem.indexOf(u8, file_name, ".").?;
     const str_timestamp: []const u8 = file_name[underscore_index + 1 .. dot_index];
 
-    storage.last_save = try std.fmt.parseInt(i64, str_timestamp, 10);
+    memory.last_save = try std.fmt.parseInt(i64, str_timestamp, 10);
 
     var stream = std.io.fixedBufferStream(buffer[4..buffer.len]);
     var reader = stream.reader();
@@ -181,7 +181,7 @@ pub fn load(self: *PersistanceHandler, storage: *MemoryStorage) !void {
         const key = self.deserializer.process(reader) catch return error.InvalidFile;
         const value = self.deserializer.process(reader) catch return error.InvalidFile;
 
-        try storage.put(key.str, value);
+        try memory.put(key.str, value);
     }
 }
 

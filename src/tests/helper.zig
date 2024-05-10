@@ -1,10 +1,13 @@
 const std = @import("std");
 
-const Config = @import("../server/config.zig");
-const MemoryStorage = @import("../server/storage.zig");
-const PersistanceHandler = @import("../server/persistance.zig").PersistanceHandler;
-const CMDHandler = @import("../server/cmd_handler.zig").CMDHandler;
+const PersistanceHandler = @import("../server/storage/persistance.zig");
+const Memory = @import("../server/storage/memory.zig");
+
+const commands = @import("../server/processing/commands.zig");
+
 const types = @import("../protocol/types.zig");
+
+const Config = @import("../server/config.zig");
 const Logger = @import("../server/logger.zig");
 const activeTag = std.meta.activeTag;
 
@@ -33,7 +36,7 @@ pub fn setup_map(allocator: std.mem.Allocator) !std.StringHashMap(types.ZType) {
     return map;
 }
 
-pub fn setup_storage(storage: *MemoryStorage) !void {
+pub fn setup_storage(storage: *Memory) !void {
     try storage.put("foo", .{ .int = 42 });
     try storage.put("foo2", .{ .float = 123.45 });
     try storage.put("foo3", .{ .bool = true });

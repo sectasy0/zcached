@@ -1,26 +1,27 @@
 const std = @import("std");
+const Connection = @import("../network/connection.zig");
+
+const Logger = @import("../logger.zig");
+const utils = @import("../utils.zig");
+
+const proto = @import("../../protocol/handler.zig");
+const ZType = @import("../../protocol/types.zig").ZType;
+
 const Context = @import("employer.zig").Context;
-const Connection = @import("connection.zig");
-const proto = @import("../protocol/handler.zig");
-const CMDHandler = @import("cmd_handler.zig").CMDHandler;
+const commands = @import("commands.zig");
+const errors = @import("errors.zig");
 
-const Logger = @import("logger.zig");
-const errors = @import("err_handler.zig");
-const utils = @import("utils.zig");
+pub const Processor = @This();
 
-const ZType = @import("../protocol/types.zig").ZType;
-
-const RequestProcessor = @This();
-
-cmd_handler: CMDHandler,
+cmd_handler: commands.Handler,
 context: Context,
 allocator: std.mem.Allocator,
 
-pub fn init(allocator: std.mem.Allocator, context: Context) RequestProcessor {
+pub fn init(allocator: std.mem.Allocator, context: Context) Processor {
     return .{
-        .cmd_handler = CMDHandler.init(
+        .cmd_handler = commands.Handler.init(
             allocator,
-            context.storage,
+            context.memory,
             context.logger,
         ),
         .context = context,
@@ -28,7 +29,7 @@ pub fn init(allocator: std.mem.Allocator, context: Context) RequestProcessor {
     };
 }
 
-pub fn process(self: *RequestProcessor, connection: *Connection) void {
+pub fn process(self: *Processor, connection: *Connection) void {
     var stream = std.io.fixedBufferStream(connection.buffer);
     var reader = stream.reader();
 

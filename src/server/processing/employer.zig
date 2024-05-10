@@ -1,13 +1,14 @@
 const std = @import("std");
 
-const Worker = @import("worker.zig");
-const Listener = @import("listener.zig");
-const Logger = @import("logger.zig");
-const utils = @import("utils.zig");
+const Listener = @import("../network/listener.zig");
+const StreamServer = @import("../network/stream_server.zig");
 
-const StreamServer = @import("stream_server.zig");
-const MemoryStorage = @import("storage.zig");
-const Config = @import("config.zig");
+const Logger = @import("../logger.zig");
+const Config = @import("../config.zig");
+const utils = @import("../utils.zig");
+
+const Memory = @import("../storage/memory.zig");
+const Worker = @import("../processing/worker.zig");
 
 const Allocator = std.mem.Allocator;
 const Employer = @This();
@@ -22,7 +23,7 @@ threads: []std.Thread,
 allocator: std.mem.Allocator,
 
 pub const Context = struct {
-    storage: *MemoryStorage,
+    memory: *Memory,
     config: *const Config,
     logger: *Logger,
 };

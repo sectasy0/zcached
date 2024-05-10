@@ -42,14 +42,6 @@ pub fn timestampf(buff: []u8) usize {
     return time_len;
 }
 
-// Checks if the provided network address is present in the given whitelist.
-pub fn is_whitelisted(whitelist: std.ArrayList(std.net.Address), addr: std.net.Address) bool {
-    for (whitelist.items) |whitelisted| {
-        if (std.meta.eql(whitelisted.any.data[2..].*, addr.any.data[2..].*)) return true;
-    }
-    return false;
-}
-
 // Converts the provided byte array representing protocol raw data to its string
 // representation by replacing occurrences of "\r\n" with "\\r\\n".
 pub fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
@@ -57,8 +49,4 @@ pub fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
     const output = try allocator.alloc(u8, size);
     _ = std.mem.replace(u8, value, "\r\n", "\\r\\n", output);
     return output;
-}
-
-test {
-    std.testing.refAllDecls(@This());
 }

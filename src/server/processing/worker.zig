@@ -1,5 +1,5 @@
 const std = @import("std");
-const Connection = @import("connection.zig");
+const Connection = @import("../network/connection.zig");
 
 const Worker = @This();
 

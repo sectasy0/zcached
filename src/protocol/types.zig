@@ -10,7 +10,7 @@ pub const ZType = union(enum) {
     array: array,
     null: void,
     // ClientError only for compatibility with ProtocolHandler
-    // and it will not be stored in MemoryStorage but will be returned
+    // and it will not be stored in Memory but will be returned
     err: ClientError,
 
     pub const array = std.ArrayList(ZType);
@@ -51,7 +51,7 @@ pub fn ztype_copy(value: ZType, allocator: std.mem.Allocator) anyerror!ZType {
 
             return .{ .map = result };
         },
-        // we do not implement for err because errors wont be stored in MemoryStorage
+        // we do not implement for err because errors wont be stored in Memory
         else => return error.UnsuportedType,
     }
 

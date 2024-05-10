@@ -1,15 +1,16 @@
 const std = @import("std");
 
-const MemoryStorage = @import("storage.zig");
-const ZType = @import("../protocol/types.zig").ZType;
-const Config = @import("config.zig");
-const utils = @import("utils.zig");
-const Logger = @import("logger.zig");
+const ZType = @import("../../protocol/types.zig").ZType;
 
-const TracingAllocator = @import("tracing.zig").TracingAllocator;
-const PersistanceHandler = @import("persistance.zig").PersistanceHandler;
+const Memory = @import("../storage/memory.zig");
+const PersistanceHandler = @import("../storage/persistance.zig");
 
-const Commands = enum {
+const TracingAllocator = @import("../tracing.zig").TracingAllocator;
+const Config = @import("../config.zig");
+const utils = @import("../utils.zig");
+const Logger = @import("../logger.zig");
+
+const CommandType = enum {
     PING,
     GET,
     SET,
@@ -22,27 +23,27 @@ const Commands = enum {
     KEYS,
     LASTSAVE,
 };
-pub const CMDHandler = struct {
+pub const Handler = struct {
     allocator: std.mem.Allocator,
-    storage: *MemoryStorage,
+    memory: *Memory,
 
     logger: *Logger,
 
-    pub const HandlerResult = union(enum) { ok: ZType, err: anyerror };
+    pub const Result = union(enum) { ok: ZType, err: anyerror };
 
     pub fn init(
         allocator: std.mem.Allocator,
-        mstorage: *MemoryStorage,
+        memory: *Memory,
         logger: *Logger,
-    ) CMDHandler {
-        return CMDHandler{
+    ) Handler {
+        return Handler{
             .allocator = allocator,
-            .storage = mstorage,
+            .memory = memory,
             .logger = logger,
         };
     }
 
-    pub fn process(self: *CMDHandler, command_set: *const std.ArrayList(ZType)) HandlerResult {
+    pub fn process(self: *Handler, command_set: *const std.ArrayList(ZType)) Result {
         if (command_set.capacity == 0) return .{ .err = error.UnknownCommand };
 
         // first element in command_set is command name and should be always str
@@ -51,7 +52,7 @@ pub const CMDHandler = struct {
         }
 
         const cmd_upper: []u8 = utils.to_uppercase(command_set.items[0].str);
-        const command_type = std.meta.stringToEnum(Commands, cmd_upper) orelse {
+        const command_type = std.meta.stringToEnum(CommandType, cmd_upper) orelse {
             return .{ .err = error.UnknownCommand };
         };
         try switch (command_type) {
@@ -72,36 +73,36 @@ pub const CMDHandler = struct {
                 return self.delete(command_set.items[1]);
             },
             .FLUSH => return self.flush(),
-            .DBSIZE => return .{ .ok = .{ .int = self.storage.size() } },
+            .DBSIZE => return .{ .ok = .{ .int = self.memory.size() } },
             .SAVE => return self.save(),
             .MGET => return self.mget(command_set.items[1..command_set.items.len]),
             .MSET => return self.mset(command_set.items[1..command_set.items.len]),
             .KEYS => return self.zkeys(),
-            .LASTSAVE => return .{ .ok = .{ .int = self.storage.last_save } },
+            .LASTSAVE => return .{ .ok = .{ .int = self.memory.last_save } },
         };
     }
 
-    fn get(self: *CMDHandler, key: ZType) HandlerResult {
-        const value = self.storage.get(key.str) catch |err| {
+    fn get(self: *Handler, key: ZType) Result {
+        const value = self.memory.get(key.str) catch |err| {
             return .{ .err = err };
         };
 
         return .{ .ok = value };
     }
 
-    fn set(self: *CMDHandler, key: ZType, value: ZType) HandlerResult {
+    fn set(self: *Handler, key: ZType, value: ZType) Result {
         // second element in command_set is key and should be always str
         if (key != .str) return .{ .err = error.KeyNotString };
 
-        self.storage.put(key.str, value) catch |err| {
+        self.memory.put(key.str, value) catch |err| {
             return .{ .err = err };
         };
 
         return .{ .ok = .{ .sstr = @constCast("OK") } };
     }
 
-    fn delete(self: *CMDHandler, key: ZType) HandlerResult {
-        const result = self.storage.delete(key.str);
+    fn delete(self: *Handler, key: ZType) Result {
+        const result = self.memory.delete(key.str);
 
         if (result) {
             return .{ .ok = .{ .sstr = @constCast("OK") } };
@@ -110,20 +111,20 @@ pub const CMDHandler = struct {
         }
     }
 
-    fn flush(self: *CMDHandler) HandlerResult {
-        self.storage.flush();
+    fn flush(self: *Handler) Result {
+        self.memory.flush();
         return .{ .ok = .{ .sstr = @constCast("OK") } };
     }
 
-    fn ping(self: *CMDHandler) HandlerResult {
+    fn ping(self: *Handler) Result {
         _ = self;
         return .{ .ok = .{ .sstr = @constCast("PONG") } };
     }
 
-    fn save(self: *CMDHandler) HandlerResult {
-        if (self.storage.size() == 0) return .{ .err = error.SaveFailure };
+    fn save(self: *Handler) Result {
+        if (self.memory.size() == 0) return .{ .err = error.SaveFailure };
 
-        const size = self.storage.save() catch |err| {
+        const size = self.memory.save() catch |err| {
             self.logger.log(.Error, "# failed to save data: {?}", .{err});
 
             return .{ .err = error.SaveFailure };
@@ -136,13 +137,13 @@ pub const CMDHandler = struct {
         return .{ .err = error.SaveFailure };
     }
 
-    fn mget(self: *CMDHandler, keys: []ZType) HandlerResult {
+    fn mget(self: *Handler, keys: []ZType) Result {
         var result = std.StringHashMap(ZType).init(self.allocator);
 
         for (keys) |key| {
             if (key != .str) return .{ .err = error.KeyNotString };
 
-            const value: ZType = self.storage.get(key.str) catch .{ .null = void{} };
+            const value: ZType = self.memory.get(key.str) catch .{ .null = void{} };
 
             result.put(key.str, value) catch |err| {
                 return .{ .err = err };
@@ -152,7 +153,7 @@ pub const CMDHandler = struct {
         return .{ .ok = .{ .map = result } };
     }
 
-    fn mset(self: *CMDHandler, entries: []ZType) HandlerResult {
+    fn mset(self: *Handler, entries: []ZType) Result {
         if (entries.len == 0 or entries.len & 1 == 1) return .{ .err = error.InvalidArgs };
 
         for (entries, 0..) |entry, index| {
@@ -162,15 +163,15 @@ pub const CMDHandler = struct {
 
             const value = entries[index + 1];
 
-            self.storage.put(entry.str, value) catch |err| {
+            self.memory.put(entry.str, value) catch |err| {
                 return .{ .err = err };
             };
         }
         return .{ .ok = .{ .sstr = @constCast("OK") } };
     }
 
-    fn zkeys(self: *CMDHandler) HandlerResult {
-        const result = self.storage.keys() catch |err| {
+    fn zkeys(self: *Handler) Result {
+        const result = self.memory.keys() catch |err| {
             return .{ .err = err };
         };
         return .{ .ok = .{ .array = result } };
@@ -178,10 +179,10 @@ pub const CMDHandler = struct {
 
     // method to free data needs to be freeded, for example keys command
     // is creating std.ArrayList so it have to be freed after
-    pub fn free(self: *CMDHandler, command_set: *const std.ArrayList(ZType), result: *HandlerResult) void {
+    pub fn free(self: *Handler, command_set: *const std.ArrayList(ZType), result: *Result) void {
         _ = self;
         const cmd_upper: []u8 = utils.to_uppercase(command_set.items[0].str);
-        const command_type = std.meta.stringToEnum(Commands, cmd_upper) orelse return;
+        const command_type = std.meta.stringToEnum(CommandType, cmd_upper) orelse return;
 
         switch (command_type) {
             .KEYS => result.ok.array.deinit(),

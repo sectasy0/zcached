@@ -7,8 +7,8 @@ comptime {
     _ = @import("tests/protocol/deserializer.zig");
 
     // // server
-    _ = @import("tests/server/cmd_handler.zig");
-    _ = @import("tests/server/err_handler.zig");
+    _ = @import("tests/server/commands.zig");
+    _ = @import("tests/server/errors.zig");
     // // _ = @import("src/server/listener.zig");
     _ = @import("tests/server/config.zig");
     _ = @import("tests/server/storage.zig");
@@ -17,5 +17,5 @@ comptime {
     _ = @import("tests/server/logger.zig");
     _ = @import("tests/server/utils.zig");
     _ = @import("tests/server/persistance.zig");
-    _ = @import("tests/server/access_control.zig");
+    _ = @import("tests/server/access.zig");
 }

@@ -4,14 +4,14 @@ const ZType = @import("../../protocol/types.zig").ZType;
 
 const BUFF_SIZE: u8 = 150;
 
-const err_handler = @import("../../server/err_handler.zig");
+const errors = @import("../../server/processing/errors.zig");
 
 test "BadRequest" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
 
     var logger = try Logger.init(std.testing.allocator, null, false);
-    try err_handler.handle(&stream, error.BadRequest, .{}, &logger);
+    try errors.handle(&stream, error.BadRequest, .{}, &logger);
 
     const expected: []u8 = @constCast("-ERR bad request\r\n");
 
@@ -26,8 +26,8 @@ test "UnknownCommand" {
     var array = std.ArrayList(ZType).initCapacity(std.testing.allocator, 0) catch {
         return error.AllocatorError;
     };
-    const args = err_handler.build_args(&array);
-    try err_handler.handle(&stream, error.UnknownCommand, args, &logger);
+    const args = errors.build_args(&array);
+    try errors.handle(&stream, error.UnknownCommand, args, &logger);
 
     const expected: []u8 = @constCast("-ERR unknown command\r\n");
 
@@ -45,8 +45,8 @@ test "UnknownCommand with command name" {
     try array.append(.{ .str = @constCast("help") });
     defer array.deinit();
 
-    const args = err_handler.build_args(&array);
-    try err_handler.handle(&stream, error.UnknownCommand, args, &logger);
+    const args = errors.build_args(&array);
+    try errors.handle(&stream, error.UnknownCommand, args, &logger);
 
     try std.testing.expectFmt(
         stream.getWritten(),
@@ -60,7 +60,7 @@ test "unexpected error" {
     var stream = std.io.fixedBufferStream(&buffer);
 
     var logger = try Logger.init(std.testing.allocator, null, false);
-    try err_handler.handle(&stream, error.Unexpected, .{}, &logger);
+    try errors.handle(&stream, error.Unexpected, .{}, &logger);
 
     const expected: []u8 = @constCast("-ERR unexpected\r\n");
 
@@ -72,7 +72,7 @@ test "max clients reached" {
     var stream = std.io.fixedBufferStream(&buffer);
 
     var logger = try Logger.init(std.testing.allocator, null, false);
-    try err_handler.handle(&stream, error.MaxClientsReached, .{}, &logger);
+    try errors.handle(&stream, error.MaxClientsReached, .{}, &logger);
 
     const expected: []u8 = @constCast("-ERR max number of clients reached\r\n");
 
@@ -91,8 +91,8 @@ test "NotFound with key name" {
     try array.append(.{ .str = @constCast("user_cache_12345") });
     defer array.deinit();
 
-    const args = err_handler.build_args(&array);
-    try err_handler.handle(&stream, error.NotFound, args, &logger);
+    const args = errors.build_args(&array);
+    try errors.handle(&stream, error.NotFound, args, &logger);
 
     try std.testing.expectFmt(
         stream.getWritten(),

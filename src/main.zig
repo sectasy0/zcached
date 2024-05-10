@@ -1,17 +1,18 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const server = @import("server/listener.zig");
 const Config = @import("server/config.zig");
-const MemoryStorage = @import("server/storage.zig");
 const cli = @import("server/cli.zig");
-const Logger = @import("server/logger.zig");
 const log = @import("server/logger.zig");
 
 const TracingAllocator = @import("server/tracing.zig");
-const persistance = @import("server/persistance.zig");
 
-const Employer = @import("server/employer.zig");
+const persistance = @import("server/storage/persistance.zig");
+const Memory = @import("server/storage/memory.zig");
+
+const server = @import("server/network/listener.zig");
+
+const Employer = @import("server/processing/employer.zig");
 
 pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
     @setCold(true);
@@ -70,7 +71,7 @@ pub fn main() void {
 
     handle_arguments(result.args) orelse return;
 
-    var logger = Logger.init(
+    var logger = log.Logger.init(
         allocator,
         result.args.@"log-path",
         result.args.sout,
@@ -113,14 +114,14 @@ pub fn main() void {
     defer _ = dbgpa.deinit();
 
     var tracing = TracingAllocator.init(dbgpa.allocator());
-    var mem_storage = MemoryStorage.init(
+    var memory = Memory.init(
         tracing.allocator(),
         config,
         &persister,
     );
-    defer mem_storage.deinit();
+    defer memory.deinit();
 
-    persister.load(&mem_storage) catch |err| {
+    persister.load(&memory) catch |err| {
         if (err != error.FileNotFound) {
             logger.log(
                 .Warning,
@@ -133,7 +134,7 @@ pub fn main() void {
     const context = Employer.Context{
         .config = &config,
         .logger = &logger,
-        .storage = &mem_storage,
+        .memory = &memory,
     };
 
     run_supervisor(allocator, context);

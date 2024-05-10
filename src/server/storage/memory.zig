@@ -1,15 +1,14 @@
 const std = @import("std");
 
-const Config = @import("config.zig");
-const types = @import("../protocol/types.zig");
-const TracingAllocator = @import("tracing.zig");
-const PersistanceHandler = @import("persistance.zig").PersistanceHandler;
+const types = @import("../../protocol/types.zig");
+const TracingAllocator = @import("../tracing.zig");
+const PersistanceHandler = @import("../storage/persistance.zig").PersistanceHandler;
 
-const Logger = @import("logger.zig");
+const Logger = @import("../logger.zig");
+const Config = @import("../config.zig");
+const utils = @import("../utils.zig");
 
-const ptrCast = @import("utils.zig").ptrCast;
-
-const MemoryStorage = @This();
+const Memory = @This();
 
 internal: std.StringHashMap(types.ZType),
 allocator: std.mem.Allocator,
@@ -26,8 +25,8 @@ pub fn init(
     allocator: std.mem.Allocator,
     config: Config,
     persister: *PersistanceHandler,
-) MemoryStorage {
-    return MemoryStorage{
+) Memory {
+    return Memory{
         .internal = std.StringHashMap(types.ZType).init(allocator),
         .allocator = allocator,
         .config = config,
@@ -37,8 +36,8 @@ pub fn init(
     };
 }
 
-pub fn put(self: *MemoryStorage, key: []const u8, value: types.ZType) !void {
-    const tracking = ptrCast(TracingAllocator, self.allocator.ptr);
+pub fn put(self: *Memory, key: []const u8, value: types.ZType) !void {
+    const tracking = utils.ptrCast(TracingAllocator, self.allocator.ptr);
 
     self.lock.lock();
     defer self.lock.unlock();
@@ -58,14 +57,14 @@ pub fn put(self: *MemoryStorage, key: []const u8, value: types.ZType) !void {
     }
 }
 
-pub fn get(self: *MemoryStorage, key: []const u8) !types.ZType {
+pub fn get(self: *Memory, key: []const u8) !types.ZType {
     self.lock.lockShared();
     defer self.lock.unlock();
 
     return self.internal.get(key) orelse error.NotFound;
 }
 
-pub fn delete(self: *MemoryStorage, key: []const u8) bool {
+pub fn delete(self: *Memory, key: []const u8) bool {
     self.lock.lock();
     defer self.lock.unlock();
 
@@ -83,7 +82,7 @@ pub fn delete(self: *MemoryStorage, key: []const u8) bool {
     return true;
 }
 
-pub fn flush(self: *MemoryStorage) void {
+pub fn flush(self: *Memory) void {
     self.lock.lock();
     defer self.lock.unlock();
 
@@ -99,21 +98,21 @@ pub fn flush(self: *MemoryStorage) void {
     self.internal.clearRetainingCapacity();
 }
 
-pub fn size(self: *MemoryStorage) i64 {
+pub fn size(self: *Memory) i64 {
     self.lock.lockShared();
     defer self.lock.unlock();
 
     return self.internal.count();
 }
 
-pub fn save(self: *MemoryStorage) !usize {
+pub fn save(self: *Memory) !usize {
     self.lock.lockShared();
     defer self.lock.unlock();
 
     return try self.persister.save(self);
 }
 
-pub fn keys(self: *MemoryStorage) !std.ArrayList(types.ZType) {
+pub fn keys(self: *Memory) !std.ArrayList(types.ZType) {
     self.lock.lockShared();
     defer self.lock.unlock();
 
@@ -128,7 +127,7 @@ pub fn keys(self: *MemoryStorage) !std.ArrayList(types.ZType) {
     return result;
 }
 
-pub fn deinit(self: *MemoryStorage) void {
+pub fn deinit(self: *Memory) void {
     var value = .{ .map = self.internal };
 
     types.ztype_free(
