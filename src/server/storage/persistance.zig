@@ -17,7 +17,7 @@ const DEFAULT_PATH: []const u8 = "./persist/";
 
 const FileEntry = struct { name: []const u8, ctime: i128, size: usize };
 
-pub const PersistanceHandler = @This();
+pub const Handler = @This();
 
 allocator: std.mem.Allocator,
 
@@ -33,8 +33,8 @@ pub fn init(
     config: Config,
     logger: Logger,
     path: ?[]const u8,
-) !PersistanceHandler {
-    var persister = PersistanceHandler{
+) !Handler {
+    var persister = Handler{
         .allocator = allocator,
         .config = config,
         .deserializer = try Deserializer.init(allocator),
@@ -47,11 +47,11 @@ pub fn init(
     return persister;
 }
 
-pub fn deinit(self: *PersistanceHandler) void {
+pub fn deinit(self: *Handler) void {
     self.deserializer.deinit();
 }
 
-pub fn save(self: *PersistanceHandler, memory: *Memory) !usize {
+pub fn save(self: *Handler, memory: *Memory) !usize {
     var serializer = Serializer.init(self.allocator);
     defer serializer.deinit();
 
@@ -110,7 +110,7 @@ pub fn save(self: *PersistanceHandler, memory: *Memory) !usize {
 }
 
 // have to load latest file from `self.path`
-pub fn load(self: *PersistanceHandler, memory: *Memory) !void {
+pub fn load(self: *Handler, memory: *Memory) !void {
     var dir = try std.fs.cwd().openDir(self.path.?, .{
         .no_follow = true,
         .access_sub_paths = false,
@@ -185,7 +185,7 @@ pub fn load(self: *PersistanceHandler, memory: *Memory) !void {
     }
 }
 
-fn get_latest_file(self: *PersistanceHandler, dir: std.fs.Dir) !?FileEntry {
+fn get_latest_file(self: *Handler, dir: std.fs.Dir) !?FileEntry {
     var latest: ?FileEntry = null;
 
     var iterator = dir.iterate();

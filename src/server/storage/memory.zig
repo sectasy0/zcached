@@ -2,7 +2,7 @@ const std = @import("std");
 
 const types = @import("../../protocol/types.zig");
 const TracingAllocator = @import("../tracing.zig");
-const PersistanceHandler = @import("../storage/persistance.zig").PersistanceHandler;
+const persistance = @import("../storage/persistance.zig");
 
 const Logger = @import("../logger.zig");
 const Config = @import("../config.zig");
@@ -13,7 +13,7 @@ const Memory = @This();
 internal: std.StringHashMap(types.ZType),
 allocator: std.mem.Allocator,
 
-persister: *PersistanceHandler,
+persister: *persistance.Handler,
 
 config: Config,
 
@@ -24,7 +24,7 @@ last_save: i64,
 pub fn init(
     allocator: std.mem.Allocator,
     config: Config,
-    persister: *PersistanceHandler,
+    persister: *persistance.Handler,
 ) Memory {
     return Memory{
         .internal = std.StringHashMap(types.ZType).init(allocator),

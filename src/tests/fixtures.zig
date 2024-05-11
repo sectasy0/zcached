@@ -5,7 +5,7 @@ const Config = @import("../server/config.zig");
 
 const TracingAllocator = @import("../server/tracing.zig");
 
-const PersistanceHandler = @import("../server/storage/persistance.zig");
+const persistance = @import("../server/storage/persistance.zig");
 const Memory = @import("../server/storage/memory.zig");
 
 pub const ContextFixture = struct {
@@ -13,7 +13,7 @@ pub const ContextFixture = struct {
     tracing_allocator: TracingAllocator,
     logger: Logger,
     config: Config,
-    persistance: ?PersistanceHandler,
+    persistance: ?persistance.Handler,
     memory: ?Memory,
 
     pub fn init() !ContextFixture {
@@ -42,7 +42,12 @@ pub const ContextFixture = struct {
     pub fn create_persistance(self: *ContextFixture) !void {
         if (self.persistance != null) self.persistance.?.deinit();
 
-        self.persistance = try PersistanceHandler.init(self.allocator, self.config, self.logger, null);
+        self.persistance = try persistance.Handler.init(
+            self.allocator,
+            self.config,
+            self.logger,
+            null,
+        );
     }
 
     pub fn deinit(self: *ContextFixture) void {

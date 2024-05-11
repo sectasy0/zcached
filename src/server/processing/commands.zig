@@ -3,7 +3,6 @@ const std = @import("std");
 const ZType = @import("../../protocol/types.zig").ZType;
 
 const Memory = @import("../storage/memory.zig");
-const PersistanceHandler = @import("../storage/persistance.zig");
 
 const TracingAllocator = @import("../tracing.zig").TracingAllocator;
 const Config = @import("../config.zig");

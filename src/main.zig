@@ -90,7 +90,7 @@ pub fn main() void {
     };
     defer config.deinit();
 
-    var persister = persistance.PersistanceHandler.init(
+    var persister = persistance.Handler.init(
         allocator,
         config,
         logger,
@@ -98,7 +98,7 @@ pub fn main() void {
     ) catch |err| {
         logger.log(
             .Error,
-            "# failed to init PersistanceHandler: {?}",
+            "# failed to init persistance.Handler: {?}",
             .{err},
         );
         return;
