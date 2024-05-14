@@ -37,7 +37,7 @@ pub fn init(
 }
 
 pub fn put(self: *Memory, key: []const u8, value: types.ZType) !void {
-    const tracking = utils.ptrCast(TracingAllocator, self.allocator.ptr);
+    const tracking = utils.ptr_cast(TracingAllocator, self.allocator.ptr);
 
     self.lock.lock();
     defer self.lock.unlock();

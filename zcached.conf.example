@@ -1,9 +1,0 @@
-address=192.168.0.1
-port=5555
-maxclients=512
-# 0 for unlimited, otherwise specify in bytes
-maxmemory=0
-# 0 for unlimited, otherwise specify in bytes (default: 512MB which is 536870912 bytes)
-proto_max_bulk_len=0
-workers=4
-whitelist=127.0.0.1

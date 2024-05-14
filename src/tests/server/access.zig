@@ -22,7 +22,6 @@ test "should return error.NotPermitted" {
     const whitelisted = std.net.Address.initIp4(.{ 192, 168, 0, 2 }, 1234);
     var whitelist = std.ArrayList(std.net.Address).init(fixture.allocator);
     try whitelist.append(whitelisted);
-    defer whitelist.deinit();
 
     fixture.config.whitelist = whitelist;
 

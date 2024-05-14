@@ -9,7 +9,7 @@ pub fn to_uppercase(str: []u8) []u8 {
 }
 
 // Performs a pointer cast from an opaque pointer to a typed pointer of type `T`.
-pub fn ptrCast(comptime T: type, ptr: *anyopaque) *T {
+pub fn ptr_cast(comptime T: type, ptr: *anyopaque) *T {
     if (@alignOf(T) == 0) @compileError(@typeName(T));
     return @ptrCast(@alignCast(ptr));
 }
@@ -49,4 +49,48 @@ pub fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
     const output = try allocator.alloc(u8, size);
     _ = std.mem.replace(u8, value, "\r\n", "\\r\\n", output);
     return output;
+}
+
+pub fn parse_field_name(
+    alloc: std.mem.Allocator,
+    ast: std.zig.Ast,
+    idx: std.zig.Ast.Node.Index,
+) ![]const u8 {
+    const name = ast.tokenSlice(ast.firstToken(idx) - 2);
+    if (name[0] == '@') {
+        return std.zig.string_literal.parseAlloc(
+            alloc,
+            name[1..],
+        );
+    }
+    return name;
+}
+
+pub fn parse_string(
+    alloc: std.mem.Allocator,
+    ast: std.zig.Ast,
+    idx: std.zig.Ast.Node.Index,
+) ![]const u8 {
+    return std.zig.string_literal.parseAlloc(alloc, ast.tokenSlice(
+        ast.nodes.items(.main_token)[idx],
+    ));
+}
+
+pub fn parse_number(
+    ast: std.zig.Ast,
+    idx: std.zig.Ast.Node.Index,
+) std.zig.number_literal.Result {
+    return std.zig.number_literal.parseNumberLiteral(ast.tokenSlice(
+        ast.nodes.items(.main_token)[idx],
+    ));
+}
+
+pub fn parse_address(value: []const u8, port: u16) ?std.net.Address {
+    return std.net.Address.parseIp(value, port) catch |err| {
+        std.debug.print(
+            "DEBUG [{d}] * parsing {s} as std.net.Address, {?}\n",
+            .{ std.time.timestamp(), value, err },
+        );
+        return null;
+    };
 }
