@@ -51,10 +51,14 @@ pub fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
     return output;
 }
 
+pub const NodeIndex = std.zig.Ast.Node.Index;
+
+// Parses the name of a field from the AST, handling string literals.
+// Returns a byte slice representing the field name.
 pub fn parse_field_name(
     alloc: std.mem.Allocator,
     ast: std.zig.Ast,
-    idx: std.zig.Ast.Node.Index,
+    idx: NodeIndex,
 ) ![]const u8 {
     const name = ast.tokenSlice(ast.firstToken(idx) - 2);
     if (name[0] == '@') {
@@ -66,31 +70,23 @@ pub fn parse_field_name(
     return name;
 }
 
+// Parses a string literal from the AST and returns it as a byte slice.
 pub fn parse_string(
     alloc: std.mem.Allocator,
     ast: std.zig.Ast,
-    idx: std.zig.Ast.Node.Index,
+    idx: NodeIndex,
 ) ![]const u8 {
     return std.zig.string_literal.parseAlloc(alloc, ast.tokenSlice(
         ast.nodes.items(.main_token)[idx],
     ));
 }
 
+// Parses a numeric literal from the AST and returns it as a Result.
 pub fn parse_number(
     ast: std.zig.Ast,
-    idx: std.zig.Ast.Node.Index,
+    idx: NodeIndex,
 ) std.zig.number_literal.Result {
     return std.zig.number_literal.parseNumberLiteral(ast.tokenSlice(
         ast.nodes.items(.main_token)[idx],
     ));
-}
-
-pub fn parse_address(value: []const u8, port: u16) ?std.net.Address {
-    return std.net.Address.parseIp(value, port) catch |err| {
-        std.debug.print(
-            "DEBUG [{d}] * parsing {s} as std.net.Address, {?}\n",
-            .{ std.time.timestamp(), value, err },
-        );
-        return null;
-    };
 }
