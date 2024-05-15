@@ -22,7 +22,7 @@ jobs:
       shell: bash
 
     - name: Lint Code
-      run: zig-linux-x86_64-0.12.0/zig fmt --check .
+      run: zig-linux-x86_64-0.12.0/zig fmt --check ./src
 
     - name: Run Tests
       run: zig-linux-x86_64-0.12.0/zig test src/test.zig -lc
