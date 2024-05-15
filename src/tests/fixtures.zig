@@ -62,12 +62,12 @@ pub const ContextFixture = struct {
 
 pub const ConfigFile = struct {
     address: []const u8 = "127.0.0.1",
-    port: u16 = 7556,
-    maxclients: usize = 123,
-    maxmemory: usize = 0,
-    proto_max_bulk_len: usize = 0,
-    workers: usize = 4,
-    cbuffer: usize = 4096,
+    port: []const u8 = "7556",
+    maxclients: []const u8 = "512",
+    maxmemory: []const u8 = "0",
+    proto_max_bulk_len: []const u8 = "536870912",
+    workers: []const u8 = "4",
+    cbuffer: []const u8 = "4096",
     whitelist: std.ArrayList([]const u8),
 
     path: []const u8 = undefined,
@@ -91,16 +91,18 @@ pub const ConfigFile = struct {
         self.whitelist.deinit();
     }
 
-    pub fn create(self: *ConfigFile, allocator: std.mem.Allocator) ![]const u8 {
+    pub fn create(self: *ConfigFile, allocator: std.mem.Allocator, override: ?[]const u8) !void {
+        if (override) |content| return try self.__write(content);
+
         const content: []const u8 =
             \\ .{{
             \\     .address = "{s}",
-            \\     .port = {d},
-            \\     .maxclients = {d},
-            \\     .maxmemory = {d},
-            \\     .proto_max_bulk_len = {d},
-            \\     .workers = {d},
-            \\     .cbuffer = {d},
+            \\     .port = {s},
+            \\     .maxclients = {s},
+            \\     .maxmemory = {s},
+            \\     .proto_max_bulk_len = {s},
+            \\     .workers = {s},
+            \\     .cbuffer = {s},
             \\     .whitelist = .{{
             \\         "{s}",
             \\         "{s}",
@@ -125,13 +127,15 @@ pub const ConfigFile = struct {
         });
         defer allocator.free(result);
 
+        try self.__write(result);
+    }
+
+    fn __write(self: *ConfigFile, content: []const u8) !void {
         utils.create_path(self.path);
 
-        const file = try std.fs.cwd().openFile(self.path, .{ .mode = .write_only });
+        const file = try std.fs.cwd().createFile(self.path, .{});
         defer file.close();
 
-        std.debug.print("{s}", .{result});
-
-        return result;
+        try file.writeAll(content);
     }
 };
