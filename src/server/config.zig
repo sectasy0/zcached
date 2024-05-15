@@ -205,7 +205,6 @@ fn assign_field_value(config: *Config, field_name: []const u8, value: anytype) !
             config.cbuffer = value;
         },
         .whitelist => {
-            std.debug.print("Chuj --- {?}\n", .{value});
             if (@TypeOf(value) != std.ArrayList(std.net.Address)) return;
 
             const old_whitelist = config.whitelist;
