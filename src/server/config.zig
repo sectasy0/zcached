@@ -1,5 +1,6 @@
 const std = @import("std");
 const utils = @import("utils.zig");
+const NodeIndex = utils.NodeIndex;
 
 pub const DEFAULT_PATH: []const u8 = "./zcached.conf.zon";
 
@@ -81,12 +82,20 @@ const ConfigField = enum {
     whitelist,
 };
 
-const AstNodeIndex = [2]std.zig.Ast.Node.Index;
-
 fn process_ast(config: *Config, ast: std.zig.Ast) !void {
-    var buf: AstNodeIndex = undefined;
-    const root = ast.fullStructInit(&buf, ast.nodes.items(.data)[0].lhs) orelse {
-        return error.ParseError;
+    var buf: [2]NodeIndex = undefined;
+    const root = ast.fullStructInit(
+        &buf,
+        ast.nodes.items(.data)[0].lhs,
+    ) orelse {
+        var timestamp: [40]u8 = undefined;
+        const t_size = utils.timestampf(&timestamp);
+        std.debug.print(
+            "WARN [{s}] * Failed to parse config, invalid `.zon` file, default values will be used\n",
+            .{timestamp[0..t_size]},
+        );
+
+        return;
     };
 
     for (root.ast.fields) |field_idx| {
@@ -105,7 +114,7 @@ fn process_ast(config: *Config, ast: std.zig.Ast) !void {
 
 fn process_field(
     config: *Config,
-    buf: *AstNodeIndex,
+    buf: *[2]NodeIndex,
     ast: std.zig.Ast,
     root: std.zig.Ast.full.StructInit,
     field_name: []const u8,
@@ -114,7 +123,6 @@ fn process_field(
     const allocator = config.allocator;
 
     if (ast.fullStructInit(buf, field_idx)) |_| return;
-    // if (ast.fullArrayInit(buf, field_idx)) |_| return;
 
     if (ast.fullArrayInit(buf, field_idx)) |v| {
         var result = std.ArrayList(std.net.Address).init(allocator);
@@ -128,10 +136,16 @@ fn process_field(
             ) catch return;
             defer allocator.free(value);
 
-            const parsed = utils.parse_address(
+            const parsed = std.net.Address.parseIp(
                 value,
                 config.address.getPort(),
-            ) orelse return;
+            ) catch |err| {
+                std.debug.print(
+                    "ERROR [{d}] * parsing {s} as std.net.Address, {?}\n",
+                    .{ std.time.timestamp(), value, err },
+                );
+                return;
+            };
 
             try result.append(parsed);
         }
@@ -169,10 +183,15 @@ fn assign_field_value(config: *Config, field_name: []const u8, value: anytype) !
         .address => {
             if (@TypeOf(value) != []const u8) return;
 
-            const parsed = utils.parse_address(value, config.address.getPort());
-            if (parsed == null) return;
+            const parsed = std.net.Address.parseIp(value, config.address.getPort()) catch |err| {
+                std.debug.print(
+                    "ERROR [{d}] * parsing {s} as std.net.Address, {?}\n",
+                    .{ std.time.timestamp(), value, err },
+                );
+                return;
+            };
 
-            config.address = parsed.?;
+            config.address = parsed;
         },
         .port => {
             if (@TypeOf(value) != u64) return;

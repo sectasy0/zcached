@@ -6,6 +6,8 @@
     .proto_max_bulk_len = 0,
     .workers = 4,
     .cbuffer = 1234,
+    // you can't connect if whitelist was specified
+    // and your address not specified in it.
     .whitelist = .{
         "127.0.0.1",
         "127.0.0.2",
