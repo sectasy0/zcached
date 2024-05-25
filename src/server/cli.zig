@@ -39,6 +39,7 @@ pub const Parser = struct {
             \\Options:
             \\  -c, --config <str>      Path to the configuration file (default: ./zcached).
             \\  -l, --log-path <str>    Path to the log files (default: ./logs/zcached.log).
+            \\  -s, --sout              Display all of the server logs to stdout as well as file.
             \\  -v, --version           Display zcached's version and exit.
             \\  -h, --help              Display this help message and exit.
             \\
