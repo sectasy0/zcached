@@ -77,7 +77,7 @@ The `SAVE` commands performs a `synchronous` save of the dataset producing a poi
 
 For asynchronous save check `asave` (not implemented yet).
 
-```
+```sh
 SAVE
 ```
 
@@ -88,7 +88,7 @@ SAVE
 
 Returns the values of all specified keys. For every key that does not hold a string value or does not exist, the special value `null` is returned. Because of this, the operation never fails.
 
-```
+```sh
 MGET <key1> <key...>
 ```
 
@@ -99,7 +99,7 @@ MGET <key1> <key...>
 
 Sets the given keys to their respective values. MSET replaces existing values with new values, just as regular SET. See MSETNX if you don't want to overwrite existing values.
 
-```
+```sh
 MSET key value [key value ...]
 ```
 
@@ -110,7 +110,7 @@ MSET key value [key value ...]
 
 Returns all keys matching in database.
 
-```
+```sh
 KEYS
 ```
 
@@ -123,12 +123,8 @@ Returns the Unix timestamp of the last successful DB save.
 If there wasn't any successful save, it returns the startup timestamp.
 Because of this, the operation never fails.
 
-```
+```sh
 LASTSAVE
-```
-
-```
-SIZEOF
 ```
 
 ### SIZEOF
@@ -149,3 +145,7 @@ The size is calculated according to the following criteria:
 | Float                      | Number of bytes the float occupies.   |
 | Null                       | Always zero.                          |
 | Boolean                    | Always one.                           |
+
+```sh
+SIZEOF
+```
