@@ -95,7 +95,8 @@ for supported types and their encodings, see [types.md](types.md)
 
 ## Release History
 
-### [unreleased]
+### [unreleased] 11-12-2023 -> Now
+- feat: first working version.
 - feat(config): ability to configure server listen address and port from `zcached.conf` file.
 - feat(config): ability to configure max clients from `zcached.conf` file.
 - feat(config): ability to configure max memory from `zcached.conf` file.
@@ -123,9 +124,7 @@ for supported types and their encodings, see [types.md](types.md)
 - refactor(logger): create a new log file if the previous one is too big.
 - feat: update zcached to use 0.12.0 zig version.
 - feat: add fixtures for tests.
-
-### [version 0.0.1] - 11-12-2023
-- feat: first working version.
+- feat(command): `SIZEOF` command for efficient data size retrieval.
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
