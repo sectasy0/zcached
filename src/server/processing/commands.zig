@@ -187,13 +187,10 @@ pub const Handler = struct {
         };
 
         const value_size: usize = switch (value) {
-            .str => value.str.len,
-            .sstr => value.sstr.len,
+            .str, .sstr => |str| str.len,
             .array => value.array.items.len,
             .map => value.map.count(),
-            .int => @sizeOf(i64),
-            .float => @sizeOf(f64),
-            .bool => 1,
+            inline .int, .float, .bool => |x| @sizeOf(@TypeOf(x)),
             else => 0,
         };
 
