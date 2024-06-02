@@ -147,5 +147,5 @@ The size is calculated according to the following criteria:
 | Boolean                    | Always one.                           |
 
 ```sh
-SIZEOF
+SIZEOF <KEY>
 ```
