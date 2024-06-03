@@ -1,5 +1,5 @@
 address=192.168.0.1
-port=5555
+port=7556
 maxclients=512
 # 0 for unlimited, otherwise specify in bytes
 maxmemory=0

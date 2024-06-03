@@ -1,0 +1,7 @@
+services:
+  server:
+    image: sectasy/zcached:latest
+    ports:
+      - "7556:7556"
+    volumes:
+      - ./zcached.conf:/zcached/zcached.conf

@@ -18,11 +18,10 @@ Crafted using Zig, a versatile, modern, compiled programming language, `zcached`
 - **Diverse Data Type Support**: Accommodates various data structures like strings, integers, floats, and lists, enhancing utility across different use cases.
 - **Evented I/O and Multithreading**: Leveraging evented I/O mechanisms and multithreading capabilities, zcached efficiently manages concurrent operations, enhancing responsiveness and scalability.
 
-## Installation
+## Building from Source
 ### Prerequisites
 - [zig](https://ziglang.org/download/) (0.12.0 or newer)
 
-### Building from Source
 1. Clone the repository
 ```bash
 git clone
@@ -36,10 +35,21 @@ zig build
 ./zcached
 ```
 
-## Running Tests
-Run this command in the root directory of the project:
+## Docker 🐳
+### Prerequisites
+- [Docker Compose](https://docs.docker.com/compose/install/)
+- [docker-compose.yml](https://github.com/sectasy0/zcached/raw/master/docker-compose.yml)
+- [zcached.conf.example](https://github.com/sectasy0/zcached/raw/master/zcached.conf.example)
+
+1. Modify the config.
+- Rename the config file from `zcached.conf.example` to `zcached.conf`.
+- Change the `address` field to `0.0.0.0`.
+- Remove the addresses from the whitelist. The line should look like this: `whitelist=`.
+
+2. Run the container.
+> Remember to keep the `docker-compose.yml` and `zcached.conf` files in the same directory!
 ```bash
-zig test src/test.zig -lc
+docker compose up
 ```
 
 ## Usage
