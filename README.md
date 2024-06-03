@@ -52,6 +52,12 @@ zig build
 docker compose up
 ```
 
+## Running Tests
+Run this command in the root directory of the project:
+```bash
+zig test src/test.zig -lc
+```
+
 ## Usage
 While `zcached` lacks a CLI, you can utilize nc (netcat) from the terminal to send commands to the server.
 
