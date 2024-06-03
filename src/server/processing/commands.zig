@@ -21,6 +21,7 @@ const CommandType = enum {
     SAVE,
     KEYS,
     LASTSAVE,
+    SIZEOF,
 };
 pub const Handler = struct {
     allocator: std.mem.Allocator,
@@ -78,6 +79,10 @@ pub const Handler = struct {
             .MSET => return self.mset(command_set.items[1..command_set.items.len]),
             .KEYS => return self.zkeys(),
             .LASTSAVE => return .{ .ok = .{ .int = self.memory.last_save } },
+            .SIZEOF => {
+                if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
+                return self.sizeof(command_set.items[1]);
+            },
         };
     }
 
@@ -174,6 +179,22 @@ pub const Handler = struct {
             return .{ .err = err };
         };
         return .{ .ok = .{ .array = result } };
+    }
+
+    fn sizeof(self: *Handler, key: ZType) Result {
+        const value: ZType = self.memory.get(key.str) catch |err| {
+            return .{ .err = err };
+        };
+
+        const value_size: usize = switch (value) {
+            .str, .sstr => |str| str.len,
+            .array => value.array.items.len,
+            .map => value.map.count(),
+            inline .int, .float, .bool => |x| @sizeOf(@TypeOf(x)),
+            else => 0,
+        };
+
+        return .{ .ok = .{ .int = @intCast(value_size) } };
     }
 
     // method to free data needs to be freeded, for example keys command
