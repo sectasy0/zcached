@@ -392,3 +392,94 @@ test "should SAVE return error.SaveFailure when there is no data" {
 
     try std.testing.expectEqual(result.err, error.SaveFailure);
 }
+
+test "should handle SIZEOF command" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+
+    var my_map: std.StringHashMap(ZType) = std.StringHashMap(ZType).init(fixture.allocator);
+    try my_map.put("123", .{ .int = 50 });
+    defer my_map.deinit();
+
+    var my_array: std.ArrayList(ZType) = std.ArrayList(ZType).init(fixture.allocator);
+    try my_array.append(.{ .bool = false });
+    try my_array.append(.{ .bool = true });
+    defer my_array.deinit();
+
+    try fixture.memory.?.put("map-key", .{ .map = my_map });
+    try fixture.memory.?.put("array-key", .{ .array = my_array });
+
+    try fixture.memory.?.put("str-key", .{ .str = @constCast("test value") });
+    try fixture.memory.?.put("simple-str-key", .{ .sstr = @constCast("test simple value") });
+
+    try fixture.memory.?.put("int-key", .{ .int = 1025 });
+    try fixture.memory.?.put("float-key", .{ .float = 809.6 });
+
+    try fixture.memory.?.put("bool-key", .{ .bool = true });
+    try fixture.memory.?.put("null-key", .{ .null = undefined });
+
+    var cmd_handler = commands.Handler.init(fixture.allocator, &fixture.memory.?, &fixture.logger);
+
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    defer command_set.deinit();
+
+    // Strings
+
+    try command_set.append(.{ .str = @constCast("SIZEOF") });
+    try command_set.append(.{ .str = @constCast("str-key") });
+
+    var result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 10 });
+
+    try command_set.insert(1, .{ .str = @constCast("simple-str-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 17 });
+
+    // Numbers
+
+    try command_set.insert(1, .{ .str = @constCast("float-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 8 });
+
+    try command_set.insert(1, .{ .str = @constCast("int-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 8 });
+
+    // Bool / Null
+
+    try command_set.insert(1, .{ .str = @constCast("bool-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 1 });
+
+    try command_set.insert(1, .{ .str = @constCast("null-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 0 });
+
+    // Map / Array
+
+    try command_set.insert(1, .{ .str = @constCast("map-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 1 });
+
+    try command_set.insert(1, .{ .str = @constCast("array-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 2 });
+}
+
+test "should return error.NotFound for non existing during SIZEOF command" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+
+    var cmd_handler = commands.Handler.init(fixture.allocator, &fixture.memory.?, &fixture.logger);
+
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("SIZEOF") });
+    try command_set.append(.{ .str = @constCast("null-key") });
+
+    const result = cmd_handler.process(&command_set);
+    try std.testing.expectEqual(result.err, error.NotFound);
+}

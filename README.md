@@ -80,22 +80,12 @@ echo "*1\r\n$4\r\nPING\r\n" | netcat -N localhost 7556
 for supported types and their encodings, see [types.md](types.md)
 
 ## Todo for v1.0.0
-- [ ] Support for more data types eg. Hashes, Sets, Sorted Sets. (Currently only supports Strings, Integers, Floats, Booleans, Nulls, Arrays, and HashMaps).
-- [x] Create CLI Interface.
-- [x] Persistance mechanism, for further usage.
-- [x] Add `DBSIZE` command for getting the number of keys in the database.
-- [ ] Asynchronous save, `ASAVE`.
-- [x] Handle all panics and write the backtrace into log file.
-- [x] Server events logging.
-- [x] Configurable server (port, max clients, max memory, etc.).
-- [x] Connections whitelisting.
-- [x] Pass different configuration file path from command line.
-- [ ] Client side library.
-- [ ] *Encrypted connections, e.g TLS 1.3 or use QUIC (Currently there is no server-side support for TLS in zig, I could use `https://github.com/shiguredo/tls13-zig`).
+- Todos moved into issues.
 
 ## Release History
 
-### [unreleased]
+### [unreleased] 11-12-2023 -> Now
+- feat: first working version.
 - feat(config): ability to configure server listen address and port from `zcached.conf` file.
 - feat(config): ability to configure max clients from `zcached.conf` file.
 - feat(config): ability to configure max memory from `zcached.conf` file.
@@ -123,9 +113,7 @@ for supported types and their encodings, see [types.md](types.md)
 - refactor(logger): create a new log file if the previous one is too big.
 - feat: update zcached to use 0.12.0 zig version.
 - feat: add fixtures for tests.
-
-### [version 0.0.1] - 11-12-2023
-- feat: first working version.
+- feat(command): `SIZEOF` command for efficient data size retrieval.
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
