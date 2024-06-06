@@ -15,4 +15,6 @@ RUN wget https://github.com/sectasy0/zcached/archive/refs/tags/$ZCACHED_VERSION.
 RUN tar -xf $ZCACHED_VERSION.tar.gz; rm -rf $ZCACHED_VERSION.tar.gz
 RUN mv zcached-$ZCACHED_VERSION/* .; rm -rf zcached-$ZCACHED_VERSION
 RUN mv zcached.conf.example zcached.conf
-CMD ["zig", "build", "run"]
+RUN zig build; rm -rf zig-cache src/tests; find / -name "*.md" -type f -delete
+
+ENTRYPOINT ["./zig-out/bin/zcached"]
