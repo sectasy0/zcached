@@ -22,6 +22,7 @@ const CommandType = enum {
     KEYS,
     LASTSAVE,
     SIZEOF,
+    RENAME,
 };
 pub const Handler = struct {
     allocator: std.mem.Allocator,
@@ -82,6 +83,10 @@ pub const Handler = struct {
             .SIZEOF => {
                 if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
                 return self.sizeof(command_set.items[1]);
+            },
+            .RENAME => {
+                if (command_set.items.len < 3) return .{ .err = error.InvalidCommand };
+                return self.rename(command_set.items[1], command_set.items[2]);
             },
         };
     }
@@ -195,6 +200,16 @@ pub const Handler = struct {
         };
 
         return .{ .ok = .{ .int = @intCast(value_size) } };
+    }
+
+    fn rename(self: *Handler, key: ZType, value: ZType) Result {
+        if (key != .str or value != .str) return .{ .err = error.KeyNotString };
+
+        self.memory.rename(key.str, value.str) catch |err| {
+            return .{ .err = err };
+        };
+
+        return .{ .ok = .{ .str = @constCast("OK") } };
     }
 
     // method to free data needs to be freeded, for example keys command

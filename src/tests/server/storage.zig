@@ -134,3 +134,58 @@ test "should not return error.MemoryLimitExceed when max but deleted some" {
 
     try std.testing.expectEqual(void{}, result);
 }
+
+test "should rename key" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+
+    var memory = &fixture.memory.?;
+
+    try memory.put("testkey", .{ .float = 10.50 });
+    try memory.rename("testkey", "test2");
+
+    try helper.expectEqualZTypes(try memory.get("test2"), .{ .float = 10.50 });
+    try std.testing.expectEqual(memory.get("testkey"), error.NotFound);
+}
+
+test "should rename overwrite an existing key" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+
+    var memory = &fixture.memory.?;
+
+    try memory.put("testkey", .{ .bool = true });
+    try memory.put("key", .{ .bool = false });
+    try memory.rename("key", "testkey");
+
+    try helper.expectEqualZTypes(try memory.get("testkey"), .{ .bool = false });
+    try std.testing.expectEqual(memory.get("key"), error.NotFound);
+}
+
+test "should rename return error.MemoryLimitExceeded when new key is bigger" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+
+    fixture.config.maxmemory = 1;
+    try fixture.create_memory();
+
+    var memory = &fixture.memory.?;
+
+    try memory.put("normalkey", .{ .bool = true });
+
+    try std.testing.expectEqual(memory.rename("normalkey", "longeerkey"), error.MemoryLimitExceeded);
+
+    // This should be okay.
+    try memory.rename("normalkey", "key");
+    try helper.expectEqualZTypes(try memory.get("key"), .{ .bool = true });
+}
+
+test "should not rename non-existing key" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+
+    try std.testing.expectEqual(fixture.memory.?.rename("test", "test2"), error.NotFound);
+}
