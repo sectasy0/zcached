@@ -159,5 +159,5 @@ The `ECHO` command is used to return the given string as a response.
 For example: `ECHO Hello Neptun!` should return `Hello Neptun!`.
 
 ```sh
-ECHO <MESSAGE>
+ECHO <Message>
 ```
