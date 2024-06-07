@@ -83,7 +83,10 @@ pub const Handler = struct {
             },
             .ECHO => {
                 if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
-                return self.echo(command_set.items[1]);
+                switch (command_set.items[1]) {
+                    .str, .sstr => |text| return .{ .ok = .{ .str = text } },
+                    else => return .{ .err = error.KeyNotString }, // Maybe rename it to FieldNotString or ValueNotString?
+                }
             },
         };
     }
@@ -197,17 +200,6 @@ pub const Handler = struct {
         };
 
         return .{ .ok = .{ .int = @intCast(value_size) } };
-    }
-    fn echo(self: *Handler, value: ZType) Result {
-        _ = self;
-
-        switch (value) {
-            .str, .sstr => |text| return .{ .ok = .{ .str = text } },
-
-            // It's not technically a key, but creating a new error for one case is meh.
-            // Maybe rename it to FieldNotString or ValueNotString?
-            else => return .{ .err = error.KeyNotString },
-        }
     }
 
     // method to free data needs to be freeded, for example keys command
