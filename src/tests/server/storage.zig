@@ -182,7 +182,7 @@ test "should rename return error.MemoryLimitExceeded when new key is bigger" {
     try helper.expectEqualZTypes(try memory.get("key"), .{ .bool = true });
 }
 
-test "should not rename non-existing key" {
+test "should rename return error.NotFound" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
     try fixture.create_memory();
