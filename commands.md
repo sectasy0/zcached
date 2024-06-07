@@ -129,7 +129,7 @@ LASTSAVE
 
 ### SIZEOF
 
-**Available since**: 0.2.0\
+**Available since**: 0.1.0\
 **Time complexity**: O(1)
 
 Returns the size of the specified key based on its type. 
@@ -148,4 +148,16 @@ The size is calculated according to the following criteria:
 
 ```sh
 SIZEOF <KEY>
+```
+
+### ECHO
+
+**Available since**: 0.1.0\
+**Time complexity**: O(1)
+
+The `ECHO` command is used to return the given string as a response.
+For example: `ECHO Hello Neptun!` should return `Hello Neptun!`.
+
+```sh
+ECHO <MESSAGE>
 ```

@@ -114,6 +114,7 @@ for supported types and their encodings, see [types.md](types.md)
 - feat: update zcached to use 0.12.0 zig version.
 - feat: add fixtures for tests.
 - feat(command): `SIZEOF` command for efficient data size retrieval.
+- feat(command): add `ECHO` command implementation.
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.

@@ -22,6 +22,7 @@ const CommandType = enum {
     KEYS,
     LASTSAVE,
     SIZEOF,
+    ECHO,
 };
 pub const Handler = struct {
     allocator: std.mem.Allocator,
@@ -59,17 +60,14 @@ pub const Handler = struct {
             .PING => return self.ping(),
             .GET => {
                 if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
-
                 return self.get(command_set.items[1]);
             },
             .SET => {
                 if (command_set.items.len < 3) return .{ .err = error.InvalidCommand };
-
                 return self.set(command_set.items[1], command_set.items[2]);
             },
             .DELETE => {
                 if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
-
                 return self.delete(command_set.items[1]);
             },
             .FLUSH => return self.flush(),
@@ -82,6 +80,10 @@ pub const Handler = struct {
             .SIZEOF => {
                 if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
                 return self.sizeof(command_set.items[1]);
+            },
+            .ECHO => {
+                if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
+                return self.echo(command_set.items[1]);
             },
         };
     }
@@ -195,6 +197,17 @@ pub const Handler = struct {
         };
 
         return .{ .ok = .{ .int = @intCast(value_size) } };
+    }
+    fn echo(self: *Handler, value: ZType) Result {
+        _ = self;
+
+        switch (value) {
+            .str, .sstr => |text| return .{ .ok = .{ .str = text } },
+
+            // It's not technically a key, but creating a new error for one case is meh.
+            // Maybe rename it to FieldNotString or ValueNotString?
+            else => return .{ .err = error.KeyNotString },
+        }
     }
 
     // method to free data needs to be freeded, for example keys command
