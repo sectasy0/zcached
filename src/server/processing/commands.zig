@@ -57,29 +57,18 @@ pub const Handler = struct {
             return .{ .err = error.UnknownCommand };
         };
         try switch (command_type) {
-            .PING => return self.ping(),
             .GET => {
                 if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
-
                 return self.get(command_set.items[1]);
             },
             .SET => {
                 if (command_set.items.len < 3) return .{ .err = error.InvalidCommand };
-
                 return self.set(command_set.items[1], command_set.items[2]);
             },
             .DELETE => {
                 if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
-
                 return self.delete(command_set.items[1]);
             },
-            .FLUSH => return self.flush(),
-            .DBSIZE => return .{ .ok = .{ .int = self.memory.size() } },
-            .SAVE => return self.save(),
-            .MGET => return self.mget(command_set.items[1..command_set.items.len]),
-            .MSET => return self.mset(command_set.items[1..command_set.items.len]),
-            .KEYS => return self.zkeys(),
-            .LASTSAVE => return .{ .ok = .{ .int = self.memory.last_save } },
             .SIZEOF => {
                 if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
                 return self.sizeof(command_set.items[1]);
@@ -88,6 +77,14 @@ pub const Handler = struct {
                 if (command_set.items.len < 3) return .{ .err = error.InvalidCommand };
                 return self.rename(command_set.items[1], command_set.items[2]);
             },
+            .MGET => return self.mget(command_set.items[1..command_set.items.len]),
+            .MSET => return self.mset(command_set.items[1..command_set.items.len]),
+            .PING => return .{ .ok = .{ .sstr = @constCast("PONG") } },
+            .DBSIZE => return .{ .ok = .{ .int = self.memory.size() } },
+            .LASTSAVE => return .{ .ok = .{ .int = self.memory.last_save } },
+            .SAVE => return self.save(),
+            .KEYS => return self.zkeys(),
+            .FLUSH => return self.flush(),
         };
     }
 
@@ -123,11 +120,6 @@ pub const Handler = struct {
     fn flush(self: *Handler) Result {
         self.memory.flush();
         return .{ .ok = .{ .sstr = @constCast("OK") } };
-    }
-
-    fn ping(self: *Handler) Result {
-        _ = self;
-        return .{ .ok = .{ .sstr = @constCast("PONG") } };
     }
 
     fn save(self: *Handler) Result {
