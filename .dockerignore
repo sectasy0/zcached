@@ -1,0 +1,7 @@
+.gitignore
+*.md
+logs/
+LICENSE
+.github
+src/tests
+docs/
