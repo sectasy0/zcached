@@ -4,4 +4,4 @@ services:
     ports:
       - "7556:7556"
     volumes:
-      - ./zcached.conf:/zcached/zcached.conf
+      - ./zcached.conf:/home/zcached/build/zcached.conf
