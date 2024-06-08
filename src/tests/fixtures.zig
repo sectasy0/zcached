@@ -37,7 +37,11 @@ pub const ContextFixture = struct {
         if (self.memory != null) self.memory.?.deinit();
         if (self.persistance == null) try self.create_persistance();
 
-        self.memory = Memory.init(self.tracing_allocator.allocator(), self.config, &self.persistance.?);
+        self.memory = Memory.init(
+            self.tracing_allocator.allocator(),
+            self.config,
+            &self.persistance.?,
+        );
     }
     pub fn create_persistance(self: *ContextFixture) !void {
         if (self.persistance != null) self.persistance.?.deinit();
