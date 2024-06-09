@@ -11,7 +11,7 @@ pub fn SerializerT(comptime GenericReader: type) type {
         const Self = @This();
 
         const HandlerFunc = fn (self: *Self, reader: GenericReader) anyerror!types.ZType;
-        const types_map = std.ComptimeStringMap(*const HandlerFunc, .{
+        const types_map = std.StaticStringMap(*const HandlerFunc).initComptime(.{
             .{ "+", serialize_sstr },
             .{ "$", serialize_str },
             .{ ",", serialize_float },

@@ -1,6 +1,6 @@
 ## Building from Source
 ### Prerequisites
-- [zig](https://ziglang.org/download/) (0.12.0 or newer)
+- [zig](https://ziglang.org/download/) (0.13.0 or newer)
 - Unix-based operating system (Linux, macOS). For Windows users, please refer to the Docker section below.
 
 ### Steps

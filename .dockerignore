@@ -5,8 +5,7 @@ LICENSE
 .github
 src/tests
 docs/
-zig-cache/
+.zig-cache/
 zig-out/
-zig-cache-*
-zig-out-*
 zcached.conf.example
+.git
