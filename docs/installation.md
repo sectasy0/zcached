@@ -23,6 +23,8 @@ zig build run
 ---
 
 ## Docker 🐳
+> zcached source is available under `~/source` inside docker.
+
 ### Prerequisites
 - [Docker Compose](https://docs.docker.com/compose/install/)
 - [docker-compose.yml](https://github.com/sectasy0/zcached/raw/master/docker-compose.yml)

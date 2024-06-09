@@ -8,5 +8,6 @@
         "build.zig.zon",
         "zcached.conf.example",
         "README.md",
+        "LICENSE",
     },
 }

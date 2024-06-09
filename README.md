@@ -21,10 +21,6 @@ Crafted using Zig, a versatile, modern, compiled programming language, `zcached`
 ## Usage
 While `zcached` lacks a CLI, you can utilize nc (netcat) from the terminal to send commands to the server.
 
-### Example Commands
-
-For all supported commands and their syntaxt, see [commands.md](commands.md)
-
 #### SET
 Set a key to hold the string value. If key already holds a value, it is overwritten, regardless of its type.
 ```bash
@@ -53,13 +49,17 @@ Returns `PONG`. This command is often used to test if a connection is still aliv
 echo "*1\r\n$4\r\nPING\r\n" | netcat -N localhost 7556
 ```
 
-for supported types and their encodings, see [types.md](types.md)
-
 ## Running Tests
 Run the tests using `zig` in the root directory of the project:
 ```bash
 zig test src/test.zig -lc
 ```
+
+## Documentation
+- For release history, see the [release_history.md](docs/release_history.md)
+- For building/installation process please refer to the [installation.md](docs/installation.md)
+- For supported types and their encodings, see the [types.md](docs/internals/types.md)
+- For supported commands, see the [commands.md](docs/internals/commands.md)
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
