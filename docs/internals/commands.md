@@ -1,7 +1,5 @@
-## zcached supported commands
-
+## Supported commands
 This documentation page provides a comprehesive guid to the commands supported by zcached, including their usage and sytanx.
-
 
 ### PING
 

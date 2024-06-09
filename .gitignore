@@ -11,3 +11,4 @@ tmp/
 log/
 *.zcpf
 persist/*
+.zcached.conf

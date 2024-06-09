@@ -1,0 +1,9 @@
+services:
+  server:
+    image: sectasy/zcached:latest
+    ports:
+      - "7556:7556"
+    volumes:
+      - ./zcached.conf:/home/zcached/build/zcached.conf
+    # uncoment this line below if you want to see logs in stdout
+    # entrypoint: ["./zcached", '--sout']

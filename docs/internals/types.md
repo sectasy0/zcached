@@ -1,4 +1,4 @@
-## zcached supported data types
+## Supported data types
 
 ### Simple strings
 Simple strings are encoded as (+) followed by the string content and terminated by CRLF (\r\n). To send binary-safe strings, use bulk strings.

@@ -168,6 +168,7 @@ fn run_supervisor(allocator: std.mem.Allocator, context: Employer.Context) void 
         context.logger.log(.Error, "# failed to initialize server: {any}", .{err});
         return;
     };
+    defer employer.deinit();
 
     employer.supervise();
 }
