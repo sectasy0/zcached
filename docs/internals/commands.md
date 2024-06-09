@@ -159,3 +159,15 @@ For example: `ECHO Hello Neptun!` should return `Hello Neptun!`.
 ```sh
 ECHO <Message>
 ```
+
+### RENAME
+
+**Available since**: 0.1.0\
+**Time complexity**: O(1)
+
+The `RENAME` command renames an existing key to a new key. 
+If the new key already exists, it will be overwritten by the old key's value.
+
+```sh
+RENAME <Old key> <New key>
+```
