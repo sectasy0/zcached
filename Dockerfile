@@ -1,6 +1,6 @@
 FROM alpine:3.20
 
-ARG ZIG_VERSION=0.12.0
+ARG ZIG_VERSION=0.13.0
 ARG ZCACHED_VERSION=0.0.1
 
 RUN addgroup -S zcached && adduser -S zcached -G zcached
@@ -18,7 +18,7 @@ RUN mkdir source
 COPY --chown=zcached:zcached . ./source
 
 # build and move app to ${APP_DIR}/zcached
-RUN cd source && ../zig-linux-x86_64-$ZIG_VERSION/zig build && \ 
+RUN cd source && ../zig-linux-x86_64-$ZIG_VERSION/zig build && \
     mv ./zig-out/bin/zcached ${APP_DIR}/zcached
 
 # clean things up.

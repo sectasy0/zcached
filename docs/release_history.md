@@ -30,3 +30,4 @@
 - feat: update zcached to use 0.12.0 zig version.
 - feat: add fixtures for tests.
 - feat(command): `SIZEOF` command for efficient data size retrieval.
+- feat: update zcached to use 0.13.0 zig version.
