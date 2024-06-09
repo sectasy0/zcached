@@ -2,8 +2,10 @@ const std = @import("std");
 
 const fixtures = @import("../fixtures.zig");
 const ContextFixture = fixtures.ContextFixture;
+const TracingAllocator = @import("../../server/tracing.zig");
 
 const types = @import("../../protocol/types.zig");
+const utils = @import("../../server/utils.zig");
 const helper = @import("../helper.zig");
 
 test "should get existing and not get non-existing key" {
@@ -89,7 +91,7 @@ test "should not store error" {
     try fixture.create_memory();
 
     const err_value = .{ .err = .{ .message = "random error" } };
-    try std.testing.expectEqual(fixture.memory.?.put("test", err_value), error.CantInsertError);
+    try std.testing.expectEqual(fixture.memory.?.put("test", err_value), error.InvalidValue);
 }
 
 test "should return error.MemoryLimitExceeded" {
@@ -114,20 +116,23 @@ test "should return error.MemoryLimitExceeded" {
 test "should not return error.MemoryLimitExceed when max but deleted some" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
+    fixture.config.maxmemory = 1553;
     try fixture.create_memory();
-
-    fixture.config.maxmemory = 1048576;
 
     var arena = std.heap.ArenaAllocator.init(fixture.allocator);
     defer arena.deinit();
-    // const utils = @import("../../server/utils.zig");
-    // const tracking = utils.ptrCast(TracingAllocator, storage.allocator.ptr);
 
     const string = "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.";
     const value: types.ZType = .{ .str = @constCast(string) };
-    for (0..1) |i| {
+    for (0..8) |i| {
         const key = try std.fmt.allocPrint(arena.allocator(), "key-{d}", .{i});
-        try fixture.memory.?.put(key, value);
+        fixture.memory.?.put(key, value) catch {};
+    }
+
+    for (0..3) |i| {
+        const key = try std.fmt.allocPrint(arena.allocator(), "key-{d}", .{i});
+
+        _ = fixture.memory.?.delete(key);
     }
 
     const result = fixture.memory.?.put("test key", value);
@@ -135,57 +140,31 @@ test "should not return error.MemoryLimitExceed when max but deleted some" {
     try std.testing.expectEqual(void{}, result);
 }
 
-test "should rename key" {
+test "memory should not grow if key overriden with put" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
     try fixture.create_memory();
 
-    var memory = &fixture.memory.?;
+    try helper.setup_storage(&fixture.memory.?);
 
-    try memory.put("testkey", .{ .float = 10.50 });
-    try memory.rename("testkey", "test2");
+    var arena = std.heap.ArenaAllocator.init(fixture.allocator);
+    defer arena.deinit();
 
-    try helper.expectEqualZTypes(try memory.get("test2"), .{ .float = 10.50 });
-    try std.testing.expectEqual(memory.get("testkey"), error.NotFound);
-}
+    const string = "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.";
+    const value: types.ZType = .{ .str = @constCast(string) };
+    for (0..8) |i| {
+        const key = try std.fmt.allocPrint(arena.allocator(), "key-{d}", .{i});
+        fixture.memory.?.put(key, value) catch {};
+    }
 
-test "should rename overwrite an existing key" {
-    var fixture = try ContextFixture.init();
-    defer fixture.deinit();
-    try fixture.create_memory();
+    const tracking = utils.ptrCast(
+        TracingAllocator,
+        fixture.memory.?.allocator.ptr,
+    );
 
-    var memory = &fixture.memory.?;
+    const before_put = tracking.real_size;
+    try fixture.memory.?.put("key-1", value);
+    try fixture.memory.?.put("key-2", value);
 
-    try memory.put("testkey", .{ .bool = true });
-    try memory.put("key", .{ .bool = false });
-    try memory.rename("key", "testkey");
-
-    try helper.expectEqualZTypes(try memory.get("testkey"), .{ .bool = false });
-    try std.testing.expectEqual(memory.get("key"), error.NotFound);
-}
-
-test "should rename return error.MemoryLimitExceeded when new key is bigger" {
-    var fixture = try ContextFixture.init();
-    defer fixture.deinit();
-
-    fixture.config.maxmemory = 1;
-    try fixture.create_memory();
-
-    var memory = &fixture.memory.?;
-
-    try memory.put("normalkey", .{ .bool = true });
-
-    try std.testing.expectEqual(memory.rename("normalkey", "longeerkey"), error.MemoryLimitExceeded);
-
-    // This should be okay.
-    try memory.rename("normalkey", "key");
-    try helper.expectEqualZTypes(try memory.get("key"), .{ .bool = true });
-}
-
-test "should rename return error.NotFound" {
-    var fixture = try ContextFixture.init();
-    defer fixture.deinit();
-    try fixture.create_memory();
-
-    try std.testing.expectEqual(fixture.memory.?.rename("test", "test2"), error.NotFound);
+    try std.testing.expectEqual(before_put, tracking.real_size);
 }

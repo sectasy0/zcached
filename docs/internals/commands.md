@@ -1,7 +1,5 @@
-## zcached supported commands
-
+## Supported commands
 This documentation page provides a comprehesive guid to the commands supported by zcached, including their usage and sytanx.
-
 
 ### PING
 
@@ -129,7 +127,7 @@ LASTSAVE
 
 ### SIZEOF
 
-**Available since**: 0.2.0\
+**Available since**: 0.1.0\
 **Time complexity**: O(1)
 
 Returns the size of the specified key based on its type. 
@@ -147,16 +145,17 @@ The size is calculated according to the following criteria:
 | Boolean                    | Always one.                           |
 
 ```sh
-SIZEOF <Key>
+SIZEOF <KEY>
 ```
 
-### RENAME
+### ECHO
 
 **Available since**: 0.1.0\
 **Time complexity**: O(1)
 
-The `RENAME` command renames an existing key to a new key. If the new key already exists, it will be overwritten by the old key's value.
+The `ECHO` command is used to return the given string as a response.
+For example: `ECHO Hello Neptun!` should return `Hello Neptun!`.
 
 ```sh
-RENAME <Old key> <New key>
+ECHO <Message>
 ```

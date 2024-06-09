@@ -23,6 +23,7 @@ const CommandType = enum {
     LASTSAVE,
     SIZEOF,
     RENAME,
+    ECHO,
 };
 pub const Handler = struct {
     allocator: std.mem.Allocator,
@@ -76,6 +77,13 @@ pub const Handler = struct {
             .RENAME => {
                 if (command_set.items.len < 3) return .{ .err = error.InvalidCommand };
                 return self.rename(command_set.items[1], command_set.items[2]);
+            },
+            .ECHO => {
+                if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
+                switch (command_set.items[1]) {
+                    .str, .sstr => |text| return .{ .ok = .{ .str = text } },
+                    else => return .{ .err = error.KeyNotString }, // Maybe rename it to FieldNotString or ValueNotString?
+                }
             },
             .MGET => return self.mget(command_set.items[1..command_set.items.len]),
             .MSET => return self.mset(command_set.items[1..command_set.items.len]),

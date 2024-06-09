@@ -14,15 +14,15 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Install Zig
       run: |
-        curl -sSfL https://ziglang.org/download/0.12.0/zig-linux-x86_64-0.12.0.tar.xz | tar -xJ
+        curl -sSfL https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz | tar -xJ
       shell: bash
 
     - name: Lint Code
-      run: zig-linux-x86_64-0.12.0/zig fmt --check .
+      run: zig-linux-x86_64-0.13.0/zig fmt --check .
 
     - name: Run Tests
-      run: zig-linux-x86_64-0.12.0/zig test src/test.zig -lc
+      run: zig-linux-x86_64-0.13.0/zig test src/test.zig -lc

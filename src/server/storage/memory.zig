@@ -47,12 +47,23 @@ pub fn put(self: *Memory, key: []const u8, value: types.ZType) !void {
     }
 
     switch (value) {
-        .err => return error.CantInsertError,
+        .err => return error.InvalidValue,
         else => {
-            const zkey: []u8 = try self.allocator.dupe(u8, key);
             const zvalue = try types.ztype_copy(value, self.allocator);
 
-            self.internal.put(zkey, zvalue) catch return error.InsertFailure;
+            const result = try self.internal.getOrPut(key);
+            if (!result.found_existing) {
+                const zkey: []u8 = try self.allocator.dupe(u8, key);
+                result.key_ptr.* = zkey;
+                result.value_ptr.* = zvalue;
+                return;
+            }
+
+            const prev_value = result.value_ptr;
+
+            types.ztype_free(prev_value, self.allocator);
+
+            result.value_ptr.* = zvalue;
         },
     }
 }

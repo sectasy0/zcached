@@ -52,7 +52,7 @@ pub fn listen(self: *Listener, worker: *Worker) void {
         _ = std.posix.poll(worker.poll_fds[self.start..worker.connections], -1) catch |err| {
             self.context.logger.log(
                 .Error,
-                "# std.os.poll failure: {?}\n",
+                "# std.os.poll failure: {?}",
                 .{err},
             );
             return;
