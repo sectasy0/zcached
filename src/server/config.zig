@@ -33,7 +33,7 @@ pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]c
     if (log_path != null) config.loger_path = log_path.?;
 
     var timestamp: [40]u8 = undefined;
-    const t_size = utils.timestampf(&timestamp);
+    var t_size = utils.timestampf(&timestamp);
 
     config.whitelist = std.ArrayList(std.net.Address).init(allocator);
 
@@ -51,12 +51,24 @@ pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]c
     };
     defer file.close();
 
-    const file_size = (try file.stat()).size;
-    const buffer = try config._arena.allocator().alloc(u8, file_size);
+    const stat = try file.stat();
+    if (stat.kind == .directory) {
+        t_size = utils.timestampf(&timestamp);
+        const err = error.NotFile;
+
+        std.debug.print(
+            "WARN [{s}] * failed to load config: {any}\n",
+            .{ timestamp[0..t_size], err },
+        );
+
+        return config;
+    }
+
+    const buffer = try config._arena.allocator().alloc(u8, stat.size);
     defer config._arena.allocator().free(buffer);
 
     const readed_size = try file.read(buffer);
-    if (readed_size != file_size) return error.InvalidInput;
+    if (readed_size != stat.size) return error.InvalidInput;
 
     var iter = std.mem.split(u8, buffer, "\n");
     while (iter.next()) |line| {

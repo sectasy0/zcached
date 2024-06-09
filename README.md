@@ -18,36 +18,8 @@ Crafted using Zig, a versatile, modern, compiled programming language, `zcached`
 - **Diverse Data Type Support**: Accommodates various data structures like strings, integers, floats, and lists, enhancing utility across different use cases.
 - **Evented I/O and Multithreading**: Leveraging evented I/O mechanisms and multithreading capabilities, zcached efficiently manages concurrent operations, enhancing responsiveness and scalability.
 
-## Installation
-### Prerequisites
-- [zig](https://ziglang.org/download/) (0.12.0 or newer)
-
-### Building from Source
-1. Clone the repository
-```bash
-git clone
-```
-2. Build the project
-```bash
-zig build
-```
-3. Run the executable
-```bash
-./zcached
-```
-
-## Running Tests
-Run this command in the root directory of the project:
-```bash
-zig test src/test.zig -lc
-```
-
 ## Usage
 While `zcached` lacks a CLI, you can utilize nc (netcat) from the terminal to send commands to the server.
-
-### Example Commands
-
-For all supported commands and their syntaxt, see [commands.md](commands.md)
 
 #### SET
 Set a key to hold the string value. If key already holds a value, it is overwritten, regardless of its type.
@@ -77,43 +49,17 @@ Returns `PONG`. This command is often used to test if a connection is still aliv
 echo "*1\r\n$4\r\nPING\r\n" | netcat -N localhost 7556
 ```
 
-for supported types and their encodings, see [types.md](types.md)
+## Running Tests
+Run the tests using `zig` in the root directory of the project:
+```bash
+zig test src/test.zig -lc
+```
 
-## Todo for v1.0.0
-- Todos moved into issues.
-
-## Release History
-
-### [unreleased] 11-12-2023 -> Now
-- feat: first working version.
-- feat(config): ability to configure server listen address and port from `zcached.conf` file.
-- feat(config): ability to configure max clients from `zcached.conf` file.
-- feat(config): ability to configure max memory from `zcached.conf` file.
-- feat: cli interface for server binary.
-- feat(cli): ability to pass different configuration file path from the command line.
-- feat(logger): configurable logger with the option to log to a custom file.
-- feat(logger): logging requests, responses, and server events.
-- feat(command): Introducing `DBSIZE` command to retrieve the number of keys in the database.
-- feat(command): implementation of `PING` command to test connection status.
-- feat(config): configurable `thread` count from `zcached.conf` file.
-- feat(logger): extended debug logging in the configuration.
-- feat(config): ability to configure `whitelist` from `zcached.conf` file.
-- feat: support for `HashMap` data type.
-- feat(config): ability to set `proto_max_bulk_len` from `zcached.conf` file, defining the maximum length of a bulk string that can be sent to the server (default is 512MB).
-- feat: introduction of thread-safe `TracingAllocator`. // I have to change this allocator to `ArenaAllocator`
-- feat: evented input/output mode.
-- feat: Implementation of persistence mechanism.
-- fix: segmentation fault after tryin to get value that client send.
-- feat(command): `SAVE` for dumping db to disk.
-- feat(command): `MSET` and `MGET` for seting and geting multiple keys at once.
-- fix: arrays and maps should be freed after returning to the client.
-- feat(command): `KEYS` command for getting all database keys.
-- fix: panic caused by unhandled command_set length.
-- feat(command): `LASTSAVE` command to get the last db save timestamp.
-- refactor(logger): create a new log file if the previous one is too big.
-- feat: update zcached to use 0.12.0 zig version.
-- feat: add fixtures for tests.
-- feat(command): `SIZEOF` command for efficient data size retrieval.
+## Documentation
+- For release history, see the [release_history.md](docs/release_history.md)
+- For building/installation process please refer to the [installation.md](docs/installation.md)
+- For supported types and their encodings, see the [types.md](docs/internals/types.md)
+- For supported commands, see the [commands.md](docs/internals/commands.md)
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.

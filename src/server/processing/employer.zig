@@ -51,6 +51,22 @@ pub fn supervise(self: *Employer) void {
         );
     };
 
+    if (self.server.sockfd == null) {
+        const err = error.AddressNotAvailable;
+
+        // temporary set `sout` to true to force stdout print.
+        const prev_sout = self.context.logger.sout;
+        self.context.logger.sout = true;
+
+        self.context.logger.log(
+            .Error,
+            "# failed to run server listener: {?}",
+            .{err},
+        );
+        self.context.logger.sout = prev_sout;
+        return;
+    }
+
     var listener = Listener.init(
         self.allocator,
         &self.server,
