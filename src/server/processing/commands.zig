@@ -201,7 +201,7 @@ pub const Handler = struct {
             return .{ .err = err };
         };
 
-        return .{ .ok = .{ .str = @constCast("OK") } };
+        return .{ .ok = .{ .sstr = @constCast("OK") } };
     }
 
     // method to free data needs to be freeded, for example keys command
