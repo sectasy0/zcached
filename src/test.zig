@@ -11,7 +11,7 @@ comptime {
     _ = @import("tests/server/errors.zig");
     // // _ = @import("src/server/listener.zig");
     _ = @import("tests/server/config.zig");
-    _ = @import("tests/server/storage.zig");
+    _ = @import("tests/server/memory.zig");
     // // _ = @import("server/tracing.zig");
     // // _ = @import("src/server/cli.zig");
     _ = @import("tests/server/logger.zig");
