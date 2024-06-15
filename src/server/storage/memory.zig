@@ -177,7 +177,6 @@ pub fn copy(self: *Memory, source: []const u8, destination: []const u8, replace:
 
     // Value to copy.
     const value: types.ZType = self.internal.get(source) orelse return error.NotFound;
-
     const destination_result = try self.internal.getOrPut(destination);
 
     if (destination_result.found_existing) {
@@ -186,6 +185,7 @@ pub fn copy(self: *Memory, source: []const u8, destination: []const u8, replace:
         const zvalue = try types.ztype_copy(value, self.allocator);
         const previous_value: *types.ZType = destination_result.value_ptr;
 
+        // Free old value of this key and set new, from source key.
         types.ztype_free(previous_value, self.allocator);
         destination_result.value_ptr.* = zvalue;
         return;
