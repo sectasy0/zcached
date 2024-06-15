@@ -37,6 +37,7 @@ pub fn handle(stream: anytype, err: anyerror, args: Args, logger: *Logger) !void
         error.BulkTooLarge => try out.writeAll("-ERR bulk too large\r\n"),
         error.NotWhitelisted => try out.writeAll("-ERR not whitelisted\r\n"),
         error.SaveFailure => try out.writeAll("-ERR there is no data to save\r\n"),
+        error.KeyAlreadyExists => try out.writeAll("-ERR key already exists\r\n"),
         else => try out.writeAll("-ERR unexpected\r\n"),
     };
 }

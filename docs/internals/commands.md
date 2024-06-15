@@ -171,3 +171,16 @@ If the new key already exists, it will be overwritten by the old key's value.
 ```sh
 RENAME <Old key> <New key>
 ```
+
+### COPY
+
+**Available since**: 0.1.0\
+**Time complexity**: O(N) where N is the number of nested items. O(1) for string values.
+
+This command copies the value stored at the source key to the destination key.
+The command returns error when the destination key already exists. 
+The optional `REPLACE` param removes the destination key before copying the value to it.
+
+```sh
+COPY <source> <destination> [REPLACE]
+```

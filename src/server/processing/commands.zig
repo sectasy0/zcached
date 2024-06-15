@@ -24,6 +24,7 @@ const CommandType = enum {
     SIZEOF,
     RENAME,
     ECHO,
+    COPY,
 };
 pub const Handler = struct {
     allocator: std.mem.Allocator,
@@ -46,10 +47,8 @@ pub const Handler = struct {
     }
 
     pub fn process(self: *Handler, command_set: *const std.ArrayList(ZType)) Result {
-        if (command_set.capacity == 0) return .{ .err = error.UnknownCommand };
-
         // first element in command_set is command name and should be always str
-        if (command_set.items[0] != .str) {
+        if (command_set.capacity == 0 or command_set.items[0] != .str) {
             return .{ .err = error.UnknownCommand };
         }
 
@@ -84,6 +83,10 @@ pub const Handler = struct {
                     .str, .sstr => |text| return .{ .ok = .{ .str = text } },
                     else => return .{ .err = error.KeyNotString }, // Maybe rename it to FieldNotString or ValueNotString?
                 }
+            },
+            .COPY => {
+                if (command_set.items.len < 3) return .{ .err = error.InvalidCommand };
+                return self.copy(command_set.items[1..command_set.items.len]);
             },
             .MGET => return self.mget(command_set.items[1..command_set.items.len]),
             .MSET => return self.mset(command_set.items[1..command_set.items.len]),
@@ -209,6 +212,23 @@ pub const Handler = struct {
             return .{ .err = err };
         };
 
+        return .{ .ok = .{ .str = @constCast("OK") } };
+    }
+
+    fn copy(self: *Handler, entries: []ZType) Result {
+        var replace: bool = false;
+        if (entries[0] != .str or entries[1] != .str) return .{ .err = error.KeyNotString };
+
+        if (entries.len > 2) {
+            if (entries[2] != .str) return .{ .err = error.KeyNotString };
+
+            const param_upper: []u8 = utils.to_uppercase(entries[2].str);
+            if (!std.mem.eql(u8, param_upper, "REPLACE")) return .{ .err = error.BadRequest };
+            replace = true;
+        }
+        self.memory.copy(entries[0].str, entries[1].str, replace) catch |err| {
+            return .{ .err = err };
+        };
         return .{ .ok = .{ .str = @constCast("OK") } };
     }
 
