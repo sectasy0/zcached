@@ -139,7 +139,7 @@ pub fn keys(self: *Memory) !std.ArrayList(types.ZType) {
 }
 
 pub fn rename(self: *Memory, key: []const u8, new_key: []const u8) !void {
-    self.lock.lockShared();
+    self.lock.lock();
     defer self.lock.unlock();
 
     // If we are changing the key to a smaller one, it is pointless to block it.
