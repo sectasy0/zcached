@@ -11,7 +11,7 @@ pub fn SetUnordered(comptime T: type) type {
         const SetHashMap = std.HashMap(
             T,
             void,
-            context.ZTypeContext,
+            context.ZTypeContext(.unordered),
             std.hash_map.default_max_load_percentage,
         );
 
@@ -66,25 +66,25 @@ pub fn SetUnordered(comptime T: type) type {
             return self.hash_map.allocator;
         }
 
-        /// Creates a copy of this set, using a specified allocator.
-        pub fn cloneWithAllocator(
-            self: *const Self,
-            new_allocator: std.mem.Allocator,
-        ) !Self {
-            const cloned_hashmap = try self.hash_map.cloneWithAllocator(new_allocator);
-            const cloned = Self{
-                .hash_map = cloned_hashmap,
-            };
-            var it = cloned.hash_map.keyIterator();
-            while (it.next()) |key_ptr| {
-                key_ptr.* = try cloned.copy(key_ptr.*);
-            }
+        // Creates a copy of this set, using the same allocator
+        pub fn clone(self: *Self) !Self {
+            var cloned = self.*;
+            cloned.hash_map = try self.hash_map.clone();
             return cloned;
         }
 
-        /// Creates a copy of this Set, using the same allocator.
-        pub fn clone(self: *const Self) !Self {
-            return self.cloneWithAllocator(self.allocator());
+        /// Creates a copy of this set, using a specified allocator.
+        pub fn cloneWithAllocator(self: *Self, new_allocator: std.mem.Allocator) std.mem.Allocator.Error!Self {
+            // Since we're borrowing the internal map allocator, temporarily back it up.
+            const prev_allocator = self.hash_map.allocator;
+            // Restore it at the end of the func, because the self.map should use the
+            // original allocator.
+            defer self.hash_map.allocator = prev_allocator;
+
+            // The cloned map must use and refer to the new allocator only.
+            self.hash_map.allocator = new_allocator;
+            const cloned = try self.clone();
+            return cloned;
         }
     };
 }
@@ -99,9 +99,11 @@ pub fn Set(comptime T: type) type {
         const SetHashMap = std.ArrayHashMap(
             T,
             void,
-            context.ZTypeArrayContext,
+            context.ZTypeContext(.ordered),
             true,
         );
+
+        const KV = SetHashMap.KV;
 
         hash_map: SetHashMap,
 
@@ -132,8 +134,8 @@ pub fn Set(comptime T: type) type {
         }
 
         /// Remove an item from the set.
-        pub fn remove(self: *Self, value: T) ?T {
-            return self.hash_map.fetchRemove(value);
+        pub fn remove(self: *Self, value: T) ?KV {
+            return self.hash_map.fetchOrderedRemove(value);
         }
 
         /// Returns the number of items stored in the set.
@@ -152,25 +154,25 @@ pub fn Set(comptime T: type) type {
             return self.hash_map.allocator;
         }
 
-        /// Creates a copy of this set, using a specified allocator.
-        pub fn cloneWithAllocator(
-            self: *const Self,
-            new_allocator: std.mem.Allocator,
-        ) !Self {
-            const cloned_hashmap = try self.hash_map.cloneWithAllocator(new_allocator);
-            const cloned = Self{
-                .hash_map = cloned_hashmap,
-            };
-            var it = cloned.hash_map.iterator();
-            while (it.next()) |key_ptr| {
-                key_ptr.* = try cloned.copy(key_ptr.*);
-            }
+        // Creates a copy of this set, using the same allocator
+        pub fn clone(self: *Self) !Self {
+            var cloned = self.*;
+            cloned.hash_map = try self.hash_map.clone();
             return cloned;
         }
 
-        /// Creates a copy of this Set, using the same allocator.
-        pub fn clone(self: *const Self) !Self {
-            return self.cloneWithAllocator(self.allocator());
+        /// Creates a copy of this set, using a specified allocator.
+        pub fn cloneWithAllocator(self: *Self, new_allocator: std.mem.Allocator) std.mem.Allocator.Error!Self {
+            // Since we're borrowing the internal map allocator, temporarily back it up.
+            const prev_allocator = self.hash_map.allocator;
+            // Restore it at the end of the func, because the self.map should use the
+            // original allocator.
+            defer self.hash_map.allocator = prev_allocator;
+
+            // The cloned map must use and refer to the new allocator only.
+            self.hash_map.allocator = new_allocator;
+            const cloned = try self.clone();
+            return cloned;
         }
     };
 }
