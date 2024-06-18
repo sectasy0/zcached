@@ -171,8 +171,9 @@ pub fn rename(self: *Memory, key: []const u8, new_key: []const u8) !void {
 }
 
 pub fn copy(self: *Memory, source: []const u8, destination: []const u8, replace: bool) !void {
-    self.lock.lockShared();
+    self.lock.lock();
     defer self.lock.unlock();
+
     if (self.is_memory_limit_reached()) return error.MemoryLimitExceeded;
 
     // Value to copy.
@@ -182,15 +183,13 @@ pub fn copy(self: *Memory, source: []const u8, destination: []const u8, replace:
     if (destination_result.found_existing) {
         if (replace == false) return error.KeyAlreadyExists;
 
-        const zvalue = try types.ztype_copy(value, self.allocator);
-        const previous_value: *types.ZType = destination_result.value_ptr;
+        // Free old value of the destination key.
+        types.ztype_free(destination_result.value_ptr, self.allocator);
 
-        // Free old value of this key and set new, from source key.
-        types.ztype_free(previous_value, self.allocator);
-        destination_result.value_ptr.* = zvalue;
+        destination_result.value_ptr.* = try types.ztype_copy(value, self.allocator);
         return;
     }
-    const zvalue = try types.ztype_copy(value, self.allocator);
+    const zvalue: types.ZType = try types.ztype_copy(value, self.allocator);
     const zkey: []u8 = try self.allocator.dupe(u8, destination);
 
     destination_result.key_ptr.* = zkey;
