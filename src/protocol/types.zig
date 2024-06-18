@@ -1,5 +1,5 @@
 const std = @import("std");
-const sets = @import("set.zig");
+pub const sets = @import("set.zig");
 
 pub const ZType = union(enum) {
     str: []u8,

@@ -26,6 +26,8 @@ pub const Deserializer = struct {
             .array => return try self.deserialize_array(input),
             .float => return try self.deserialize_float(input),
             .map => return try self.deserialize_map(input),
+            .set => return try self.deserialize_set(input),
+            .uset => return try self.deserialize_uset(input),
             else => return error.UnsuportedType,
         }
     }
@@ -165,6 +167,62 @@ pub const Deserializer = struct {
             );
             result = value_part;
         }
+        return result;
+    }
+
+    fn deserialize_set(self: *Deserializer, input: types.ZType) ![]const u8 {
+        var result: []u8 = undefined;
+
+        const set_prefix = std.fmt.allocPrint(
+            self.arena.allocator(),
+            "~{d}\r\n",
+            .{input.set.count()},
+        ) catch {
+            return error.DeserializationError;
+        };
+
+        result = set_prefix;
+
+        var iterator = input.set.iterator();
+        while (iterator.next()) |entry| {
+            const bytes = try self.process(entry.key_ptr.*);
+            const payload = try std.mem.concat(
+                self.arena.allocator(),
+                u8,
+                &.{ result, bytes },
+            );
+
+            result = payload;
+        }
+
+        return result;
+    }
+
+    fn deserialize_uset(self: *Deserializer, input: types.ZType) ![]const u8 {
+        var result: []u8 = undefined;
+
+        const set_prefix = std.fmt.allocPrint(
+            self.arena.allocator(),
+            "/{d}\r\n",
+            .{input.uset.count()},
+        ) catch {
+            return error.DeserializationError;
+        };
+
+        result = set_prefix;
+
+        var iterator = input.uset.iterator();
+        while (iterator.next()) |entry| {
+            const bytes = try self.process(entry.*);
+            const payload = try std.mem.concat(
+                self.arena.allocator(),
+                u8,
+                &.{ result, bytes },
+            );
+
+            result = payload;
+        }
+
         return result;
     }
 };

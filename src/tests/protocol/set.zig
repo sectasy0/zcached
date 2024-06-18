@@ -219,7 +219,6 @@ test "Set with ZType set" {
 
     try set.insert(ZType{ .set = inner_set });
 
-    std.debug.print("AAAAAAAAAAAAA\n{any}\n", .{set.contains(ZType{ .set = inner_set })});
     try std.testing.expect(set.contains(ZType{ .set = inner_set }));
     try std.testing.expectEqual(ZType{ .set = inner_set }, set.remove(ZType{ .set = inner_set }).?.key);
 }
@@ -236,9 +235,11 @@ test "Set with ZType uset" {
 
     try set.insert(ZType{ .uset = inner_uset });
     std.debug.print("{any}", .{set});
-    std.debug.print("AAAAAAAAAAAAA\n{any}\n", .{set.contains(ZType{ .uset = inner_uset })});
     try std.testing.expect(set.contains(ZType{ .uset = inner_uset }));
-    try std.testing.expectEqual(ZType{ .uset = inner_uset }, set.remove(ZType{ .uset = inner_uset }).?.key);
+    try std.testing.expectEqual(
+        ZType{ .uset = inner_uset },
+        set.remove(ZType{ .uset = inner_uset }).?.key,
+    );
 }
 
 test "Set with ZType null" {
@@ -248,7 +249,10 @@ test "Set with ZType null" {
 
     try set.insert(ZType{ .null = {} });
     try std.testing.expect(set.contains(ZType{ .null = {} }));
-    try std.testing.expectEqual(ZType{ .null = {} }, set.remove(ZType{ .null = {} }).?.key);
+    try std.testing.expectEqual(
+        ZType{ .null = {} },
+        set.remove(ZType{ .null = {} }).?.key,
+    );
 }
 
 test "SetUnordered clone" {
@@ -292,7 +296,10 @@ test "SetUnordered initialization and deinitialization" {
     var set = sets.SetUnordered(ZType).init(allocator);
     defer set.deinit();
 
-    try std.testing.expectEqual(@as(usize, @intCast(0)), set.count());
+    try std.testing.expectEqual(
+        @as(usize, @intCast(0)),
+        set.count(),
+    );
 }
 
 test "SetUnordered insertion and contains" {
