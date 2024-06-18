@@ -6,6 +6,7 @@ comptime {
     _ = @import("tests/protocol/serializer.zig");
     _ = @import("tests/protocol/deserializer.zig");
     _ = @import("tests/protocol/types.zig");
+    _ = @import("tests/protocol/set.zig");
 
     // // server
     _ = @import("tests/server/commands.zig");
