@@ -222,8 +222,9 @@ pub const Handler = struct {
         if (entries.len > 2) {
             if (entries[2] != .str) return .{ .err = error.KeyNotString };
 
-            const param_upper: []u8 = utils.to_uppercase(entries[2].str);
-            if (!std.mem.eql(u8, param_upper, "REPLACE")) return .{ .err = error.BadRequest };
+            // To check if entries[2] is "REPLACE" string.
+            // If not, return error.BadRequest.
+            _ = utils.enum_type_from_str(enum { REPLACE }, entries[2].str) orelse return .{ .err = error.BadRequest };
             replace = true;
         }
         self.memory.copy(entries[0].str, entries[1].str, replace) catch |err| {
