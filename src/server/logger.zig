@@ -75,10 +75,13 @@ pub fn log(self: *Logger, level: LogLevel, comptime format: []const u8, args: an
     if (self.sout) std.debug.print("{s}", .{formatted});
 
     self.file_size += formatted.len;
-    if (self.file_size >= MAX_FILE_SIZE) self.file = self.get_log_file(false) catch |err| {
-        std.log.err("# failed to obtain a new log file: {?}", .{err});
-        return;
-    };
+    if (self.file_size >= MAX_FILE_SIZE) {
+        self.file.close();
+        self.file = self.get_log_file(false) catch |err| {
+            std.log.err("# failed to obtain a new log file: {?}", .{err});
+            return;
+        };
+    }
 
     _ = self.file.write(formatted) catch |err| {
         std.log.err("# failed to write log message: {?}", .{err});
@@ -141,7 +144,10 @@ pub fn get_log_file(self: *Logger, fetch_latest_file_size: bool) !std.fs.File {
 
     if (fetch_latest_file_size) {
         // This should be done only at the startup.
-        const file: std.fs.File = try std.fs.cwd().createFile(file_path, .{ .read = true, .truncate = false });
+        const file: std.fs.File = try std.fs.cwd().createFile(
+            file_path,
+            .{ .read = true, .truncate = false },
+        );
         const file_stat = try file.stat();
         self.file_size = file_stat.size;
 
