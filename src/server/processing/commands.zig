@@ -52,10 +52,10 @@ pub const Handler = struct {
             return .{ .err = error.UnknownCommand };
         }
 
-        const cmd_upper: []u8 = utils.to_uppercase(command_set.items[0].str);
-        const command_type = std.meta.stringToEnum(CommandType, cmd_upper) orelse {
+        const command_type = utils.enum_type_from_str(CommandType, command_set.items[0].str) orelse {
             return .{ .err = error.UnknownCommand };
         };
+
         try switch (command_type) {
             .GET => {
                 if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
@@ -236,8 +236,7 @@ pub const Handler = struct {
     // is creating std.ArrayList so it have to be freed after
     pub fn free(self: *Handler, command_set: *const std.ArrayList(ZType), result: *Result) void {
         _ = self;
-        const cmd_upper: []u8 = utils.to_uppercase(command_set.items[0].str);
-        const command_type = std.meta.stringToEnum(CommandType, cmd_upper) orelse return;
+        const command_type = utils.enum_type_from_str(CommandType, command_set.items[0].str) orelse return;
 
         switch (command_type) {
             .KEYS => result.ok.array.deinit(),
