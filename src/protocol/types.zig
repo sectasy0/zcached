@@ -71,6 +71,8 @@ pub fn ztype_copy(value: ZType, allocator: std.mem.Allocator) anyerror!ZType {
                 );
                 try result.insert(copied);
             }
+
+            return .{ .set = result };
         },
         .uset => {
             var result = ZType.uset.init(allocator);
@@ -83,12 +85,12 @@ pub fn ztype_copy(value: ZType, allocator: std.mem.Allocator) anyerror!ZType {
                 );
                 try result.insert(copied);
             }
+
+            return .{ .uset = result };
         },
         // we do not implement for err because errors wont be stored in Memory
         else => return error.UnsuportedType,
     }
-
-    return value;
 }
 
 pub fn ztype_free(value: *ZType, allocator: std.mem.Allocator) void {
@@ -133,6 +135,6 @@ pub fn ztype_free(value: *ZType, allocator: std.mem.Allocator) void {
                 allocator,
             );
         },
-        else => return,
+        else => unreachable,
     }
 }

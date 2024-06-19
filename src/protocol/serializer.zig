@@ -113,10 +113,11 @@ pub fn SerializerT(comptime GenericReader: type) type {
 
         fn serialize_array(self: *Self, reader: GenericReader) !types.ZType {
             const bytes = try self.read_line_alloc(reader);
+
             if (bytes.len == 0) return error.BadRequest;
 
             const array_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
-                return error.InvalidArrayLength;
+                return error.InvalidLength;
             };
 
             var result = std.ArrayList(types.ZType).initCapacity(
@@ -182,7 +183,7 @@ pub fn SerializerT(comptime GenericReader: type) type {
             if (bytes.len == 0) return error.BadRequest;
 
             const set_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
-                return error.InvalidArrayLength;
+                return error.InvalidLength;
             };
 
             var set = types.sets.Set(types.ZType).init(
@@ -202,7 +203,7 @@ pub fn SerializerT(comptime GenericReader: type) type {
             if (bytes.len == 0) return error.BadRequest;
 
             const set_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
-                return error.InvalidArrayLength;
+                return error.InvalidLength;
             };
 
             var uset = types.sets.SetUnordered(types.ZType).init(

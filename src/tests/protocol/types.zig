@@ -50,6 +50,36 @@ test "test ztype_copy with map" {
     try std.testing.expectEqualStrings(copied.map.get("key2").?.str, @constCast("value2"));
 }
 
+test "test ztype_copy and ztype_free with set" {
+    var set = types.ZType.set.init(std.testing.allocator);
+    defer set.deinit();
+
+    try set.insert(types.ZType{ .int = 1 });
+    try set.insert(types.ZType{ .str = @constCast("value2") });
+
+    const original = types.ZType{ .set = set };
+    var copied = try types.ztype_copy(original, std.testing.allocator);
+    defer types.ztype_free(&copied, std.testing.allocator);
+
+    try std.testing.expectEqual(copied.set.contains(types.ZType{ .int = 1 }), true);
+    try std.testing.expectEqual(copied.set.contains(types.ZType{ .str = @constCast("value2") }), true);
+}
+
+test "test ztype_copy and ztype_free with uset" {
+    var uset = types.ZType.uset.init(std.testing.allocator);
+    defer uset.deinit();
+
+    try uset.insert(types.ZType{ .int = 1 });
+    try uset.insert(types.ZType{ .str = @constCast("value2") });
+
+    const original = types.ZType{ .uset = uset };
+    var copied = try types.ztype_copy(original, std.testing.allocator);
+    defer types.ztype_free(&copied, std.testing.allocator);
+
+    try std.testing.expectEqual(copied.uset.contains(types.ZType{ .int = 1 }), true);
+    try std.testing.expectEqual(copied.uset.contains(types.ZType{ .str = @constCast("value2") }), true);
+}
+
 test "test ztype_copy with nested structures" {
     var map = types.ZType.map.init(std.testing.allocator);
     defer map.deinit();

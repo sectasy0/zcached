@@ -175,7 +175,7 @@ pub const Deserializer = struct {
 
         const set_prefix = std.fmt.allocPrint(
             self.arena.allocator(),
-            "~{d}\r\n",
+            "/{d}\r\n",
             .{input.set.count()},
         ) catch {
             return error.DeserializationError;
@@ -203,7 +203,7 @@ pub const Deserializer = struct {
 
         const set_prefix = std.fmt.allocPrint(
             self.arena.allocator(),
-            "/{d}\r\n",
+            "~{d}\r\n",
             .{input.uset.count()},
         ) catch {
             return error.DeserializationError;

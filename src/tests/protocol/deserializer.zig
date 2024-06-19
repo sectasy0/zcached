@@ -143,7 +143,7 @@ test "serialize set" {
 
     const result = try deserializer.process(value);
     // it's guaranteed that the order of the set will be the same
-    const expected = "~3\r\n$5\r\nfirst\r\n$6\r\nsecond\r\n$5\r\nthird\r\n";
+    const expected = "/3\r\n$5\r\nfirst\r\n$6\r\nsecond\r\n$5\r\nthird\r\n";
     try std.testing.expectEqualStrings(expected, result);
 }
 
@@ -162,6 +162,6 @@ test "serialize uset" {
 
     const result = try deserializer.process(value);
     // it's not guaranteed that the order of the uset will be the same
-    const expected = "/3\r\n$5\r\nfirst\r\n$5\r\nthird\r\n$6\r\nsecond\r\n";
+    const expected = "~3\r\n$5\r\nfirst\r\n$5\r\nthird\r\n$6\r\nsecond\r\n";
     try std.testing.expectEqualStrings(expected, result);
 }

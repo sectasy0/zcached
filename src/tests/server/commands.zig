@@ -5,6 +5,7 @@ const fixtures = @import("../fixtures.zig");
 const ContextFixture = fixtures.ContextFixture;
 
 const ZType = @import("../../protocol/types.zig").ZType;
+const sets = @import("../../protocol/types.zig").sets;
 const commands = @import("../../server/processing/commands.zig");
 
 test "should handle SET command" {
@@ -398,17 +399,27 @@ test "should handle SIZEOF command" {
     defer fixture.deinit();
     try fixture.create_memory();
 
-    var my_map: std.StringHashMap(ZType) = std.StringHashMap(ZType).init(fixture.allocator);
+    var my_map = std.StringHashMap(ZType).init(fixture.allocator);
     try my_map.put("123", .{ .int = 50 });
     defer my_map.deinit();
 
-    var my_array: std.ArrayList(ZType) = std.ArrayList(ZType).init(fixture.allocator);
+    var my_set = sets.Set(ZType).init(fixture.allocator);
+    try my_set.insert(.{ .int = 50 });
+    defer my_set.deinit();
+
+    var my_uset = sets.SetUnordered(ZType).init(fixture.allocator);
+    try my_uset.insert(.{ .int = 50 });
+    defer my_uset.deinit();
+
+    var my_array = std.ArrayList(ZType).init(fixture.allocator);
     try my_array.append(.{ .bool = false });
     try my_array.append(.{ .bool = true });
     defer my_array.deinit();
 
     try fixture.memory.?.put("map-key", .{ .map = my_map });
     try fixture.memory.?.put("array-key", .{ .array = my_array });
+    try fixture.memory.?.put("set-key", .{ .set = my_set });
+    try fixture.memory.?.put("uset-key", .{ .uset = my_uset });
 
     try fixture.memory.?.put("str-key", .{ .str = @constCast("test value") });
     try fixture.memory.?.put("simple-str-key", .{ .sstr = @constCast("test simple value") });
@@ -465,6 +476,14 @@ test "should handle SIZEOF command" {
     try command_set.insert(1, .{ .str = @constCast("array-key") });
     result = cmd_handler.process(&command_set);
     try helper.expectEqualZTypes(result.ok, .{ .int = 2 });
+
+    try command_set.insert(1, .{ .str = @constCast("set-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 1 });
+
+    try command_set.insert(1, .{ .str = @constCast("uset-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 1 });
 }
 
 test "should return error.NotFound for non existing during SIZEOF command" {
