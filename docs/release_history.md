@@ -15,7 +15,9 @@
 - fix: show error message when config is not a file.
 - feat: update zcached to use 0.13.0 zig version.
 - chore: add docker to help other people run zcached
-- feat(command): `ECHO`
+- feat(command): add `ECHO` command implementation.
+- feat(command): `RENAME` command implementation.
+- feat(command): `COPY` command implementation.
 
 ### [0.0.1-alpha] 31.05.2024
 - feat: first working version.
