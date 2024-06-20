@@ -216,6 +216,8 @@ pub const Handler = struct {
     }
 
     fn copy(self: *Handler, entries: []ZType) Result {
+        const CopyArgs = enum { REPLACE };
+
         var replace: bool = false;
         if (entries[0] != .str or entries[1] != .str) return .{ .err = error.KeyNotString };
 
@@ -224,7 +226,7 @@ pub const Handler = struct {
 
             // To check if entries[2] is "REPLACE" string.
             // If not, return error.BadRequest.
-            _ = utils.enum_type_from_str(enum { REPLACE }, entries[2].str) orelse return .{ .err = error.BadRequest };
+            _ = utils.enum_type_from_str(CopyArgs, entries[2].str) orelse return .{ .err = error.BadRequest };
             replace = true;
         }
         self.memory.copy(entries[0].str, entries[1].str, replace) catch |err| {
