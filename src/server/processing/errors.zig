@@ -21,7 +21,7 @@ pub fn build_args(command_set: *const std.ArrayList(ZType)) Args {
 }
 
 // stream is a std.net.Stream
-pub fn handle(stream: anytype, err: anyerror, args: Args, logger: *Logger) !void {
+pub fn handle(stream: anytype, err: anyerror, args: Args, logger: *const Logger) !void {
     const out = stream.writer();
 
     logger.log(.Debug, "handling error: {}", .{err});
