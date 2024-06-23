@@ -269,8 +269,6 @@ fn handle_request(self: *const Listener, worker: *Worker, connection: *Connectio
         };
     }
 
-    std.debug.print("\n{d}\n", .{connection.buffer.len});
-
     _ = std.mem.indexOfScalarPos(
         u8,
         connection.buffer[0..actual_size],
