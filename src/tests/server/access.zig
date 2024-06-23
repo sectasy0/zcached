@@ -32,5 +32,5 @@ test "should return error.NotPermitted" {
     try std.testing.expectEqual(result, error.NotPermitted);
 
     // Yep, without this in the logs, there is still a log about the rejected connection.
-    std.fs.cwd().deleteTree("logs") catch {};
+    std.fs.cwd().deleteTree("log") catch {};
 }
