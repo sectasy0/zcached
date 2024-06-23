@@ -100,3 +100,15 @@ test "NotFound with key name" {
         .{"user_cache_12345"},
     );
 }
+
+test "KeyAlreadyExists" {
+    var buffer: [BUFF_SIZE]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buffer);
+
+    var logger = try Logger.init(std.testing.allocator, null, false);
+    try errors.handle(&stream, error.KeyAlreadyExists, .{}, &logger);
+
+    const expected: []u8 = @constCast("-ERR key already exists\r\n");
+
+    try std.testing.expectEqualStrings(expected, stream.getWritten());
+}

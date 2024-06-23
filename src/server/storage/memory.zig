@@ -36,22 +36,26 @@ pub fn init(
     };
 }
 
-pub fn put(self: *Memory, key: []const u8, value: types.ZType) !void {
+fn is_memory_limit_reached(self: *Memory) bool {
     const tracking = utils.ptrCast(TracingAllocator, self.allocator.ptr);
+    if (tracking.real_size >= self.config.maxmemory and self.config.maxmemory != 0) {
+        return true;
+    }
+    return false;
+}
 
+pub fn put(self: *Memory, key: []const u8, value: types.ZType) !void {
     self.lock.lock();
     defer self.lock.unlock();
 
-    if (tracking.real_size >= self.config.maxmemory and self.config.maxmemory != 0) {
-        return error.MemoryLimitExceeded;
-    }
+    if (self.is_memory_limit_reached()) return error.MemoryLimitExceeded;
 
     switch (value) {
         .err => return error.InvalidValue,
         else => {
+            const result = try self.internal.getOrPut(key);
             const zvalue = try types.ztype_copy(value, self.allocator);
 
-            const result = try self.internal.getOrPut(key);
             if (!result.found_existing) {
                 const zkey: []u8 = try self.allocator.dupe(u8, key);
                 result.key_ptr.* = zkey;
@@ -144,12 +148,7 @@ pub fn rename(self: *Memory, key: []const u8, new_key: []const u8) !void {
 
     // If we are changing the key to a smaller one, it is pointless to block it.
     // The memory usage would be smaller.
-    if (new_key.len > key.len) {
-        const tracking = utils.ptrCast(TracingAllocator, self.allocator.ptr);
-        if (tracking.real_size >= self.config.maxmemory and self.config.maxmemory != 0) {
-            return error.MemoryLimitExceeded;
-        }
-    }
+    if (new_key.len > key.len and self.is_memory_limit_reached()) return error.MemoryLimitExceeded;
 
     var entry = self.internal.fetchRemove(key) orelse return error.NotFound;
     var new_key_entry = self.internal.fetchRemove(new_key);
@@ -169,6 +168,32 @@ pub fn rename(self: *Memory, key: []const u8, new_key: []const u8) !void {
     const zvalue = try types.ztype_copy(entry.value, self.allocator);
 
     self.internal.put(zkey, zvalue) catch return error.InsertFailure;
+}
+
+pub fn copy(self: *Memory, source: []const u8, destination: []const u8, replace: bool) !void {
+    self.lock.lock();
+    defer self.lock.unlock();
+
+    if (self.is_memory_limit_reached()) return error.MemoryLimitExceeded;
+
+    // Value to copy.
+    const value: types.ZType = self.internal.get(source) orelse return error.NotFound;
+    const destination_result = try self.internal.getOrPut(destination);
+
+    if (destination_result.found_existing) {
+        if (replace == false) return error.KeyAlreadyExists;
+
+        // Free old value of the destination key.
+        types.ztype_free(destination_result.value_ptr, self.allocator);
+
+        destination_result.value_ptr.* = try types.ztype_copy(value, self.allocator);
+        return;
+    }
+    const zvalue: types.ZType = try types.ztype_copy(value, self.allocator);
+    const zkey: []u8 = try self.allocator.dupe(u8, destination);
+
+    destination_result.key_ptr.* = zkey;
+    destination_result.value_ptr.* = zvalue;
 }
 
 pub fn deinit(self: *Memory) void {
