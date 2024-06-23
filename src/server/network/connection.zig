@@ -17,6 +17,16 @@ pub fn fd(self: *Connection) std.posix.socket_t {
     return self.stream.handle;
 }
 
+/// resizes connection buffer to `nsize`
+pub fn resize_buffer(self: *Connection, nsize: usize) !void {
+    self.buffer = try self.allocator.realloc(
+        self.buffer,
+        nsize,
+    );
+
+    self.buffer = self.buffer.ptr[0..nsize];
+}
+
 pub fn close(self: *Connection) void {
     self.stream.close();
 }

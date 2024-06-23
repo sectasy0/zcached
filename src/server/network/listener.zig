@@ -259,10 +259,7 @@ fn handle_request(self: *const Listener, worker: *Worker, connection: *Connectio
     // resize buffer if actuall is too small.
     if (actual_size == connection.buffer.len) {
         const new_size = actual_size + self.buffer_size;
-        connection.buffer = connection.allocator.realloc(
-            connection.buffer,
-            new_size,
-        ) catch |err| {
+        connection.resize_buffer(new_size) catch |err| {
             self.context.logger.log(
                 .Error,
                 "# failed to realloc: {?}",
@@ -270,9 +267,9 @@ fn handle_request(self: *const Listener, worker: *Worker, connection: *Connectio
             );
             return err;
         };
-
-        connection.buffer = connection.buffer.ptr[0..new_size];
     }
+
+    std.debug.print("\n{d}\n", .{connection.buffer.len});
 
     _ = std.mem.indexOfScalarPos(
         u8,
