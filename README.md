@@ -46,7 +46,7 @@ echo "*2\r\n\$3\r\nGET\r\n\$9\r\nmycounter\r\n" | netcat -N localhost 7556
 #### PING
 Returns `PONG`. This command is often used to test if a connection is still alive, or to measure latency.
 ```bash
-echo "*1\r\n\$4\r\nPING\r\n" | netcat -N localhost 7556
+echo "*1\r\n$4\r\nPING\r\n" | netcat -N localhost 7556
 ```
 
 ## Running Tests
