@@ -117,23 +117,21 @@ pub fn ztype_free(value: *ZType, allocator: std.mem.Allocator) void {
                 ztype_free(&zvalue, allocator);
             }
         },
-        .set => |v| {
+        inline .set, .uset => |v, tag| {
             defer @constCast(&v).deinit();
 
             var iter = v.iterator();
-            while (iter.next()) |item| ztype_free(
-                item.key_ptr,
-                allocator,
-            );
-        },
-        .uset => |v| {
-            defer @constCast(&v).deinit();
-
-            var iter = v.iterator();
-            while (iter.next()) |item| ztype_free(
-                item, // already a pointer.
-                allocator,
-            );
+            while (iter.next()) |item| {
+                const value_ptr = switch (tag) {
+                    .set => item.key_ptr,
+                    .uset => item,
+                    else => @compileError("not supported tag"),
+                };
+                ztype_free(
+                    value_ptr,
+                    allocator,
+                );
+            }
         },
         else => unreachable,
     }
