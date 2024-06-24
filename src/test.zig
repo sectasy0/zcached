@@ -8,7 +8,8 @@ comptime {
     _ = @import("tests/protocol/types.zig");
     _ = @import("tests/protocol/set.zig");
 
-    // // server
+    // server
+    _ = @import("tests/server/connection.zig");
     _ = @import("tests/server/commands.zig");
     _ = @import("tests/server/errors.zig");
     // // _ = @import("src/server/listener.zig");

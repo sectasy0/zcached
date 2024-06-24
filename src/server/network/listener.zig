@@ -166,10 +166,14 @@ fn handle_incoming(self: *Listener, worker: *Worker) AcceptResult {
         .events = std.posix.POLL.IN,
     };
 
-    const cbuffer = worker.allocator.alloc(u8, self.buffer_size) catch |err| {
+    var connection = Connection.init(
+        worker.allocator,
+        incoming,
+        self.buffer_size,
+    ) catch |err| {
         self.context.logger.log(
             .Error,
-            "# failed to allocate buffer for client: {?}",
+            "# failed to create client struct: {?}",
             .{err},
         );
 
@@ -179,14 +183,6 @@ fn handle_incoming(self: *Listener, worker: *Worker) AcceptResult {
                 .fd = incoming.stream,
             },
         };
-    };
-
-    var connection = Connection{
-        .buffer = cbuffer,
-        .position = 0,
-        .stream = incoming.stream,
-        .address = incoming.address,
-        .allocator = &worker.allocator,
     };
 
     worker.states.put(incoming.stream.handle, connection) catch |err| {
