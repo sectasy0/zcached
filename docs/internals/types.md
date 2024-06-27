@@ -60,6 +60,18 @@ Maps are encoded as arrays of key-value pairs. The first element of the pair is 
 %<length>\r\n<first key>\r\n<first value>\r\n<second key>\r\n<second value>
 ```
 
+### Unordered Set
+An unordered set is encoded similarly to arrays, with unique values and no guaranteed order.
+
+```
+~<length>\r\n<first>\r\n><second>
+```
+### Ordered Set
+An ordered set is encoded similarly to arrays, with unique values and a guaranteed order.
+```
+/<length>\r\n<first>\r\n<second>
+```
+
 ### Errors
 ```
 -<error message>\r\n

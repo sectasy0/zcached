@@ -127,3 +127,41 @@ test "serialize map" {
     const expected = "%3\r\n$1\r\nb\r\n$6\r\nsecond\r\n$1\r\na\r\n$5\r\nfirst\r\n$1\r\nc\r\n$5\r\nthird\r\n";
     try std.testing.expectEqualStrings(expected, result);
 }
+
+test "serialize set" {
+    var set = types.sets.Set(types.ZType).init(std.testing.allocator);
+    defer set.deinit();
+
+    try set.insert(.{ .str = @constCast("first") });
+    try set.insert(.{ .str = @constCast("second") });
+    try set.insert(.{ .str = @constCast("third") });
+
+    var deserializer = Deserializer.init(std.testing.allocator);
+    defer deserializer.deinit();
+
+    const value = types.ZType{ .set = set };
+
+    const result = try deserializer.process(value);
+    // it's guaranteed that the order of the set will be the same
+    const expected = "/3\r\n$5\r\nfirst\r\n$6\r\nsecond\r\n$5\r\nthird\r\n";
+    try std.testing.expectEqualStrings(expected, result);
+}
+
+test "serialize uset" {
+    var uset = types.sets.SetUnordered(types.ZType).init(std.testing.allocator);
+    defer uset.deinit();
+
+    try uset.insert(.{ .str = @constCast("first") });
+    try uset.insert(.{ .str = @constCast("second") });
+    try uset.insert(.{ .str = @constCast("third") });
+
+    var deserializer = Deserializer.init(std.testing.allocator);
+    defer deserializer.deinit();
+
+    const value = types.ZType{ .uset = uset };
+
+    const result = try deserializer.process(value);
+    // it's not guaranteed that the order of the uset will be the same
+    const expected = "~3\r\n$5\r\nfirst\r\n$5\r\nthird\r\n$6\r\nsecond\r\n";
+    try std.testing.expectEqualStrings(expected, result);
+}

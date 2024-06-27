@@ -197,7 +197,7 @@ pub const Handler = struct {
         const value_size: usize = switch (value) {
             .str, .sstr => |str| str.len,
             .array => value.array.items.len,
-            .map => value.map.count(),
+            inline .map, .set, .uset => |v| v.count(),
             inline .int, .float, .bool => |x| @sizeOf(@TypeOf(x)),
             else => 0,
         };

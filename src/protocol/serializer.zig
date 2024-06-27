@@ -21,6 +21,8 @@ pub fn SerializerT(comptime GenericReader: type) type {
             .{ "_", serialize_null },
             .{ "%", serialize_map },
             .{ ":", serialize_int },
+            .{ "~", serialize_uset },
+            .{ "/", serialize_set },
         });
 
         arena: std.heap.ArenaAllocator,
@@ -111,10 +113,11 @@ pub fn SerializerT(comptime GenericReader: type) type {
 
         fn serialize_array(self: *Self, reader: GenericReader) !types.ZType {
             const bytes = try self.read_line_alloc(reader);
+
             if (bytes.len == 0) return error.BadRequest;
 
             const array_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
-                return error.InvalidArrayLength;
+                return error.InvalidLength;
             };
 
             var result = std.ArrayList(types.ZType).initCapacity(
@@ -172,6 +175,46 @@ pub fn SerializerT(comptime GenericReader: type) type {
                 try result.put(key.str, value);
             }
             return .{ .map = result };
+        }
+
+        fn serialize_set(self: *Self, reader: GenericReader) !types.ZType {
+            const bytes = try self.read_line_alloc(reader);
+
+            if (bytes.len == 0) return error.BadRequest;
+
+            const set_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
+                return error.InvalidLength;
+            };
+
+            var set = types.sets.Set(types.ZType).init(
+                self.arena.allocator(),
+            );
+
+            for (0..set_len) |_| {
+                const item = try self.process(reader);
+                try set.insert(item);
+            }
+            return .{ .set = set };
+        }
+
+        fn serialize_uset(self: *Self, reader: GenericReader) !types.ZType {
+            const bytes = try self.read_line_alloc(reader);
+
+            if (bytes.len == 0) return error.BadRequest;
+
+            const set_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
+                return error.InvalidLength;
+            };
+
+            var uset = types.sets.SetUnordered(types.ZType).init(
+                self.arena.allocator(),
+            );
+
+            for (0..set_len) |_| {
+                const item = try self.process(reader);
+                try uset.insert(item);
+            }
+            return .{ .uset = uset };
         }
 
         fn read_line_alloc(self: *Self, reader: GenericReader) ![]const u8 {
