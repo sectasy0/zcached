@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const ztracy = @import("ztracy");
 
 const Config = @import("server/config.zig");
 const cli = @import("server/cli.zig");
@@ -51,6 +52,9 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
 
 pub fn main() void {
     if (builtin.os.tag == .windows) @compileError("windows not supported");
+
+    const tracy_zone = ztracy.ZoneNC(@src(), "Compute Magic", 0x00_ff_00_00);
+    defer tracy_zone.End();
 
     var gpa = std.heap.GeneralPurposeAllocator(.{
         .safety = true,

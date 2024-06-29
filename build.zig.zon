@@ -1,7 +1,9 @@
 .{
     .name = "zcached",
     .version = "0.1.0",
-    .dependencies = .{},
+    .dependencies = .{
+        .ztracy = .{ .path = "tools/ztracy" },
+    },
     .paths = .{
         "src",
         "build.zig",

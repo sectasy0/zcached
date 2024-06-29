@@ -1,5 +1,6 @@
 # Zig build artifacts
 .zig-cache/
+zig-cache/
 zig-out/
 
 # Zig test artifacts
@@ -11,3 +12,4 @@ logs/
 *.zcpf
 persist/*
 zcached.conf
+log/
