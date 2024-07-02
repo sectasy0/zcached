@@ -8,25 +8,25 @@ const context = @import("context.zig");
 /// To manually specify an allocator with each method call see `SetUnmanaged`.
 pub fn SetUnordered(comptime T: type) type {
     return struct {
-        const SetHashMap = std.HashMap(
+        const HashMap = std.HashMap(
             T,
             void,
-            context.ZTypeContext(.unordered),
+            context.ZContext(.unordered),
             std.hash_map.default_max_load_percentage,
         );
 
-        const KV = SetHashMap.KV;
+        const KV = HashMap.KV;
 
-        hash_map: SetHashMap,
+        hash_map: HashMap,
 
         const Self = @This();
 
-        pub const Iterator = SetHashMap.KeyIterator;
+        pub const Iterator = HashMap.KeyIterator;
 
         /// Create a Set using an allocator. Data inside Set
         /// is managed by the caller. Will not automatically be freed.
         pub fn init(a: std.mem.Allocator) Self {
-            return .{ .hash_map = SetHashMap.init(a) };
+            return .{ .hash_map = HashMap.init(a) };
         }
 
         pub fn deinit(self: *Self) void {
@@ -96,25 +96,25 @@ pub fn SetUnordered(comptime T: type) type {
 /// To manually specify an allocator with each method call see `SetUnmanaged`.
 pub fn Set(comptime T: type) type {
     return struct {
-        const SetHashMap = std.ArrayHashMap(
+        const HashMap = std.ArrayHashMap(
             T,
             void,
-            context.ZTypeContext(.ordered),
+            context.ZContext(.ordered),
             true,
         );
 
-        const KV = SetHashMap.KV;
+        const KV = HashMap.KV;
 
-        hash_map: SetHashMap,
+        hash_map: HashMap,
 
         const Self = @This();
 
-        pub const Iterator = SetHashMap.Iterator;
+        pub const Iterator = HashMap.Iterator;
 
         /// Create a Set using an allocator. Data inside Set
         /// is managed by the caller. Will not automatically be freed.
         pub fn init(a: std.mem.Allocator) Self {
-            return .{ .hash_map = SetHashMap.init(a) };
+            return .{ .hash_map = HashMap.init(a) };
         }
 
         pub fn deinit(self: *Self) void {

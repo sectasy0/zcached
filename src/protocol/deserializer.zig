@@ -17,19 +17,19 @@ pub const Deserializer = struct {
     }
 
     pub fn process(self: *Deserializer, input: types.ZType) anyerror![]const u8 {
-        switch (input) {
-            .str => return try self.deserialize_str(input),
-            .sstr => return try self.deserialize_sstr(input),
-            .int => return try self.deserialize_int(input),
-            .bool => return try self.deserialize_bool(input),
-            .null => return try self.deserialize_null(input),
-            .array => return try self.deserialize_array(input),
-            .float => return try self.deserialize_float(input),
-            .map => return try self.deserialize_map(input),
-            .set => return try self.deserialize_set(input),
-            .uset => return try self.deserialize_uset(input),
-            else => return error.UnsuportedType,
-        }
+        return switch (input) {
+            .str => try self.deserialize_str(input),
+            .sstr => try self.deserialize_sstr(input),
+            .int => try self.deserialize_int(input),
+            .bool => try self.deserialize_bool(input),
+            .null => try self.deserialize_null(input),
+            .array => try self.deserialize_array(input),
+            .float => try self.deserialize_float(input),
+            .map => try self.deserialize_map(input),
+            .set => try self.deserialize_set(input),
+            .uset => try self.deserialize_uset(input),
+            else => error.UnsuportedType,
+        };
     }
 
     fn deserialize_str(self: *Deserializer, input: types.ZType) ![]const u8 {

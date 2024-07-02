@@ -1,10 +1,10 @@
 const std = @import("std");
 const activeTag = std.meta.activeTag;
 
-const ZType = @import("types.zig").ZType;
+const ZType = @import("ztype.zig").ZType;
 
 const ContextType = enum { ordered, unordered };
-pub fn ZTypeContext(comptime ctype: anytype) type {
+pub fn ZContext(comptime ctype: anytype) type {
     switch (ctype) {
         .ordered => return ArrayContext,
         .unordered => return Context,
