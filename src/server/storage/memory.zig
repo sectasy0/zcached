@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const types = @import("../../protocol/types.zig");
+const binary = @import("../../protocol/binary.zig");
 const TracingAllocator = @import("../tracing.zig");
 const persistance = @import("../storage/persistance.zig");
 
@@ -8,9 +9,11 @@ const Logger = @import("../logger.zig");
 const Config = @import("../config.zig");
 const utils = @import("../utils.zig");
 
+const ZBucket = []const u8;
+
 const Memory = @This();
 
-internal: std.StringHashMap(types.ZType),
+internal: std.StringHashMap(ZBucket),
 allocator: std.mem.Allocator,
 
 persister: *persistance.Handler,
@@ -27,7 +30,7 @@ pub fn init(
     persister: *persistance.Handler,
 ) Memory {
     return Memory{
-        .internal = std.StringHashMap(types.ZType).init(allocator),
+        .internal = std.StringHashMap(ZBucket).init(allocator),
         .allocator = allocator,
         .config = config,
         .lock = std.Thread.RwLock{},
@@ -54,7 +57,7 @@ pub fn put(self: *Memory, key: []const u8, value: types.ZType) !void {
         .err => return error.InvalidValue,
         else => {
             const result = try self.internal.getOrPut(key);
-            const zvalue = try types.ztype_copy(value, self.allocator);
+            const zvalue = try _encode_alloc(self.allocator, value);
 
             if (!result.found_existing) {
                 const zkey: []u8 = try self.allocator.dupe(u8, key);
@@ -64,8 +67,7 @@ pub fn put(self: *Memory, key: []const u8, value: types.ZType) !void {
             }
 
             const prev_value = result.value_ptr;
-
-            types.ztype_free(prev_value, self.allocator);
+            self.allocator.free(prev_value.*);
 
             result.value_ptr.* = zvalue;
         },
@@ -76,131 +78,153 @@ pub fn get(self: *Memory, key: []const u8) !types.ZType {
     self.lock.lockShared();
     defer self.lock.unlock();
 
-    return self.internal.get(key) orelse error.NotFound;
+    const bucket = self.internal.get(key) orelse return error.NotFound;
+    const value = try _decode_alloc(self.allocator, bucket);
+
+    return value;
 }
 
-pub fn delete(self: *Memory, key: []const u8) bool {
-    self.lock.lock();
-    defer self.lock.unlock();
+// pub fn delete(self: *Memory, key: []const u8) bool {
+//     self.lock.lock();
+//     defer self.lock.unlock();
 
-    const kv = self.internal.fetchRemove(key) orelse return false;
+//     const kv = self.internal.fetchRemove(key) orelse return false;
 
-    var zkey: types.ZType = .{ .str = @constCast(kv.key) };
-    types.ztype_free(
-        &zkey,
-        self.allocator,
-    );
+//     var zkey: types.ZType = .{ .str = @constCast(kv.key) };
+//     types.ztype_free(
+//         &zkey,
+//         self.allocator,
+//     );
 
-    var zvalue: types.ZType = kv.value;
-    types.ztype_free(&zvalue, self.allocator);
+//     var zvalue: types.ZType = kv.value;
+//     types.ztype_free(&zvalue, self.allocator);
 
-    return true;
+//     return true;
+// }
+
+// pub fn flush(self: *Memory) void {
+//     self.lock.lock();
+//     defer self.lock.unlock();
+
+//     var iter = self.internal.iterator();
+//     while (iter.next()) |item| {
+//         var key = .{ .str = @constCast(item.key_ptr.*) };
+//         var value = item.value_ptr.*;
+
+//         types.ztype_free(&key, self.allocator);
+//         types.ztype_free(&value, self.allocator);
+//     }
+
+//     self.internal.clearRetainingCapacity();
+// }
+
+// pub fn size(self: *Memory) i64 {
+//     self.lock.lockShared();
+//     defer self.lock.unlock();
+
+//     return self.internal.count();
+// }
+
+// pub fn save(self: *Memory) !usize {
+//     self.lock.lockShared();
+//     defer self.lock.unlock();
+
+//     return try self.persister.save(self);
+// }
+
+// pub fn keys(self: *Memory) !std.ArrayList(types.ZType) {
+//     self.lock.lockShared();
+//     defer self.lock.unlock();
+
+//     var result = std.ArrayList(types.ZType).init(self.allocator);
+
+//     var iter = self.internal.keyIterator();
+//     while (iter.next()) |key| {
+//         const zkey: types.ZType = .{ .str = @constCast(key.*) };
+//         try result.append(zkey);
+//     }
+
+//     return result;
+// }
+
+// pub fn rename(self: *Memory, key: []const u8, new_key: []const u8) !void {
+//     self.lock.lock();
+//     defer self.lock.unlock();
+
+//     // If we are changing the key to a smaller one, it is pointless to block it.
+//     // The memory usage would be smaller.
+//     if (new_key.len > key.len and self.is_memory_limit_reached()) return error.MemoryLimitExceeded;
+
+//     var entry = self.internal.fetchRemove(key) orelse return error.NotFound;
+//     var new_key_entry = self.internal.fetchRemove(new_key);
+
+//     // Free existing values assigned to 'new_key'
+//     if (new_key_entry != null) {
+//         self.allocator.free(new_key_entry.?.key);
+//         types.ztype_free(&new_key_entry.?.value, self.allocator);
+//     }
+
+//     defer {
+//         self.allocator.free(entry.key);
+//         types.ztype_free(&entry.value, self.allocator);
+//     }
+
+//     const zkey: []u8 = try self.allocator.dupe(u8, new_key);
+//     const zvalue = try types.ztype_copy(entry.value, self.allocator);
+
+//     self.internal.put(zkey, zvalue) catch return error.InsertFailure;
+// }
+
+// pub fn copy(self: *Memory, source: []const u8, destination: []const u8, replace: bool) !void {
+//     self.lock.lock();
+//     defer self.lock.unlock();
+
+//     if (self.is_memory_limit_reached()) return error.MemoryLimitExceeded;
+
+//     // Value to copy.
+//     const value: types.ZType = self.internal.get(source) orelse return error.NotFound;
+//     const destination_result = try self.internal.getOrPut(destination);
+
+//     if (destination_result.found_existing) {
+//         if (replace == false) return error.KeyAlreadyExists;
+
+//         // Free old value of the destination key.
+//         types.ztype_free(destination_result.value_ptr, self.allocator);
+
+//         destination_result.value_ptr.* = try types.ztype_copy(value, self.allocator);
+//         return;
+//     }
+//     const zvalue: types.ZType = try types.ztype_copy(value, self.allocator);
+//     const zkey: []u8 = try self.allocator.dupe(u8, destination);
+
+//     destination_result.key_ptr.* = zkey;
+//     destination_result.value_ptr.* = zvalue;
+// }
+
+fn _encode_alloc(allocator: std.mem.Allocator, value: types.ZType) ![]const u8 {
+    var bucket = std.ArrayList(u8).init(allocator);
+    defer bucket.deinit();
+
+    const zw = binary.ZWriter.init(bucket.writer().any());
+    _ = try zw.write(value);
+
+    return try bucket.toOwnedSlice();
 }
 
-pub fn flush(self: *Memory) void {
-    self.lock.lock();
-    defer self.lock.unlock();
+fn _decode_alloc(allocator: std.mem.Allocator, zbucket: ZBucket) !types.ZType {
+    var bucket = std.io.fixedBufferStream(zbucket);
+    const zr = binary.ZReader.init(bucket.reader().any());
 
-    var iter = self.internal.iterator();
-    while (iter.next()) |item| {
-        var key = .{ .str = @constCast(item.key_ptr.*) };
-        var value = item.value_ptr.*;
+    var value: types.ZType = undefined;
+    _ = try zr.read(&value, allocator);
 
-        types.ztype_free(&key, self.allocator);
-        types.ztype_free(&value, self.allocator);
-    }
-
-    self.internal.clearRetainingCapacity();
-}
-
-pub fn size(self: *Memory) i64 {
-    self.lock.lockShared();
-    defer self.lock.unlock();
-
-    return self.internal.count();
-}
-
-pub fn save(self: *Memory) !usize {
-    self.lock.lockShared();
-    defer self.lock.unlock();
-
-    return try self.persister.save(self);
-}
-
-pub fn keys(self: *Memory) !std.ArrayList(types.ZType) {
-    self.lock.lockShared();
-    defer self.lock.unlock();
-
-    var result = std.ArrayList(types.ZType).init(self.allocator);
-
-    var iter = self.internal.keyIterator();
-    while (iter.next()) |key| {
-        const zkey: types.ZType = .{ .str = @constCast(key.*) };
-        try result.append(zkey);
-    }
-
-    return result;
-}
-
-pub fn rename(self: *Memory, key: []const u8, new_key: []const u8) !void {
-    self.lock.lock();
-    defer self.lock.unlock();
-
-    // If we are changing the key to a smaller one, it is pointless to block it.
-    // The memory usage would be smaller.
-    if (new_key.len > key.len and self.is_memory_limit_reached()) return error.MemoryLimitExceeded;
-
-    var entry = self.internal.fetchRemove(key) orelse return error.NotFound;
-    var new_key_entry = self.internal.fetchRemove(new_key);
-
-    // Free existing values assigned to 'new_key'
-    if (new_key_entry != null) {
-        self.allocator.free(new_key_entry.?.key);
-        types.ztype_free(&new_key_entry.?.value, self.allocator);
-    }
-
-    defer {
-        self.allocator.free(entry.key);
-        types.ztype_free(&entry.value, self.allocator);
-    }
-
-    const zkey: []u8 = try self.allocator.dupe(u8, new_key);
-    const zvalue = try types.ztype_copy(entry.value, self.allocator);
-
-    self.internal.put(zkey, zvalue) catch return error.InsertFailure;
-}
-
-pub fn copy(self: *Memory, source: []const u8, destination: []const u8, replace: bool) !void {
-    self.lock.lock();
-    defer self.lock.unlock();
-
-    if (self.is_memory_limit_reached()) return error.MemoryLimitExceeded;
-
-    // Value to copy.
-    const value: types.ZType = self.internal.get(source) orelse return error.NotFound;
-    const destination_result = try self.internal.getOrPut(destination);
-
-    if (destination_result.found_existing) {
-        if (replace == false) return error.KeyAlreadyExists;
-
-        // Free old value of the destination key.
-        types.ztype_free(destination_result.value_ptr, self.allocator);
-
-        destination_result.value_ptr.* = try types.ztype_copy(value, self.allocator);
-        return;
-    }
-    const zvalue: types.ZType = try types.ztype_copy(value, self.allocator);
-    const zkey: []u8 = try self.allocator.dupe(u8, destination);
-
-    destination_result.key_ptr.* = zkey;
-    destination_result.value_ptr.* = zvalue;
+    return value;
 }
 
 pub fn deinit(self: *Memory) void {
-    var value = .{ .map = self.internal };
-
-    types.ztype_free(
-        &value,
-        self.allocator,
-    );
+    var iter = self.internal.iterator();
+    while (iter.next()) |entry| {
+        self.allocator.free(entry.key_ptr.*);
+        self.allocator.free(entry.value_ptr.*);
+    }
 }

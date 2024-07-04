@@ -68,7 +68,7 @@ fn resize(ctx: *anyopaque, buf: []u8, buf_align: u8, new_len: usize, ret_addr: u
         ret_addr,
     );
 
-    if (stable) {
+    if (stable and new_len > old_len) {
         const size_diff = new_len - old_len;
 
         self.*.real_size += size_diff;

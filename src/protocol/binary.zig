@@ -1,5 +1,5 @@
 const std = @import("std");
-const ZType = @import("types/ztype.zig");
+const ZType = @import("types/ztype.zig").ZType;
 const sets = @import("types/sets.zig");
 
 /// Enum representing the type of data in a binary header.
