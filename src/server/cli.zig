@@ -5,7 +5,8 @@ pub const Args = struct {
     @"log-path": ?[]const u8 = null,
 
     sout: bool = false,
-
+    daemon: bool = false,
+    pid: ?[]const u8 = null,
     version: bool = false,
     help: bool = false,
 
@@ -13,6 +14,8 @@ pub const Args = struct {
         .c = "config-path",
         .l = "log-path",
         .s = "sout",
+        .d = "daemon",
+        .pid = "pid",
         .v = "version",
         .h = "help",
     };
@@ -39,6 +42,8 @@ pub const Parser = struct {
             \\Options:
             \\  -c, --config <str>      Path to the configuration file (default: ./zcached).
             \\  -l, --log-path <str>    Path to the log file (default: ./logs/zcached.log).
+            \\  -d, --daemon            Run zcached as a background process.
+            \\  -pid                    Create pid file at specific location.
             \\  -v, --version           Display zcached's version and exit.
             \\  -h, --help              Display this help message and exit.
             \\
