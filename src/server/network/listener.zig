@@ -208,7 +208,7 @@ fn handle_incoming(self: *Listener, worker: *Worker) AcceptResult {
 
 fn handle_connection(self: *const Listener, worker: *Worker, connection: *Connection) void {
     while (true) {
-        self.handle_request(worker, connection) catch |err| {
+        self.on_receive(worker, connection) catch |err| {
             switch (err) {
                 error.WouldBlock => return,
                 error.NotOpenForReading => return,
@@ -246,7 +246,7 @@ fn handle_disconnection(self: *Listener, worker: *Worker, connection: *Connectio
     }
 }
 
-fn handle_request(self: *const Listener, worker: *Worker, connection: *Connection) !void {
+fn on_receive(self: *const Listener, worker: *Worker, connection: *Connection) !void {
     const read_size = try connection.stream.read(connection.buffer[connection.position..]);
 
     if (read_size == 0) return error.ConnectionClosed;
@@ -275,6 +275,8 @@ fn handle_request(self: *const Listener, worker: *Worker, connection: *Connectio
         connection.position = actual_size;
         return;
     };
+
+    // here we've got the completed message
 
     connection.position = 0;
 
