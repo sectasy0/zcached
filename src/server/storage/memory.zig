@@ -37,7 +37,7 @@ pub fn init(
 }
 
 fn is_memory_limit_reached(self: *Memory) bool {
-    const tracking = utils.ptrCast(TracingAllocator, self.allocator.ptr);
+    const tracking = utils.ptr_cast(TracingAllocator, self.allocator.ptr);
     if (tracking.real_size >= self.config.maxmemory and self.config.maxmemory != 0) {
         return true;
     }

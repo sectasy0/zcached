@@ -9,6 +9,7 @@ zig-test-*
 
 tmp/
 logs/
+log/*
 *.zcpf
 persist/*
 zcached.conf

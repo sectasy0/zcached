@@ -1,7 +1,8 @@
 const std = @import("std");
 const utils = @import("utils.zig");
+const NodeIndex = utils.NodeIndex;
 
-pub const DEFAULT_PATH: []const u8 = "./zcached.conf";
+pub const DEFAULT_PATH: []const u8 = "./zcached.conf.zon";
 
 const Config = @This();
 
@@ -19,23 +20,24 @@ workers: usize = 4,
 whitelist: std.ArrayList(std.net.Address) = undefined,
 proto_max_bulk_len: usize = 512 * 1024 * 1024, // 0 means unlimited, value in bytes
 
-_arena: std.heap.ArenaAllocator,
+allocator: std.mem.Allocator,
 
 pub fn deinit(config: *const Config) void {
-    config._arena.deinit();
+    config.whitelist.deinit();
 }
 
 pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]const u8) !Config {
     var path: []const u8 = DEFAULT_PATH;
     if (file_path != null) path = file_path.?;
 
-    var config = Config{ ._arena = std.heap.ArenaAllocator.init(allocator) };
+    var config = Config{
+        .allocator = allocator,
+        .whitelist = std.ArrayList(std.net.Address).init(allocator),
+    };
     if (log_path != null) config.loger_path = log_path.?;
 
     var timestamp: [40]u8 = undefined;
-    var t_size = utils.timestampf(&timestamp);
-
-    config.whitelist = std.ArrayList(std.net.Address).init(allocator);
+    const t_size = utils.timestampf(&timestamp);
 
     std.debug.print(
         "INFO [{s}] * loading config file from: {s}\n",
@@ -51,119 +53,183 @@ pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]c
     };
     defer file.close();
 
-    const stat = try file.stat();
-    if (stat.kind == .directory) {
-        t_size = utils.timestampf(&timestamp);
-        const err = error.NotFile;
+    const file_size = (try file.stat()).size;
+    const config_bytes = try file.readToEndAllocOptions(
+        allocator,
+        file_size,
+        null,
+        1,
+        0,
+    );
+    defer allocator.free(config_bytes);
 
-        std.debug.print(
-            "WARN [{s}] * failed to load config: {any}\n",
-            .{ timestamp[0..t_size], err },
-        );
+    var ast = try std.zig.Ast.parse(allocator, config_bytes, .zon);
+    defer ast.deinit(allocator);
 
-        return config;
-    }
-
-    const buffer = try config._arena.allocator().alloc(u8, stat.size);
-    defer config._arena.allocator().free(buffer);
-
-    const readed_size = try file.read(buffer);
-    if (readed_size != stat.size) return error.InvalidInput;
-
-    var iter = std.mem.split(u8, buffer, "\n");
-    while (iter.next()) |line| {
-        // # is comment, _ is for internal use, like _arena
-        if (line.len == 0 or line[0] == '#' or line[0] == '_') continue;
-
-        const key_value = try process_line(config._arena.allocator(), line);
-        defer key_value.deinit();
-
-        // Special case for address port because `std.net.Address` is struct with address and port
-        if (std.mem.eql(u8, key_value.items[0], "port")) {
-            if (key_value.items[1].len == 0) continue;
-
-            const parsed = try std.fmt.parseInt(u16, key_value.items[1], 10);
-            config.address.setPort(parsed);
-            continue;
-        }
-
-        try assign_field_value(&config, key_value);
-    }
+    try process_ast(&config, ast);
 
     return config;
 }
 
-fn process_line(allocator: std.mem.Allocator, line: []const u8) !std.ArrayList([]const u8) {
-    var result = std.ArrayList([]const u8).init(allocator);
+const ConfigField = enum {
+    address,
+    port,
+    maxclients,
+    maxmemory,
+    proto_max_bulk_len,
+    workers,
+    cbuffer,
+    whitelist,
+};
 
-    var iter = std.mem.split(u8, line, "=");
+fn process_ast(config: *Config, ast: std.zig.Ast) !void {
+    var buf: [2]NodeIndex = undefined;
+    const root = ast.fullStructInit(
+        &buf,
+        ast.nodes.items(.data)[0].lhs,
+    ) orelse {
+        var timestamp: [40]u8 = undefined;
+        const t_size = utils.timestampf(&timestamp);
+        std.debug.print(
+            "WARN [{s}] * Failed to parse config, invalid `.zon` file, default values will be used\n",
+            .{timestamp[0..t_size]},
+        );
 
-    const key = iter.next();
-    const value = iter.next();
+        return;
+    };
 
-    if (key == null or value == null) return error.InvalidInput;
+    for (root.ast.fields) |field_idx| {
+        const field_name = ast.tokenSlice(ast.firstToken(field_idx) - 2);
 
-    try result.append(key.?);
-    try result.append(value.?);
-
-    return result;
+        process_field(
+            config,
+            &buf,
+            ast,
+            root,
+            field_name,
+            field_idx,
+        ) catch continue;
+    }
 }
 
-fn assign_field_value(config: *Config, key_value: std.ArrayList([]const u8)) !void {
-    // I don't like how many nested things are here, but there is no other way
-    inline for (std.meta.fields(Config)) |field| {
-        if (std.mem.eql(u8, field.name, key_value.items[0])) {
-            const value = config._arena.allocator().alloc(u8, key_value.items[1].len) catch |err| {
+fn process_field(
+    config: *Config,
+    buf: *[2]NodeIndex,
+    ast: std.zig.Ast,
+    root: std.zig.Ast.full.StructInit,
+    field_name: []const u8,
+    field_idx: u32,
+) !void {
+    const allocator = config.allocator;
+
+    if (ast.fullStructInit(buf, field_idx)) |_| return;
+
+    if (ast.fullArrayInit(buf, field_idx)) |v| {
+        var result = std.ArrayList(std.net.Address).init(allocator);
+        errdefer result.deinit();
+
+        for (v.ast.elements) |v_idx| {
+            const value = utils.parse_string(
+                allocator,
+                ast,
+                v_idx,
+            ) catch return;
+            defer allocator.free(value);
+
+            const parsed = std.net.Address.parseIp(
+                value,
+                config.address.getPort(),
+            ) catch |err| {
                 std.debug.print(
-                    "ERROR [{d}] * failed to allocate memory {?}\n",
-                    .{ std.time.timestamp(), err },
+                    "ERROR [{d}] * parsing {s} as std.net.Address, {?}\n",
+                    .{ std.time.timestamp(), value, err },
                 );
                 return;
             };
 
-            @memcpy(value, key_value.items[1]);
-
-            if (value.len == 0) return;
-
-            switch (field.type) {
-                usize => {
-                    const parsed = std.fmt.parseInt(usize, value, 10) catch |err| {
-                        std.debug.print(
-                            "DEBUG [{d}] * parsing {s} as usize, {?}\n",
-                            .{ std.time.timestamp(), value, err },
-                        );
-                        return;
-                    };
-                    @field(config, field.name) = parsed;
-                },
-                std.net.Address => {
-                    const parsed = std.net.Address.parseIp(value, config.address.getPort()) catch |err| {
-                        std.debug.print(
-                            "DEBUG [{d}] * parsing {s} as std.net.Address, {?}\n",
-                            .{ std.time.timestamp(), value, err },
-                        );
-                        return;
-                    };
-                    @field(config, field.name) = parsed;
-                },
-                std.ArrayList(std.net.Address) => {
-                    config.whitelist = std.ArrayList(std.net.Address).init(config._arena.allocator());
-
-                    var addresses = std.mem.split(u8, value, ",");
-
-                    while (addresses.next()) |address| {
-                        const parsed = std.net.Address.parseIp(address, config.address.getPort()) catch |err| {
-                            std.debug.print(
-                                "DEBUG [{d}] * parsing {s} as std.net.Address, {?}\n",
-                                .{ std.time.timestamp(), address, err },
-                            );
-                            return;
-                        };
-                        try @field(config, field.name).append(parsed);
-                    }
-                },
-                else => unreachable,
-            }
+            try result.append(parsed);
         }
+
+        try assign_field_value(config, field_name, result);
+
+        return;
+    }
+
+    const node = root.ast.fields[field_idx - 1];
+    const info: std.zig.Ast.Node = ast.nodes.get(node);
+
+    switch (info.tag) {
+        std.zig.Ast.Node.Tag.number_literal => {
+            const value = utils.parse_number(ast, field_idx);
+
+            try assign_field_value(config, field_name, value.int);
+        },
+        std.zig.Ast.Node.Tag.string_literal => {
+            const value = try utils.parse_string(allocator, ast, field_idx);
+            defer allocator.free(value);
+
+            try assign_field_value(config, field_name, value);
+        },
+
+        else => return,
+    }
+}
+
+fn assign_field_value(config: *Config, field_name: []const u8, value: anytype) !void {
+    const config_field = std.meta.stringToEnum(ConfigField, field_name);
+    if (config_field == null) return;
+
+    switch (config_field.?) {
+        .address => {
+            if (@TypeOf(value) != []const u8) return;
+
+            const parsed = std.net.Address.parseIp(value, config.address.getPort()) catch |err| {
+                std.debug.print(
+                    "ERROR [{d}] * parsing {s} as std.net.Address, {?}\n",
+                    .{ std.time.timestamp(), value, err },
+                );
+                return;
+            };
+
+            config.address = parsed;
+        },
+        .port => {
+            if (@TypeOf(value) != u64) return;
+
+            config.address.setPort(@as(u16, @truncate(value)));
+        },
+        .maxclients => {
+            if (@TypeOf(value) != u64) return;
+
+            config.maxclients = value;
+        },
+        .maxmemory => {
+            if (@TypeOf(value) != u64) return;
+
+            config.maxmemory = value;
+        },
+        .proto_max_bulk_len => {
+            if (@TypeOf(value) != u64) return;
+
+            config.proto_max_bulk_len = value;
+        },
+        .workers => {
+            if (@TypeOf(value) != u64) return;
+
+            config.workers = value;
+        },
+        .cbuffer => {
+            if (@TypeOf(value) != u64) return;
+
+            config.cbuffer = value;
+        },
+        .whitelist => {
+            if (@TypeOf(value) != std.ArrayList(std.net.Address)) return;
+
+            const old_whitelist = config.whitelist;
+            defer old_whitelist.deinit();
+
+            config.whitelist = value;
+        },
     }
 }

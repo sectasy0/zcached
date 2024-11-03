@@ -79,3 +79,13 @@ test "repr" {
 
     try std.testing.expectEqualStrings(expected, actual);
 }
+
+// test "parse_address" {
+//     const value = "127.0.0.1";
+//     const port: u16 = 8080;
+//     const expected = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, port);
+//     const result = utils.parse_address(value, port) orelse unreachable;
+
+//     std.debug.print("{any}:{any}", .{ expected, result });
+//     try std.testing.expectEqual(expected, result);
+// }

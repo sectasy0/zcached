@@ -13,8 +13,7 @@ const AccessMiddleware = @import("../middleware/access.zig");
 
 const utils = @import("../utils.zig");
 const Logger = @import("../logger.zig");
-
-const DEFAULT_CLIENT_BUFFER: usize = 4096;
+const consts = @import("consts.zig");
 
 const Listener = @This();
 
@@ -37,7 +36,7 @@ pub fn init(
         .allocator = allocator,
         .server = server,
         .context = context,
-        .buffer_size = buffer_size orelse DEFAULT_CLIENT_BUFFER,
+        .buffer_size = buffer_size orelse consts.CLIENT_BUFFER,
     };
 }
 
@@ -76,7 +75,7 @@ pub fn listen(self: *Listener, worker: *Worker) void {
                 switch (err) {
                     // ConnectionAborted aborted is returned when:
                     // - cant set fd to non-block
-                    // - cant allocate buffer fo incoming connection
+                    // - cant allocate buffer for incoming connection
                     // - cant set fd to worker states
                     //
                     // NotPermitted is returned when:
@@ -269,7 +268,7 @@ fn on_receive(self: *const Listener, worker: *Worker, connection: *Connection) !
         u8,
         connection.buffer[0..actual_size],
         connection.position,
-        '\n',
+        consts.EXT_CHAR,
     ) orelse {
         // don't have a complete message yet
         connection.position = actual_size;

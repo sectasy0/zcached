@@ -157,7 +157,7 @@ test "memory should not grow if key overriden with put" {
         fixture.memory.?.put(key, value) catch {};
     }
 
-    const tracking = utils.ptrCast(
+    const tracking = utils.ptr_cast(
         TracingAllocator,
         fixture.memory.?.allocator.ptr,
     );
