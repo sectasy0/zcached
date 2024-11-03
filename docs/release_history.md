@@ -19,6 +19,7 @@
 - feat(command): `RENAME` command implementation.
 - feat(command): `COPY` command implementation.
 - feat: systemd integration.
+- feat: use .zon (Zig Object Notation) as a config format.
 
 ### [0.0.1-alpha] 31.05.2024
 - feat: first working version.
