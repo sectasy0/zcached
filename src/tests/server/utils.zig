@@ -2,11 +2,15 @@ const std = @import("std");
 const ctime = @cImport(@cInclude("time.h"));
 const utils = @import("../../server/utils.zig");
 
-test "to_uppercase" {
-    const str = @constCast("hello world");
-    const expected = @constCast("HELLO WORLD");
-    const actual = utils.to_uppercase(str);
-    try std.testing.expectEqualStrings(expected, actual);
+test "enum_type_from_str" {
+    const Tag = enum {
+        a,
+        b,
+    };
+    const str = "A";
+    const expected = Tag.a;
+    const actual = utils.enum_type_from_str(Tag, str).?;
+    try std.testing.expectEqual(expected, actual);
 }
 
 test "create_path" {

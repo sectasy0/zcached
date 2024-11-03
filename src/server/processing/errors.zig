@@ -21,7 +21,7 @@ pub fn build_args(command_set: *const std.ArrayList(ZType)) Args {
 }
 
 // stream is a std.net.Stream
-pub fn handle(stream: anytype, err: anyerror, args: Args, logger: *Logger) !void {
+pub fn handle(stream: anytype, err: anyerror, args: Args, logger: *const Logger) !void {
     const out = stream.writer();
 
     logger.log(.Debug, "handling error: {}", .{err});
@@ -37,6 +37,8 @@ pub fn handle(stream: anytype, err: anyerror, args: Args, logger: *Logger) !void
         error.BulkTooLarge => try out.writeAll("-ERR bulk too large\r\n"),
         error.NotWhitelisted => try out.writeAll("-ERR not whitelisted\r\n"),
         error.SaveFailure => try out.writeAll("-ERR there is no data to save\r\n"),
+        error.InvalidLength => try out.writeAll("-ERR invalid length\r\n"),
+        error.KeyAlreadyExists => try out.writeAll("-ERR key already exists\r\n"),
         else => try out.writeAll("-ERR unexpected\r\n"),
     };
 }

@@ -1,0 +1,53 @@
+name: Feature Request
+description: Propose a new feature or enhancement
+labels: ["enhancement", "feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a new feature! Please fill out the details below to help us understand your request.
+        ## Remember to search before filing a new request
+        Please search the issue tracker to see if the feature has already been requested, and use a feature request title that would help others find your request in the future.
+  - type: input
+    id: title
+    attributes:
+      label: Feature Title
+      description: "A brief title for your feature request"
+      placeholder: "Descriptive Title of the Feature"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Feature Description
+      description: "A clear and concise description of the feature you are requesting. Explain what the feature is and how it should work."
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: "Describe the problem this feature would solve. Explain why this feature is important and how it will benefit users. Include any relevant use cases or scenarios."
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed Solution
+      description: |
+        Outline the proposed solution in detail. This should include:
+        - A step-by-step description of how the feature would function.
+        - Any changes to the current user interface or user experience.
+        - Any new APIs, commands, or configurations required.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives_considered
+    attributes:
+      label: Alternatives Considered
+      description: "If applicable, describe any alternative solutions you considered and why you believe the proposed solution is the best option."
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional Context
+      description: "Add any other context or screenshots about the feature request here. Include links to relevant issues, pull requests, or external documentation."

@@ -51,7 +51,7 @@ pub fn listen(self: *Listener, worker: *Worker) void {
         _ = std.posix.poll(worker.poll_fds[self.start..worker.connections], -1) catch |err| {
             self.context.logger.log(
                 .Error,
-                "# std.os.poll failure: {?}\n",
+                "# std.os.poll failure: {?}",
                 .{err},
             );
             return;
@@ -165,10 +165,14 @@ fn handle_incoming(self: *Listener, worker: *Worker) AcceptResult {
         .events = std.posix.POLL.IN,
     };
 
-    const cbuffer = worker.allocator.alloc(u8, self.buffer_size) catch |err| {
+    var connection = Connection.init(
+        worker.allocator,
+        incoming,
+        self.buffer_size,
+    ) catch |err| {
         self.context.logger.log(
             .Error,
-            "# failed to allocate buffer for client: {?}",
+            "# failed to create client struct: {?}",
             .{err},
         );
 
@@ -178,14 +182,6 @@ fn handle_incoming(self: *Listener, worker: *Worker) AcceptResult {
                 .fd = incoming.stream,
             },
         };
-    };
-
-    var connection = Connection{
-        .buffer = cbuffer,
-        .position = 0,
-        .stream = incoming.stream,
-        .address = incoming.address,
-        .allocator = &worker.allocator,
     };
 
     worker.states.put(incoming.stream.handle, connection) catch |err| {
@@ -211,7 +207,7 @@ fn handle_incoming(self: *Listener, worker: *Worker) AcceptResult {
 
 fn handle_connection(self: *const Listener, worker: *Worker, connection: *Connection) void {
     while (true) {
-        self.process_stream(worker, connection) catch |err| {
+        self.on_receive(worker, connection) catch |err| {
             switch (err) {
                 error.WouldBlock => return,
                 error.NotOpenForReading => return,
@@ -249,8 +245,7 @@ fn handle_disconnection(self: *Listener, worker: *Worker, connection: *Connectio
     }
 }
 
-// Ther
-fn process_stream(self: *const Listener, worker: *Worker, connection: *Connection) !void {
+fn on_receive(self: *const Listener, worker: *Worker, connection: *Connection) !void {
     const read_size = try connection.stream.read(connection.buffer[connection.position..]);
 
     if (read_size == 0) return error.ConnectionClosed;
@@ -259,10 +254,7 @@ fn process_stream(self: *const Listener, worker: *Worker, connection: *Connectio
     // resize buffer if actuall is too small.
     if (actual_size == connection.buffer.len) {
         const new_size = actual_size + self.buffer_size;
-        connection.buffer = connection.allocator.realloc(
-            connection.buffer,
-            new_size,
-        ) catch |err| {
+        connection.resize_buffer(new_size) catch |err| {
             self.context.logger.log(
                 .Error,
                 "# failed to realloc: {?}",
@@ -270,8 +262,6 @@ fn process_stream(self: *const Listener, worker: *Worker, connection: *Connectio
             );
             return err;
         };
-
-        connection.buffer = connection.buffer.ptr[0..new_size];
     }
 
     _ = std.mem.indexOfScalarPos(
@@ -284,6 +274,8 @@ fn process_stream(self: *const Listener, worker: *Worker, connection: *Connectio
         connection.position = actual_size;
         return;
     };
+
+    // here we've got the completed message
 
     connection.position = 0;
 

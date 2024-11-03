@@ -1,4 +1,4 @@
-## zcached supported data types
+## Supported data types
 
 ### Simple strings
 Simple strings are encoded as (+) followed by the string content and terminated by CRLF (\r\n). To send binary-safe strings, use bulk strings.
@@ -58,6 +58,18 @@ So an empty Array is just the following:
 Maps are encoded as arrays of key-value pairs. The first element of the pair is the key, the second is the value.
 ```
 %<length>\r\n<first key>\r\n<first value>\r\n<second key>\r\n<second value>
+```
+
+### Unordered Set
+An unordered set is encoded similarly to arrays, with unique values and no guaranteed order.
+
+```
+~<length>\r\n<first>\r\n><second>
+```
+### Ordered Set
+An ordered set is encoded similarly to arrays, with unique values and a guaranteed order.
+```
+/<length>\r\n<first>\r\n<second>
 ```
 
 ### Errors

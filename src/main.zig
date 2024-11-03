@@ -157,6 +157,16 @@ fn handle_arguments(args: cli.Args) ?void {
         };
         return null;
     }
+
+    if (args.daemon) {
+        if (args.pid == null) {
+            std.log.err("# missing -pid file path", .{});
+            return null;
+        }
+        const daemon = @import("server/daemon.zig");
+        daemon.daemonize(args.pid.?);
+        return void{};
+    }
 }
 
 fn run_supervisor(allocator: std.mem.Allocator, context: Employer.Context) void {
@@ -168,6 +178,7 @@ fn run_supervisor(allocator: std.mem.Allocator, context: Employer.Context) void 
         context.logger.log(.Error, "# failed to initialize server: {any}", .{err});
         return;
     };
+    defer employer.deinit();
 
     employer.supervise();
 }

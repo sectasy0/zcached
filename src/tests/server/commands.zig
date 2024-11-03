@@ -5,6 +5,7 @@ const fixtures = @import("../fixtures.zig");
 const ContextFixture = fixtures.ContextFixture;
 
 const ZType = @import("../../protocol/types.zig").ZType;
+const sets = @import("../../protocol/types.zig").sets;
 const commands = @import("../../server/processing/commands.zig");
 
 test "should handle SET command" {
@@ -391,4 +392,333 @@ test "should SAVE return error.SaveFailure when there is no data" {
     const result = cmd_handler.process(&command_set);
 
     try std.testing.expectEqual(result.err, error.SaveFailure);
+}
+
+test "should handle SIZEOF command" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+
+    var my_map = std.StringHashMap(ZType).init(fixture.allocator);
+    try my_map.put("123", .{ .int = 50 });
+    defer my_map.deinit();
+
+    var my_set = sets.Set(ZType).init(fixture.allocator);
+    try my_set.insert(.{ .int = 50 });
+    defer my_set.deinit();
+
+    var my_uset = sets.SetUnordered(ZType).init(fixture.allocator);
+    try my_uset.insert(.{ .int = 50 });
+    defer my_uset.deinit();
+
+    var my_array = std.ArrayList(ZType).init(fixture.allocator);
+    try my_array.append(.{ .bool = false });
+    try my_array.append(.{ .bool = true });
+    defer my_array.deinit();
+
+    try fixture.memory.?.put("map-key", .{ .map = my_map });
+    try fixture.memory.?.put("array-key", .{ .array = my_array });
+    try fixture.memory.?.put("set-key", .{ .set = my_set });
+    try fixture.memory.?.put("uset-key", .{ .uset = my_uset });
+
+    try fixture.memory.?.put("str-key", .{ .str = @constCast("test value") });
+    try fixture.memory.?.put("simple-str-key", .{ .sstr = @constCast("test simple value") });
+
+    try fixture.memory.?.put("int-key", .{ .int = 1025 });
+    try fixture.memory.?.put("float-key", .{ .float = 809.6 });
+
+    try fixture.memory.?.put("bool-key", .{ .bool = true });
+    try fixture.memory.?.put("null-key", .{ .null = undefined });
+
+    var cmd_handler = commands.Handler.init(fixture.allocator, &fixture.memory.?, &fixture.logger);
+
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    defer command_set.deinit();
+
+    // Strings
+
+    try command_set.append(.{ .str = @constCast("SIZEOF") });
+    try command_set.append(.{ .str = @constCast("str-key") });
+
+    var result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 10 });
+
+    try command_set.insert(1, .{ .str = @constCast("simple-str-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 17 });
+
+    // Numbers
+
+    try command_set.insert(1, .{ .str = @constCast("float-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 8 });
+
+    try command_set.insert(1, .{ .str = @constCast("int-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 8 });
+
+    // Bool / Null
+
+    try command_set.insert(1, .{ .str = @constCast("bool-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 1 });
+
+    try command_set.insert(1, .{ .str = @constCast("null-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 0 });
+
+    // Map / Array
+
+    try command_set.insert(1, .{ .str = @constCast("map-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 1 });
+
+    try command_set.insert(1, .{ .str = @constCast("array-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 2 });
+
+    try command_set.insert(1, .{ .str = @constCast("set-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 1 });
+
+    try command_set.insert(1, .{ .str = @constCast("uset-key") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .int = 1 });
+}
+
+test "should return error.NotFound for non existing during SIZEOF command" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+
+    var cmd_handler = commands.Handler.init(fixture.allocator, &fixture.memory.?, &fixture.logger);
+
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("SIZEOF") });
+    try command_set.append(.{ .str = @constCast("null-key") });
+
+    const result = cmd_handler.process(&command_set);
+    try std.testing.expectEqual(result.err, error.NotFound);
+}
+
+test "should handle ECHO command" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+
+    var cmd_handler = commands.Handler.init(fixture.allocator, &fixture.memory.?, &fixture.logger);
+
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("ECHO") });
+    try command_set.append(.{ .str = @constCast("Hello World!") });
+
+    var result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .str = @constCast("Hello World!") });
+
+    // Simple string case.
+    try command_set.insert(1, .{ .sstr = @constCast("Hello Mars!") });
+    result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .str = @constCast("Hello Mars!") });
+}
+
+test "should ECHO return error.KeyNotString" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+
+    var cmd_handler = commands.Handler.init(fixture.allocator, &fixture.memory.?, &fixture.logger);
+
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("ECHO") });
+    try command_set.append(.{ .int = 5 });
+
+    const result = cmd_handler.process(&command_set);
+    try std.testing.expectEqual(result.err, error.KeyNotString);
+}
+
+test "should handle RENAME command" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    try fixture.memory.?.put("key", .{ .bool = true });
+
+    var cmd_handler = commands.Handler.init(fixture.allocator, &fixture.memory.?, &fixture.logger);
+
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("RENAME") });
+    try command_set.append(.{ .str = @constCast("key") });
+    try command_set.append(.{ .str = @constCast("key2") });
+
+    const result = cmd_handler.process(&command_set);
+
+    try helper.expectEqualZTypes(result.ok, .{ .str = @constCast("OK") });
+    try helper.expectEqualZTypes(try fixture.memory.?.get("key2"), .{ .bool = true });
+}
+
+test "should RENAME return error.NotFound" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+
+    var cmd_handler = commands.Handler.init(fixture.allocator, &fixture.memory.?, &fixture.logger);
+
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("RENAME") });
+    try command_set.append(.{ .str = @constCast("key") });
+    try command_set.append(.{ .str = @constCast("key2") });
+
+    const result = cmd_handler.process(&command_set);
+    try std.testing.expectEqual(result.err, error.NotFound);
+}
+
+test "should RENAME return error.InvalidCommand" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+
+    var cmd_handler = commands.Handler.init(fixture.allocator, &fixture.memory.?, &fixture.logger);
+
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("RENAME") });
+    try command_set.append(.{ .str = @constCast("key") });
+
+    const result = cmd_handler.process(&command_set);
+    try std.testing.expectEqual(result.err, error.InvalidCommand);
+}
+
+test "should RENAME return error.KeyNotString" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+
+    var cmd_handler = commands.Handler.init(fixture.allocator, &fixture.memory.?, &fixture.logger);
+
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("RENAME") });
+    try command_set.append(.{ .int = 50 });
+    try command_set.append(.{ .int = 10 });
+
+    var result = cmd_handler.process(&command_set);
+    try std.testing.expectEqual(result.err, error.KeyNotString);
+
+    // To test second key.
+    try command_set.insert(1, .{ .str = @constCast("testkey") });
+    result = cmd_handler.process(&command_set);
+    try std.testing.expectEqual(result.err, error.KeyNotString);
+}
+
+test "should handle COPY command" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+
+    try fixture.memory.?.put("test", .{ .int = 10 });
+    var cmd_handler = commands.Handler.init(fixture.allocator, &fixture.memory.?, &fixture.logger);
+
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("COPY") });
+    try command_set.append(.{ .str = @constCast("test") });
+    try command_set.append(.{ .str = @constCast("testcopy") });
+
+    const result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .str = @constCast("OK") });
+    try helper.expectEqualZTypes(try fixture.memory.?.get("testcopy"), .{ .int = 10 });
+}
+
+test "should handle COPY command with REPLACE param" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+
+    try fixture.memory.?.put("test", .{ .int = 1 });
+    try fixture.memory.?.put("test2", .{ .int = 2 });
+    var cmd_handler = commands.Handler.init(fixture.allocator, &fixture.memory.?, &fixture.logger);
+
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("COPY") });
+    try command_set.append(.{ .str = @constCast("test") });
+    try command_set.append(.{ .str = @constCast("test2") });
+    try command_set.append(.{ .str = @constCast("REPLACE") });
+
+    const result = cmd_handler.process(&command_set);
+    try helper.expectEqualZTypes(result.ok, .{ .str = @constCast("OK") });
+    try helper.expectEqualZTypes(try fixture.memory.?.get("test2"), .{ .int = 1 });
+}
+
+test "should COPY return error.InvalidCommand" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+
+    var cmd_handler = commands.Handler.init(fixture.allocator, &fixture.memory.?, &fixture.logger);
+
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("COPY") });
+    try command_set.append(.{ .str = @constCast("test") });
+
+    const result = cmd_handler.process(&command_set);
+    try std.testing.expectEqual(result.err, error.InvalidCommand);
+}
+
+test "should COPY return error.KeyNotString" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+
+    var cmd_handler = commands.Handler.init(fixture.allocator, &fixture.memory.?, &fixture.logger);
+
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("COPY") });
+    try command_set.append(.{ .float = 0.1 });
+    try command_set.append(.{ .float = 0.2 });
+    try command_set.append(.{ .float = 0.3 });
+
+    for (1..4) |index| {
+        // Replace float parameter with a string and see if the next one returns an error.
+        const result = cmd_handler.process(&command_set);
+        try std.testing.expectEqual(result.err, error.KeyNotString);
+
+        try command_set.insert(index, .{ .str = @constCast("strparam") });
+    }
+}
+
+test "should COPY return error.KeyAlreadyExists" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    try fixture.memory.?.put("test", .{ .int = 1 });
+    try fixture.memory.?.put("test2", .{ .int = 2 });
+
+    var cmd_handler = commands.Handler.init(fixture.allocator, &fixture.memory.?, &fixture.logger);
+    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    defer command_set.deinit();
+
+    try command_set.append(.{ .str = @constCast("COPY") });
+    try command_set.append(.{ .str = @constCast("test") });
+    try command_set.append(.{ .str = @constCast("test2") });
+
+    const result = cmd_handler.process(&command_set);
+    try std.testing.expectEqual(result.err, error.KeyAlreadyExists);
 }

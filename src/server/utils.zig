@@ -1,11 +1,24 @@
 const std = @import("std");
 const ctime = @cImport(@cInclude("time.h"));
 
-// Converts each character in the given byte array to its uppercase equivalent.
-pub fn to_uppercase(str: []u8) []u8 {
-    var result: [1024]u8 = undefined;
-    for (str, 0..) |c, index| result[index] = std.ascii.toUpper(c);
-    return result[0..str.len];
+/// Converts a string representation of an enum or union type to the corresponding enum value (Ignores case).
+///
+/// Example usage:
+///
+/// const MyEnum = enum { A, B, C };
+/// const value = enum_type_from_str(MyEnum, "B"); // returns MyEnum.B
+///
+pub inline fn enum_type_from_str(comptime T: type, str: []const u8) ?T {
+    switch (@typeInfo(T)) {
+        .Enum, .Union => {},
+        else => @compileError("expected type T to be union or enum"),
+    }
+    const fields = std.meta.fields(T);
+
+    inline for (fields) |field| {
+        if (std.ascii.eqlIgnoreCase(str, field.name)) return @enumFromInt(field.value);
+    }
+    return null;
 }
 
 // Performs a pointer cast from an opaque pointer to a typed pointer of type `T`.
@@ -20,7 +33,7 @@ pub fn create_path(file_path: []const u8) void {
 
     std.fs.cwd().makePath(path) catch |err| {
         if (err == error.PathAlreadyExists) return;
-        std.log.err("failed to create path: {?}", .{err});
+        std.log.err("failed to create path: {s} ({?})", .{ path, err });
         return;
     };
 }
