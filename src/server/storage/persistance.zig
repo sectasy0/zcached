@@ -90,15 +90,15 @@ pub fn save(self: *Handler, memory: *Memory) !usize {
     };
     defer file.close();
 
-    var iterator = memory.internal.iterator();
-    while (iterator.next()) |item| {
-        const key = try serializer.process(.{ .str = @constCast(item.key_ptr.*) });
-        try bytes.appendSlice(key);
+    // var iterator = memory.internal.iterator();
+    // while (iterator.next()) |item| {
+    //     const key = try serializer.process(.{ .str = @constCast(item.key_ptr.*) });
+    //     try bytes.appendSlice(key);
 
-        const value = try serializer.process(item.value_ptr.*);
+    //     const value = try serializer.process(item.value_ptr.*);
 
-        try bytes.appendSlice(value);
-    }
+    //     try bytes.appendSlice(value);
+    // }
 
     const payload = bytes.toOwnedSlice() catch return 0;
     defer self.allocator.free(payload);

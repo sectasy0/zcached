@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const sets = @import("../../protocol/set.zig");
+const sets = @import("../../protocol/types/sets.zig");
 const ZType = @import("../../protocol/types.zig").ZType;
 const helpers = @import("../helper.zig");
 
@@ -234,7 +234,6 @@ test "Set with ZType uset" {
     try inner_uset.insert(ZType{ .int = 2 });
 
     try set.insert(ZType{ .uset = inner_uset });
-    std.debug.print("{any}", .{set});
     try std.testing.expect(set.contains(ZType{ .uset = inner_uset }));
     try std.testing.expectEqual(
         ZType{ .uset = inner_uset },

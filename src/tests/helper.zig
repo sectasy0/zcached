@@ -101,7 +101,10 @@ pub fn expectEqualZTypes(first: types.ZType, second: types.ZType) !void {
             }
         },
         .sstr => try std.testing.expectEqualStrings(first.sstr, second.sstr),
-        .int => try std.testing.expectEqual(first, second),
+        .int => {
+            std.debug.print("{d}:{d}", .{ first.int, second.int });
+            try std.testing.expectEqual(first, second);
+        },
         .float => try std.testing.expectEqual(first, second),
         .bool => try std.testing.expectEqual(first, second),
         .null => try std.testing.expectEqual(first, second),

@@ -52,7 +52,7 @@ pub const ZWriter = struct {
 
     pub fn write(zw: ZWriter, value: ZType) anyerror!usize {
         return switch (value) {
-            .str => |val| try zw.write_str(val),
+            .str, .sstr => |val| try zw.write_str(val),
             .bool => |val| try zw.write_bool(val),
             .int => |val| try zw.write_int(val),
             .float => |val| try zw.write_float(val),
@@ -157,6 +157,8 @@ pub const ZWriter = struct {
 
     fn write_int(zw: ZWriter, value: i64) !usize {
         const needed = bytes_needed(i64, value);
+
+        std.debug.print("bytes needed: {d}/n", .{needed});
         const as_bytes = std.mem.asBytes(&value);
 
         _ = try zw.writer.writeByte(
@@ -223,6 +225,7 @@ pub const ZReader = struct {
             .null => out.* = .{ .null = {} },
             .int => {
                 const bytes_len = @as(usize, byte >> 4);
+                std.debug.print("len: {d}\n", .{bytes_len});
                 const value = try zr.reader.readVarInt(i64, .little, bytes_len);
 
                 size += bytes_len;
@@ -333,9 +336,14 @@ fn bytes_needed(comptime T: type, value: T) u8 {
                 return @intCast(@sizeOf(i64));
             }
 
-            const U = std.meta.Int(.unsigned, info.bits);
-            const x = @as(U, @intCast(value));
-            const bits = std.math.log2_int_ceil(U, x);
+            if (info.signedness == .signed and value == 1) {
+                return 1;
+            }
+
+            const UType = std.meta.Int(.unsigned, info.bits);
+            const u_val = @as(UType, @intCast(value));
+            const bits = std.math.log2_int_ceil(UType, u_val);
+
             return @intCast((bits + 7) / 8);
         },
         .Float => return @sizeOf(f64),
