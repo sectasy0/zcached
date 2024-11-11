@@ -3,6 +3,9 @@ const mem = std.mem;
 const os = std.os;
 const io = std.io;
 const posix = std.posix;
+const build_options = @import("build_options");
+const secure = if (build_options.tls_enabled) @import("secure.zig") else @import("unsecure.zig");
+const Stream = @import("stream.zig").Stream;
 
 const StreamServer = @This();
 
@@ -11,6 +14,9 @@ kernel_backlog: u31,
 reuse_address: bool,
 reuse_port: bool,
 force_nonblocking: bool,
+
+tls: bool,
+tls_ctx: ?secure.Context = null,
 
 /// `undefined` until `listen` returns successfully.
 listen_address: std.net.Address,
@@ -29,25 +35,43 @@ pub const Options = struct {
     /// Enable SO.REUSEPORT on the socket.
     reuse_port: bool = false,
 
+    /// Enable TLS 1.3 on the socket.
+    tls: bool = true,
+    cert_path: ?[]const u8 = null,
+    key_path: ?[]const u8 = null,
+
     /// Force non-blocking mode.
     force_nonblocking: bool = false,
 };
 
 /// After this call succeeds, resources have been acquired and must
 /// be released with `deinit`.
-pub fn init(options: Options) StreamServer {
+pub fn init(options: Options) !StreamServer {
+    var tls_ctx: ?secure.Context = null;
+
+    if (options.tls and build_options.tls_enabled) {
+        if (options.cert_path == null or options.key_path == null) {
+            return error.InvalidTLSConfig;
+        }
+
+        tls_ctx = try secure.Context.init(options.key_path.?, options.cert_path.?);
+    }
+
     return StreamServer{
         .sockfd = null,
         .kernel_backlog = options.kernel_backlog,
         .reuse_address = options.reuse_address,
         .reuse_port = options.reuse_port,
         .force_nonblocking = options.force_nonblocking,
+        .tls = options.tls,
+        .tls_ctx = tls_ctx,
         .listen_address = undefined,
     };
 }
 
 /// Release all resources. The `StreamServer` memory becomes `undefined`.
 pub fn deinit(self: *StreamServer) void {
+    if (self.tls_ctx) |ctx| ctx.deinit();
     self.close();
     self.* = undefined;
 }
@@ -128,13 +152,17 @@ pub const AcceptError = error{
 
     ConnectionResetByPeer,
 
+    SSLInitFailure,
+    SSLSetFdFailure,
+    SSLHandshakeFailure,
+
     NetworkSubsystemFailed,
 
     OperationNotSupported,
 } || posix.UnexpectedError;
 
 pub const Connection = struct {
-    stream: std.net.Stream,
+    stream: Stream,
     address: std.net.Address,
 };
 
@@ -156,8 +184,13 @@ pub fn accept(self: *StreamServer) AcceptError!Connection {
     );
 
     if (accept_result) |fd| {
+        var stream = Stream{ .handle = fd };
+        if (build_options.tls_enabled) {
+            if (self.tls_ctx) |ctx| try ctx.upgrade(&stream);
+        }
+
         return Connection{
-            .stream = std.net.Stream{ .handle = fd },
+            .stream = stream,
             .address = accepted_addr,
         };
     } else |err| {

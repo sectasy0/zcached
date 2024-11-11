@@ -170,7 +170,7 @@ fn handle_arguments(args: cli.Args) ?void {
 }
 
 fn run_supervisor(allocator: std.mem.Allocator, context: Employer.Context) void {
-    context.logger.log(.Info, "# starting zcached server on {?}", .{
+    context.logger.log(.Info, "# starting zcached server on tcp:{?}", .{
         context.config.address,
     });
 

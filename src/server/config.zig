@@ -17,6 +17,10 @@ maxmemory: usize = 0, // 0 means unlimited, value in bytes
 cbuffer: usize = 4096, // its resized if more space is requied
 workers: usize = 4,
 
+secure_transport: bool = false,
+cert_path: ?[]const u8 = null,
+key_path: ?[]const u8 = null,
+
 whitelist: std.ArrayList(std.net.Address) = undefined,
 proto_max_bulk_len: usize = 512 * 1024 * 1024, // 0 means unlimited, value in bytes
 
@@ -24,6 +28,8 @@ allocator: std.mem.Allocator,
 
 pub fn deinit(config: *const Config) void {
     config.whitelist.deinit();
+    if (config.cert_path != null) config.allocator.free(config.cert_path.?);
+    if (config.key_path != null) config.allocator.free(config.key_path.?);
 }
 
 pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]const u8) !Config {
@@ -79,6 +85,9 @@ const ConfigField = enum {
     proto_max_bulk_len,
     workers,
     cbuffer,
+    secure_transport,
+    cert_path,
+    key_path,
     whitelist,
 };
 
@@ -155,7 +164,7 @@ fn process_field(
         return;
     }
 
-    const node = root.ast.fields[field_idx - 1];
+    const node: u32 = root.ast.fields[field_idx - 1];
     const info: std.zig.Ast.Node = ast.nodes.get(node);
 
     switch (info.tag) {
@@ -165,21 +174,29 @@ fn process_field(
             try assign_field_value(config, field_name, value.int);
         },
         std.zig.Ast.Node.Tag.string_literal => {
+            const Booleans = enum { true, false, True, False };
+
             const value = try utils.parse_string(allocator, ast, field_idx);
             defer allocator.free(value);
 
-            try assign_field_value(config, field_name, value);
+            const boolean_result = std.meta.stringToEnum(Booleans, value) orelse {
+                return try assign_field_value(config, field_name, value);
+            };
+            switch (boolean_result) {
+                .true, .True => try assign_field_value(config, field_name, true),
+                .false, .False => try assign_field_value(config, field_name, false),
+            }
         },
-
         else => return,
     }
 }
 
 fn assign_field_value(config: *Config, field_name: []const u8, value: anytype) !void {
-    const config_field = std.meta.stringToEnum(ConfigField, field_name);
-    if (config_field == null) return;
+    const config_field = std.meta.stringToEnum(ConfigField, field_name) orelse {
+        return;
+    };
 
-    switch (config_field.?) {
+    switch (config_field) {
         .address => {
             if (@TypeOf(value) != []const u8) return;
 
@@ -195,33 +212,39 @@ fn assign_field_value(config: *Config, field_name: []const u8, value: anytype) !
         },
         .port => {
             if (@TypeOf(value) != u64) return;
-
             config.address.setPort(@as(u16, @truncate(value)));
         },
         .maxclients => {
             if (@TypeOf(value) != u64) return;
-
             config.maxclients = value;
         },
         .maxmemory => {
             if (@TypeOf(value) != u64) return;
-
             config.maxmemory = value;
         },
         .proto_max_bulk_len => {
             if (@TypeOf(value) != u64) return;
-
             config.proto_max_bulk_len = value;
         },
         .workers => {
             if (@TypeOf(value) != u64) return;
-
             config.workers = value;
         },
         .cbuffer => {
             if (@TypeOf(value) != u64) return;
-
             config.cbuffer = value;
+        },
+        .secure_transport => {
+            if (@TypeOf(value) != bool) return;
+            config.secure_transport = value;
+        },
+        .cert_path => {
+            if (@TypeOf(value) != []const u8) return;
+            config.cert_path = try config.allocator.dupe(u8, value);
+        },
+        .key_path => {
+            if (@TypeOf(value) != []const u8) return;
+            config.key_path = try config.allocator.dupe(u8, value);
         },
         .whitelist => {
             if (@TypeOf(value) != std.ArrayList(std.net.Address)) return;

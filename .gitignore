@@ -13,3 +13,4 @@ log/*
 *.zcpf
 persist/*
 zcached.conf
+.DS_Store

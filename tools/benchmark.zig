@@ -1,10 +1,8 @@
 const std = @import("std");
+const consts = @import("consts.zig");
 
 const MAX_WORKERS = 8;
 const ITERATIONS = 10000;
-
-const HOST = "127.0.0.1";
-const PORT = 7556;
 
 fn randomString(comptime len: usize) ![len]u8 {
     var prng = std.rand.DefaultPrng.init(blk: {
@@ -34,7 +32,7 @@ fn runCommandFmt(socket: *std.net.Stream, comptime fmt: []const u8, args: anytyp
 }
 
 fn worker() !void {
-    const addr = try std.net.Address.parseIp(HOST, PORT);
+    const addr = try std.net.Address.parseIp(consts.HOST, consts.PORT);
 
     var socket = try std.net.tcpConnectToAddress(addr);
     defer socket.close();

@@ -2,6 +2,7 @@ const std = @import("std");
 
 const StreamServer = @import("../network/stream_server.zig");
 const Connection = @import("../network/connection.zig");
+const Stream = @import("stream.zig").Stream;
 
 const Worker = @import("../processing/worker.zig");
 const Context = @import("../processing/employer.zig").Context;
@@ -90,9 +91,9 @@ pub fn listen(self: *Listener, worker: *Worker) void {
             }
 
             // file descriptor is ready for reading.
-            if (pollfd.revents == std.posix.POLL.IN) {
+            if (pollfd.revents & (std.posix.POLL.IN | std.posix.POLL.HUP) != 0) {
                 const connection = worker.states.getPtr(pollfd.fd) orelse continue;
-                self.handle_connection(worker, connection);
+                self.handle_connection(worker, connection, i);
                 continue;
             }
 
@@ -105,7 +106,7 @@ pub fn listen(self: *Listener, worker: *Worker) void {
 
 const AcceptError = struct {
     etype: anyerror,
-    fd: ?std.net.Stream,
+    fd: ?Stream,
 };
 const AcceptResult = union(enum) {
     ok: void,
@@ -205,12 +206,19 @@ fn handle_incoming(self: *Listener, worker: *Worker) AcceptResult {
     return .{ .ok = void{} };
 }
 
-fn handle_connection(self: *const Listener, worker: *Worker, connection: *Connection) void {
+fn handle_connection(self: *Listener, worker: *Worker, connection: *Connection, i: usize) void {
     while (true) {
         self.on_receive(worker, connection) catch |err| {
             switch (err) {
                 error.WouldBlock => return,
                 error.NotOpenForReading => return,
+                error.SocketNotConnected => handle_disconnection(
+                    self,
+                    worker,
+                    connection,
+                    i,
+                ),
+                error.ConnectionClosed => return,
                 else => connection.close(),
             }
         };

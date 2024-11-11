@@ -14,7 +14,8 @@ cd zcached
 ```
 **3. Build the project.**
 ```bash
-zig build run
+# provide --tls-enabled=true to build zcached with tls
+zig build
 ```
 **4. Run the executable.**
 ```bash
