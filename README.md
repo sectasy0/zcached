@@ -53,7 +53,7 @@ echo "*1\r\n\$4\r\nPING\r\n\x03" | netcat -N localhost 7556
 ## Running Tests
 Run the tests using `zig` in the root directory of the project:
 ```bash
-zig test src/test.zig -lc
+zig build test
 ```
 
 ## Documentation
