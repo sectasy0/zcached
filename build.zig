@@ -78,6 +78,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    unit_tests.root_module.addOptions("build_options", options);
+
     const run_unit_tests = b.addRunArtifact(unit_tests);
     unit_tests.linkLibC();
 
