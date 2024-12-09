@@ -157,8 +157,6 @@ pub const ZWriter = struct {
 
     fn write_int(zw: ZWriter, value: i64) !usize {
         const needed = bytes_needed(i64, value);
-
-        std.debug.print("bytes needed: {d}/n", .{needed});
         const as_bytes = std.mem.asBytes(&value);
 
         _ = try zw.writer.writeByte(
@@ -225,7 +223,6 @@ pub const ZReader = struct {
             .null => out.* = .{ .null = {} },
             .int => {
                 const bytes_len = @as(usize, byte >> 4);
-                std.debug.print("len: {d}\n", .{bytes_len});
                 const value = try zr.reader.readVarInt(i64, .little, bytes_len);
 
                 size += bytes_len;

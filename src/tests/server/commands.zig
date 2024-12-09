@@ -685,8 +685,6 @@ test "should handle COPY command with REPLACE param" {
     var getted = try fixture.memory.?.get("test2");
     defer ztypes.ztype_free(&getted, fixture.allocator);
 
-    std.debug.print("{d}\n", .{getted.int});
-
     try helper.expectEqualZTypes(result.ok, .{ .str = @constCast("OK") });
     try helper.expectEqualZTypes(getted, .{ .int = 1 });
 }

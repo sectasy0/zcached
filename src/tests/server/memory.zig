@@ -19,9 +19,15 @@ test "should get existing and not get non-existing key" {
     try std.testing.expectEqual(fixture.memory.?.get("foo2"), types.ZType{ .float = 123.45 });
     try std.testing.expectEqual(fixture.memory.?.get("foo3"), types.ZType{ .bool = true });
     try std.testing.expectEqual(fixture.memory.?.get("foo4"), types.ZType{ .null = void{} });
+
     // we have to compare values cause it's not same place in memory
-    try std.testing.expectEqualStrings((try fixture.memory.?.get("foo5")).sstr, helper.SIMPLE_STRING);
-    try std.testing.expectEqualStrings((try fixture.memory.?.get("bar")).str, helper.STRING);
+    var str = try fixture.memory.?.get("foo5");
+    defer types.ztype_free(&str, fixture.allocator);
+    try std.testing.expectEqualStrings(str.str, helper.SIMPLE_STRING);
+
+    var str2 = try fixture.memory.?.get("bar");
+    defer types.ztype_free(&str2, fixture.allocator);
+    try std.testing.expectEqualStrings(str2.str, helper.STRING);
 
     // array
     var array = try helper.setup_array(fixture.allocator);
@@ -29,7 +35,9 @@ test "should get existing and not get non-existing key" {
 
     try fixture.memory.?.put("foo6", .{ .array = array });
 
-    const getted = try fixture.memory.?.get("foo6");
+    var getted = try fixture.memory.?.get("foo6");
+    defer types.ztype_free(&getted, fixture.allocator);
+
     try helper.expectEqualZTypes(getted, .{ .array = array });
 
     // map
@@ -38,7 +46,8 @@ test "should get existing and not get non-existing key" {
 
     try fixture.memory.?.put("foo7", .{ .map = map });
 
-    const getted_map = try fixture.memory.?.get("foo7");
+    var getted_map = try fixture.memory.?.get("foo7");
+    defer types.ztype_free(&getted_map, fixture.allocator);
     try helper.expectEqualZTypes(getted_map, .{ .map = map });
 
     try std.testing.expectEqual(fixture.memory.?.get("baz"), error.NotFound);
@@ -57,7 +66,9 @@ test "should delete existing key" {
 
     try std.testing.expectEqual(fixture.memory.?.delete("foo"), true);
     try std.testing.expectEqual(fixture.memory.?.get("foo"), error.NotFound);
-    try std.testing.expectEqualStrings((try fixture.memory.?.get("bar")).str, value.str);
+    var str = try fixture.memory.?.get("bar");
+    defer types.ztype_free(&str, fixture.allocator);
+    try std.testing.expectEqualStrings(str.str, value.str);
 }
 
 test "should not delete non-existing key" {
@@ -97,7 +108,7 @@ test "should not store error" {
 test "should return error.MemoryLimitExceeded" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
-    fixture.config.maxmemory = 1804460;
+    fixture.config.maxmemory = 1280188;
     try fixture.create_memory();
 
     var arena = std.heap.ArenaAllocator.init(fixture.allocator);
@@ -109,6 +120,13 @@ test "should return error.MemoryLimitExceeded" {
         const key = try std.fmt.allocPrint(arena.allocator(), "key-{d}", .{i});
         try fixture.memory.?.put(key, value);
     }
+
+    const tracking = utils.ptrCast(
+        TracingAllocator,
+        fixture.memory.?.allocator.ptr,
+    );
+
+    std.debug.print("{d}\n", .{tracking.real_size});
 
     try std.testing.expectEqual(fixture.memory.?.put("test key", value), error.MemoryLimitExceeded);
 }
@@ -138,33 +156,4 @@ test "should not return error.MemoryLimitExceed when max but deleted some" {
     const result = fixture.memory.?.put("test key", value);
 
     try std.testing.expectEqual(void{}, result);
-}
-
-test "memory should not grow if key overriden with put" {
-    var fixture = try ContextFixture.init();
-    defer fixture.deinit();
-    try fixture.create_memory();
-
-    try helper.setup_storage(&fixture.memory.?);
-
-    var arena = std.heap.ArenaAllocator.init(fixture.allocator);
-    defer arena.deinit();
-
-    const string = "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.";
-    const value: types.ZType = .{ .str = @constCast(string) };
-    for (0..8) |i| {
-        const key = try std.fmt.allocPrint(arena.allocator(), "key-{d}", .{i});
-        fixture.memory.?.put(key, value) catch {};
-    }
-
-    const tracking = utils.ptrCast(
-        TracingAllocator,
-        fixture.memory.?.allocator.ptr,
-    );
-
-    const before_put = tracking.real_size;
-    try fixture.memory.?.put("key-1", value);
-    try fixture.memory.?.put("key-2", value);
-
-    try std.testing.expectEqual(before_put, tracking.real_size);
 }

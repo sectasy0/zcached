@@ -59,8 +59,6 @@ pub fn put(self: *Memory, key: []const u8, value: types.ZType) !void {
             const result = try self.internal.getOrPut(key);
             const bucket = try _encode_alloc(self.allocator, value);
 
-            std.debug.print("put: {d}\n", .{bucket});
-
             if (!result.found_existing) {
                 const zkey: []u8 = try self.allocator.dupe(u8, key);
                 result.key_ptr.* = zkey;
@@ -82,9 +80,6 @@ pub fn get(self: *Memory, key: []const u8) !types.ZType {
 
     const bucket = self.internal.get(key) orelse return error.NotFound;
     const value = try _decode_alloc(self.allocator, bucket);
-
-    std.debug.print("get: {d}\n", .{bucket});
-    std.debug.print("get: {?}\n", .{value});
 
     return value;
 }
@@ -225,7 +220,6 @@ pub fn deinit(self: *Memory) void {
 
     var iter = self.internal.iterator();
     while (iter.next()) |entry| {
-        std.debug.print("{s}\n", .{entry.key_ptr.*});
         self.allocator.free(entry.key_ptr.*);
         self.allocator.free(entry.value_ptr.*);
     }

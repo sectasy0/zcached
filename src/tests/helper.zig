@@ -93,18 +93,13 @@ pub fn expectEqualZTypes(first: types.ZType, second: types.ZType) !void {
 
             if (equal_items != first.map.count()) return error.NotEqual;
         },
-        .str => {
-            if (std.mem.eql(u8, first.str, second.str)) {
-                return;
-            } else {
-                return error.NotEqual;
-            }
+        .str => if (std.mem.eql(u8, first.str, second.str)) {
+            return;
+        } else {
+            return error.NotEqual;
         },
         .sstr => try std.testing.expectEqualStrings(first.sstr, second.sstr),
-        .int => {
-            std.debug.print("{d}:{d}", .{ first.int, second.int });
-            try std.testing.expectEqual(first, second);
-        },
+        .int => try std.testing.expectEqual(first, second),
         .float => try std.testing.expectEqual(first, second),
         .bool => try std.testing.expectEqual(first, second),
         .null => try std.testing.expectEqual(first, second),

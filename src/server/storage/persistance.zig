@@ -5,6 +5,7 @@ const Memory = @import("memory.zig");
 
 // Context changes
 const types = @import("../../protocol/types.zig");
+const binary = @import("../../protocol/binary.zig");
 const Serializer = @import("../../protocol/deserializer.zig").Deserializer;
 const DeserializerT = @import("../../protocol/serializer.zig").SerializerT;
 const Deserializer = DeserializerT(std.io.FixedBufferStream([]u8).Reader);
@@ -90,15 +91,22 @@ pub fn save(self: *Handler, memory: *Memory) !usize {
     };
     defer file.close();
 
-    // var iterator = memory.internal.iterator();
-    // while (iterator.next()) |item| {
-    //     const key = try serializer.process(.{ .str = @constCast(item.key_ptr.*) });
-    //     try bytes.appendSlice(key);
+    var iterator = memory.internal.iterator();
+    while (iterator.next()) |item| {
+        const key = try serializer.process(.{ .str = @constCast(item.key_ptr.*) });
+        try bytes.appendSlice(key);
 
-    //     const value = try serializer.process(item.value_ptr.*);
+        var bucket = std.io.fixedBufferStream(item.value_ptr.*);
+        const zr = binary.ZReader.init(bucket.reader().any());
 
-    //     try bytes.appendSlice(value);
-    // }
+        var value: types.ZType = undefined;
+        _ = try zr.read(&value, self.allocator);
+        defer types.ztype_free(&value, self.allocator);
+
+        const deserialized = try serializer.process(value);
+
+        try bytes.appendSlice(deserialized);
+    }
 
     const payload = bytes.toOwnedSlice() catch return 0;
     defer self.allocator.free(payload);
