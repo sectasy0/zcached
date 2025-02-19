@@ -59,7 +59,7 @@ Ensure that `zig` is available in your system's PATH, or set the `ZIG_ENV` envir
 ```bash
 sh install.sh
 ```
-**2. Start zcached.**
+**3. Start zcached.**
 ```bash
 sudo systemctl start zcached.service
 ```
