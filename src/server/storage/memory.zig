@@ -116,12 +116,12 @@ pub fn size(self: *Memory) i64 {
     return self.internal.count();
 }
 
-// pub fn save(self: *Memory) !usize {
-//     self.lock.lockShared();
-//     defer self.lock.unlock();
+pub fn save(self: *Memory) !usize {
+    self.lock.lockShared();
+    defer self.lock.unlock();
 
-//     return try self.persister.save(self);
-// }
+    return try self.persister.save(self);
+}
 
 pub fn keys(self: *Memory) !std.ArrayList(types.ZType) {
     self.lock.lockShared();
@@ -138,33 +138,31 @@ pub fn keys(self: *Memory) !std.ArrayList(types.ZType) {
     return result;
 }
 
-// pub fn rename(self: *Memory, key: []const u8, new_key: []const u8) !void {
-//     self.lock.lock();
-//     defer self.lock.unlock();
+pub fn rename(self: *Memory, key: []const u8, new_key: []const u8) !void {
+    self.lock.lock();
+    defer self.lock.unlock();
 
-//     // If we are changing the key to a smaller one, it is pointless to block it.
-//     // The memory usage would be smaller.
-//     if (new_key.len > key.len and self.is_memory_limit_reached()) return error.MemoryLimitExceeded;
+    // If we are changing the key to a smaller one, it is pointless to block it.
+    // The memory usage would be smaller.
+    if (new_key.len > key.len and self.is_memory_limit_reached()) return error.MemoryLimitExceeded;
 
-//     var entry = self.internal.fetchRemove(key) orelse return error.NotFound;
-//     var new_key_entry = self.internal.fetchRemove(new_key);
+    const entry = self.internal.fetchRemove(key) orelse return error.NotFound;
+    const new_key_entry = self.internal.fetchRemove(new_key);
 
-//     // Free existing values assigned to 'new_key'
-//     if (new_key_entry != null) {
-//         self.allocator.free(new_key_entry.?.key);
-//         types.ztype_free(&new_key_entry.?.value, self.allocator);
-//     }
+    // Free existing values assigned to 'new_key'
+    if (new_key_entry != null) {
+        self.allocator.free(new_key_entry.?.key);
+        self.allocator.free(new_key_entry.?.value);
+    }
 
-//     defer {
-//         self.allocator.free(entry.key);
-//         types.ztype_free(&entry.value, self.allocator);
-//     }
+    defer self.allocator.free(entry.key);
+    // defer ^self.allocator.free(entry.value);
 
-//     const zkey: []u8 = try self.allocator.dupe(u8, new_key);
-//     const zvalue = try types.ztype_copy(entry.value, self.allocator);
+    const zkey: []u8 = try self.allocator.dupe(u8, new_key);
+    const zvalue = entry.value;
 
-//     self.internal.put(zkey, zvalue) catch return error.InsertFailure;
-// }
+    self.internal.put(zkey, zvalue) catch return error.InsertFailure;
+}
 
 pub fn copy(self: *Memory, source: []const u8, destination: []const u8, replace: bool) !void {
     self.lock.lock();

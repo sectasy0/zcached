@@ -74,10 +74,10 @@ pub const Handler = struct {
                 if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
                 return self.sizeof(command_set.items[1]);
             },
-            // .RENAME => {
-            //     if (command_set.items.len < 3) return .{ .err = error.InvalidCommand };
-            //     return self.rename(command_set.items[1], command_set.items[2]);
-            // },
+            .RENAME => {
+                if (command_set.items.len < 3) return .{ .err = error.InvalidCommand };
+                return self.rename(command_set.items[1], command_set.items[2]);
+            },
             .ECHO => {
                 if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
                 switch (command_set.items[1]) {
@@ -94,10 +94,9 @@ pub const Handler = struct {
             .PING => return .{ .ok = .{ .str = @constCast("PONG") } },
             .DBSIZE => return .{ .ok = .{ .int = self.memory.size() } },
             .LASTSAVE => return .{ .ok = .{ .int = self.memory.last_save } },
-            // .SAVE => return self.save(),
+            .SAVE => return self.save(),
             .KEYS => return self.zkeys(),
             .FLUSH => return self.flush(),
-            else => unreachable,
         };
     }
 
@@ -135,21 +134,21 @@ pub const Handler = struct {
         return .{ .ok = .{ .str = @constCast("OK") } };
     }
 
-    // fn save(self: *Handler) Result {
-    //     if (self.memory.size() == 0) return .{ .err = error.SaveFailure };
+    fn save(self: *Handler) Result {
+        if (self.memory.size() == 0) return .{ .err = error.SaveFailure };
 
-    //     const size = self.memory.save() catch |err| {
-    //         self.logger.log(.Error, "# failed to save data: {?}", .{err});
+        const size = self.memory.save() catch |err| {
+            self.logger.log(.Error, "# failed to save data: {?}", .{err});
 
-    //         return .{ .err = error.SaveFailure };
-    //     };
+            return .{ .err = error.SaveFailure };
+        };
 
-    //     self.logger.log(.Debug, "# saved {d} bytes", .{size});
+        self.logger.log(.Debug, "# saved {d} bytes", .{size});
 
-    //     if (size > 0) return .{ .ok = .{ .str = @constCast("OK") } };
+        if (size > 0) return .{ .ok = .{ .str = @constCast("OK") } };
 
-    //     return .{ .err = error.SaveFailure };
-    // }
+        return .{ .err = error.SaveFailure };
+    }
 
     fn mget(self: *Handler, keys: []ZType) Result {
         var result = std.StringHashMap(ZType).init(self.allocator);
@@ -208,15 +207,15 @@ pub const Handler = struct {
         return .{ .ok = .{ .int = @intCast(value_size) } };
     }
 
-    // fn rename(self: *Handler, key: ZType, value: ZType) Result {
-    //     if (key != .str or value != .str) return .{ .err = error.KeyNotString };
+    fn rename(self: *Handler, key: ZType, value: ZType) Result {
+        if (key != .str or value != .str) return .{ .err = error.KeyNotString };
 
-    //     self.memory.rename(key.str, value.str) catch |err| {
-    //         return .{ .err = err };
-    //     };
+        self.memory.rename(key.str, value.str) catch |err| {
+            return .{ .err = err };
+        };
 
-    //     return .{ .ok = .{ .str = @constCast("OK") } };
-    // }
+        return .{ .ok = .{ .str = @constCast("OK") } };
+    }
 
     fn copy(self: *Handler, entries: []ZType) Result {
         const CopyArgs = enum { REPLACE };
