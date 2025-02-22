@@ -19,7 +19,6 @@ pub const Deserializer = struct {
     pub fn process(self: *Deserializer, input: types.ZType) anyerror![]const u8 {
         return switch (input) {
             .str => try self.deserialize_str(input),
-            .sstr => try self.deserialize_sstr(input),
             .int => try self.deserialize_int(input),
             .bool => try self.deserialize_bool(input),
             .null => try self.deserialize_null(input),
@@ -37,17 +36,6 @@ pub const Deserializer = struct {
             self.arena.allocator(),
             "${d}\r\n{s}\r\n",
             .{ input.str.len, input.str },
-        ) catch {
-            return error.DeserializationError;
-        };
-        return bytes;
-    }
-
-    fn deserialize_sstr(self: *Deserializer, input: types.ZType) ![]const u8 {
-        const bytes = std.fmt.allocPrint(
-            self.arena.allocator(),
-            "+{s}\r\n",
-            .{input.sstr},
         ) catch {
             return error.DeserializationError;
         };

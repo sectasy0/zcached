@@ -80,17 +80,6 @@ test "deserialize float" {
     try std.testing.expectEqualStrings(expected, result);
 }
 
-test "deserialize simple string" {
-    var deserializer = Deserializer.init(std.testing.allocator);
-    defer deserializer.deinit();
-
-    const input = types.ZType{ .sstr = @constCast("hello world") };
-
-    const expected = "+hello world\r\n";
-    const result = try deserializer.process(input);
-    try std.testing.expectEqualStrings(expected, result);
-}
-
 test "deserialize array" {
     var array = std.ArrayList(types.ZType).init(std.testing.allocator);
     defer array.deinit();

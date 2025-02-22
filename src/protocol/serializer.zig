@@ -169,7 +169,7 @@ pub fn SerializerT(comptime GenericReader: type) type {
                 const key = try self.process(reader);
 
                 const active_tag = std.meta.activeTag(key);
-                if (active_tag != .str and active_tag != .sstr) return error.InvalidHashKey;
+                if (active_tag != .str) return error.InvalidHashKey;
 
                 const value = try self.process(reader);
                 try result.put(key.str, value);

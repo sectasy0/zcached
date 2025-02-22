@@ -25,7 +25,7 @@ test "should handle SET command" {
 
     const result = cmd_handler.process(&command_set);
 
-    try std.testing.expectEqual(result.ok, ZType{ .sstr = @constCast("OK") });
+    try std.testing.expectEqual(result.ok, ZType{ .str = @constCast("OK") });
     const getted = (try fixture.memory.?.get("key")).str;
     defer fixture.allocator.free(getted);
 
@@ -123,7 +123,7 @@ test "should handle DELETE command" {
     try command_set.append(.{ .str = @constCast("key") });
 
     const result = cmd_handler.process(&command_set);
-    try std.testing.expectEqual(result, commands.Handler.Result{ .ok = .{ .sstr = @constCast("OK") } });
+    try std.testing.expectEqual(result, commands.Handler.Result{ .ok = .{ .str = @constCast("OK") } });
     try std.testing.expectEqual(fixture.memory.?.get("key"), error.NotFound);
 }
 
@@ -177,7 +177,7 @@ test "should handle FLUSH command" {
     try command_set.append(.{ .str = @constCast("FLUSH") });
 
     const result = cmd_handler.process(&command_set);
-    try std.testing.expectEqual(result.ok, ZType{ .sstr = @constCast("OK") });
+    try std.testing.expectEqual(result.ok, ZType{ .str = @constCast("OK") });
     try std.testing.expectEqual(fixture.memory.?.internal.count(), 0);
 }
 
@@ -196,7 +196,7 @@ test "should handle PING command" {
     try command_set.append(.{ .str = @constCast("PING") });
 
     const result = cmd_handler.process(&command_set);
-    try std.testing.expectEqual(result.ok, ZType{ .sstr = @constCast("PONG") });
+    try std.testing.expectEqual(result.ok, ZType{ .str = @constCast("PONG") });
 }
 
 test "should handle DBSIZE command" {
@@ -272,7 +272,7 @@ test "should handle MSET command" {
     var getted = (try fixture.memory.?.get("key"));
     defer ztypes.ztype_free(&getted, fixture.allocator);
 
-    try std.testing.expectEqual(result.ok, ZType{ .sstr = @constCast("OK") });
+    try std.testing.expectEqual(result.ok, ZType{ .str = @constCast("OK") });
     try std.testing.expectEqualStrings(getted.str, command_set.items[2].str);
 }
 
@@ -322,8 +322,8 @@ test "should handle MSET and return KeyNotString" {
     defer command_set.deinit();
 
     try command_set.append(.{ .str = @constCast("MSET") });
-    try command_set.append(.{ .sstr = @constCast("key") });
-    try command_set.append(.{ .sstr = @constCast("value") });
+    try command_set.append(.{ .int = 5 });
+    try command_set.append(.{ .str = @constCast("value") });
 
     const result = cmd_handler.process(&command_set);
 
@@ -441,8 +441,6 @@ test "should handle SIZEOF command" {
     try fixture.memory.?.put("uset-key", .{ .uset = my_uset });
 
     try fixture.memory.?.put("str-key", .{ .str = @constCast("test value") });
-    try fixture.memory.?.put("simple-str-key", .{ .sstr = @constCast("test simple value") });
-
     try fixture.memory.?.put("int-key", .{ .int = 1025 });
     try fixture.memory.?.put("float-key", .{ .float = 809.6 });
 
@@ -462,9 +460,10 @@ test "should handle SIZEOF command" {
     var result = cmd_handler.process(&command_set);
     try helper.expectEqualZTypes(result.ok, .{ .int = 10 });
 
-    try command_set.insert(1, .{ .str = @constCast("simple-str-key") });
-    result = cmd_handler.process(&command_set);
-    try helper.expectEqualZTypes(result.ok, .{ .int = 17 });
+    // try command_set.insert(1, .{ .str = @constCast("simple-str-key") });
+    // result = cmd_handler.process(&command_set);
+    // std.debug.print("{?}", .{result});
+    // try helper.expectEqualZTypes(result.ok, .{ .int = 17 });
 
     // Numbers
 
@@ -539,7 +538,7 @@ test "should handle ECHO command" {
     try helper.expectEqualZTypes(result.ok, .{ .str = @constCast("Hello World!") });
 
     // Simple string case.
-    try command_set.insert(1, .{ .sstr = @constCast("Hello Mars!") });
+    try command_set.insert(1, .{ .str = @constCast("Hello Mars!") });
     result = cmd_handler.process(&command_set);
     try helper.expectEqualZTypes(result.ok, .{ .str = @constCast("Hello Mars!") });
 }

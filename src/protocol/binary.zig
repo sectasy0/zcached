@@ -52,7 +52,7 @@ pub const ZWriter = struct {
 
     pub fn write(zw: ZWriter, value: ZType) anyerror!usize {
         return switch (value) {
-            .str, .sstr => |val| try zw.write_str(val),
+            .str => |val| try zw.write_str(val),
             .bool => |val| try zw.write_bool(val),
             .int => |val| try zw.write_int(val),
             .float => |val| try zw.write_float(val),

@@ -28,7 +28,6 @@ pub const ZType = union(enum) {
 pub fn ztype_copy(value: ZType, allocator: std.mem.Allocator) anyerror!ZType {
     switch (value) {
         .str => return .{ .str = try allocator.dupe(u8, value.str) },
-        .sstr => return .{ .sstr = try allocator.dupe(u8, value.sstr) },
         // we do not need to copy int, floats, bools and nulls
         // because we already have it content unless strings and others
         .int, .float, .bool, .null => return value,
@@ -93,7 +92,7 @@ pub fn ztype_copy(value: ZType, allocator: std.mem.Allocator) anyerror!ZType {
 
 pub fn ztype_free(value: *ZType, allocator: std.mem.Allocator) void {
     switch (value.*) {
-        .str, .sstr => |str| allocator.free(str),
+        .str => |str| allocator.free(str),
         .int, .float, .bool, .null => return,
         .array => |array| {
             defer array.deinit();

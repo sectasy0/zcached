@@ -81,8 +81,8 @@ pub const Handler = struct {
             .ECHO => {
                 if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
                 switch (command_set.items[1]) {
-                    .str, .sstr => |text| return .{ .ok = .{ .str = text } },
-                    else => return .{ .err = error.ValueNotString }, // Maybe rename it to FieldNotString or ValueNotString?
+                    .str => |text| return .{ .ok = .{ .str = text } },
+                    else => return .{ .err = error.ValueNotString },
                 }
             },
             .COPY => {
@@ -91,7 +91,7 @@ pub const Handler = struct {
             },
             .MGET => return self.mget(command_set.items[1..command_set.items.len]),
             .MSET => return self.mset(command_set.items[1..command_set.items.len]),
-            .PING => return .{ .ok = .{ .sstr = @constCast("PONG") } },
+            .PING => return .{ .ok = .{ .str = @constCast("PONG") } },
             .DBSIZE => return .{ .ok = .{ .int = self.memory.size() } },
             .LASTSAVE => return .{ .ok = .{ .int = self.memory.last_save } },
             // .SAVE => return self.save(),
@@ -117,14 +117,14 @@ pub const Handler = struct {
             return .{ .err = err };
         };
 
-        return .{ .ok = .{ .sstr = @constCast("OK") } };
+        return .{ .ok = .{ .str = @constCast("OK") } };
     }
 
     fn delete(self: *Handler, key: ZType) Result {
         const result = self.memory.delete(key.str);
 
         if (result) {
-            return .{ .ok = .{ .sstr = @constCast("OK") } };
+            return .{ .ok = .{ .str = @constCast("OK") } };
         } else {
             return .{ .err = error.NotFound };
         }
@@ -132,7 +132,7 @@ pub const Handler = struct {
 
     fn flush(self: *Handler) Result {
         self.memory.flush();
-        return .{ .ok = .{ .sstr = @constCast("OK") } };
+        return .{ .ok = .{ .str = @constCast("OK") } };
     }
 
     // fn save(self: *Handler) Result {
@@ -146,7 +146,7 @@ pub const Handler = struct {
 
     //     self.logger.log(.Debug, "# saved {d} bytes", .{size});
 
-    //     if (size > 0) return .{ .ok = .{ .sstr = @constCast("OK") } };
+    //     if (size > 0) return .{ .ok = .{ .str = @constCast("OK") } };
 
     //     return .{ .err = error.SaveFailure };
     // }
@@ -181,7 +181,7 @@ pub const Handler = struct {
                 return .{ .err = err };
             };
         }
-        return .{ .ok = .{ .sstr = @constCast("OK") } };
+        return .{ .ok = .{ .str = @constCast("OK") } };
     }
 
     fn zkeys(self: *Handler) Result {
@@ -198,7 +198,7 @@ pub const Handler = struct {
         defer ztypes.ztype_free(&value, self.allocator);
 
         const value_size: usize = switch (value) {
-            .str, .sstr => |str| str.len,
+            .str => |str| str.len,
             .array => value.array.items.len,
             inline .map, .set, .uset => |v| v.count(),
             inline .int, .float, .bool => |x| @sizeOf(@TypeOf(x)),

@@ -38,7 +38,7 @@ fn ztypeHash(ctx: anytype, key: ZType) u64 {
     var hasher = std.hash.Wyhash.init(0);
 
     switch (key) {
-        .str, .sstr => |v| hasher.update(v),
+        .str => |v| hasher.update(v),
         inline .int, .float, .bool, .null => |v| {
             hasher.update(std.mem.asBytes(&v));
         },
@@ -78,7 +78,7 @@ fn ztypeEql(a: ZType, b: ZType) bool {
     if (activeTag(a) != activeTag(b)) return false;
 
     switch (a) {
-        inline .str, .sstr => |v, tag| return std.mem.eql(
+        inline .str => |v, tag| return std.mem.eql(
             u8,
             v,
             @field(b, @tagName(tag)),

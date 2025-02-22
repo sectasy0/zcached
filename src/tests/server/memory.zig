@@ -21,10 +21,6 @@ test "should get existing and not get non-existing key" {
     try std.testing.expectEqual(fixture.memory.?.get("foo4"), types.ZType{ .null = void{} });
 
     // we have to compare values cause it's not same place in memory
-    var str = try fixture.memory.?.get("foo5");
-    defer types.ztype_free(&str, fixture.allocator);
-    try std.testing.expectEqualStrings(str.str, helper.SIMPLE_STRING);
-
     var str2 = try fixture.memory.?.get("bar");
     defer types.ztype_free(&str2, fixture.allocator);
     try std.testing.expectEqualStrings(str2.str, helper.STRING);
