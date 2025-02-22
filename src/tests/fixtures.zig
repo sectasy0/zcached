@@ -2,6 +2,7 @@ const std = @import("std");
 
 const Logger = @import("../server/logger.zig");
 const Config = @import("../server/config.zig");
+const utils = @import("../server/utils.zig");
 
 const TracingAllocator = @import("../server/tracing.zig");
 
@@ -20,14 +21,11 @@ pub const ContextFixture = struct {
         const allocator: std.mem.Allocator = std.testing.allocator;
         const tracing_allocator: TracingAllocator = TracingAllocator.init(allocator);
 
-        const logger: Logger = try Logger.init(allocator, null, false);
-        const config: Config = try Config.load(allocator, null, null);
-
         return ContextFixture{
             .allocator = allocator,
             .tracing_allocator = tracing_allocator,
-            .logger = logger,
-            .config = config,
+            .logger = try Logger.init(allocator, null, false),
+            .config = try Config.load(allocator, null, null),
             .persistance = null,
             .memory = null,
         };
@@ -43,6 +41,7 @@ pub const ContextFixture = struct {
             &self.persistance.?,
         );
     }
+
     pub fn create_persistance(self: *ContextFixture) !void {
         if (self.persistance != null) self.persistance.?.deinit();
 
@@ -58,5 +57,85 @@ pub const ContextFixture = struct {
         self.config.deinit();
         if (self.persistance != null) self.persistance.?.deinit();
         if (self.memory != null) self.memory.?.deinit();
+    }
+};
+
+pub const ConfigFile = struct {
+    address: []const u8 = "127.0.0.1",
+    port: []const u8 = "7556",
+    maxclients: []const u8 = "512",
+    maxmemory: []const u8 = "0",
+    proto_max_bulk_len: []const u8 = "536870912",
+    workers: []const u8 = "4",
+    cbuffer: []const u8 = "4096",
+    whitelist: std.ArrayList([]const u8),
+
+    path: []const u8 = undefined,
+
+    pub fn init(path: []const u8) !ConfigFile {
+        var config_file = ConfigFile{
+            .whitelist = std.ArrayList([]const u8).init(std.testing.allocator),
+            .path = path,
+        };
+
+        try config_file.whitelist.append("127.0.0.1");
+        try config_file.whitelist.append("127.0.0.2");
+        try config_file.whitelist.append("127.0.0.3");
+        try config_file.whitelist.append("127.0.0.4");
+
+        return config_file;
+    }
+
+    pub fn deinit(self: *ConfigFile) void {
+        std.fs.cwd().deleteFile(self.path) catch {};
+        self.whitelist.deinit();
+    }
+
+    pub fn create(self: *ConfigFile, allocator: std.mem.Allocator, override: ?[]const u8) !void {
+        if (override) |content| return try self.__write(content);
+
+        const content: []const u8 =
+            \\ .{{
+            \\     .address = "{s}",
+            \\     .port = {s},
+            \\     .maxclients = {s},
+            \\     .maxmemory = {s},
+            \\     .proto_max_bulk_len = {s},
+            \\     .workers = {s},
+            \\     .cbuffer = {s},
+            \\     .whitelist = .{{
+            \\         "{s}",
+            \\         "{s}",
+            \\         "{s}",
+            \\         "{s}",
+            \\      }},
+            \\ }}
+        ;
+
+        const result = try std.fmt.allocPrint(allocator, content, .{
+            self.address,
+            self.port,
+            self.maxclients,
+            self.maxmemory,
+            self.proto_max_bulk_len,
+            self.workers,
+            self.cbuffer,
+            self.whitelist.items[0],
+            self.whitelist.items[1],
+            self.whitelist.items[2],
+            self.whitelist.items[3],
+        });
+        defer allocator.free(result);
+
+        try self.__write(result);
+    }
+
+    fn __write(self: *ConfigFile, content: []const u8) !void {
+        utils.create_path(self.path);
+
+        const file = try std.fs.cwd().createFile(self.path, .{});
+        defer file.close();
+
+        try file.writeAll(content);
     }
 };

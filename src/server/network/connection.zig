@@ -2,12 +2,13 @@ const std = @import("std");
 const assert = std.debug.assert;
 
 const server = @import("stream_server.zig");
+const Stream = @import("stream.zig").Stream;
 
 const Connection = @This();
 
 buffer: []u8,
 position: usize = 0,
-stream: std.net.Stream,
+stream: Stream,
 address: std.net.Address,
 
 allocator: std.mem.Allocator,

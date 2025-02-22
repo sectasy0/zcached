@@ -1,4 +1,5 @@
 const std = @import("std");
+const build_options = @import("build_options");
 
 const Listener = @import("../network/listener.zig");
 const StreamServer = @import("../network/stream_server.zig");
@@ -29,10 +30,17 @@ pub const Context = struct {
 };
 
 pub fn init(allocator: Allocator, context: Context) !Employer {
+    if (context.config.secure_transport and build_options.tls_enabled) {
+        context.logger.log(.Info, "# zcached is running with TLS enabled", .{});
+    }
+
     return .{
-        .server = StreamServer.init(.{
+        .server = try StreamServer.init(.{
             .reuse_address = true,
             .reuse_port = true,
+            .tls = context.config.secure_transport,
+            .cert_path = context.config.cert_path,
+            .key_path = context.config.key_path,
             .force_nonblocking = true,
         }),
         .context = context,

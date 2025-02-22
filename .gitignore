@@ -9,7 +9,8 @@ zig-test-*
 
 tmp/
 logs/
-log/
+log/*
 *.zcpf
 persist/*
 zcached.conf
+.DS_Store

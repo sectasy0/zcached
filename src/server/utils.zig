@@ -22,7 +22,7 @@ pub inline fn enum_type_from_str(comptime T: type, str: []const u8) ?T {
 }
 
 // Performs a pointer cast from an opaque pointer to a typed pointer of type `T`.
-pub fn ptrCast(comptime T: type, ptr: *anyopaque) *T {
+pub fn ptr_cast(comptime T: type, ptr: *anyopaque) *T {
     if (@alignOf(T) == 0) @compileError(@typeName(T));
     return @ptrCast(@alignCast(ptr));
 }
@@ -62,4 +62,44 @@ pub fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
     const output = try allocator.alloc(u8, size);
     _ = std.mem.replace(u8, value, "\r\n", "\\r\\n", output);
     return output;
+}
+
+pub const NodeIndex = std.zig.Ast.Node.Index;
+
+// Parses the name of a field from the AST, handling string literals.
+// Returns a byte slice representing the field name.
+pub fn parse_field_name(
+    alloc: std.mem.Allocator,
+    ast: std.zig.Ast,
+    idx: NodeIndex,
+) ![]const u8 {
+    const name = ast.tokenSlice(ast.firstToken(idx) - 2);
+    if (name[0] == '@') {
+        return std.zig.string_literal.parseAlloc(
+            alloc,
+            name[1..],
+        );
+    }
+    return name;
+}
+
+// Parses a string literal from the AST and returns it as a byte slice.
+pub fn parse_string(
+    alloc: std.mem.Allocator,
+    ast: std.zig.Ast,
+    idx: NodeIndex,
+) ![]const u8 {
+    return std.zig.string_literal.parseAlloc(alloc, ast.tokenSlice(
+        ast.nodes.items(.main_token)[idx],
+    ));
+}
+
+// Parses a numeric literal from the AST and returns it as a Result.
+pub fn parse_number(
+    ast: std.zig.Ast,
+    idx: NodeIndex,
+) std.zig.number_literal.Result {
+    return std.zig.number_literal.parseNumberLiteral(ast.tokenSlice(
+        ast.nodes.items(.main_token)[idx],
+    ));
 }

@@ -117,7 +117,7 @@ test "should return error.MemoryLimitExceeded" {
         try fixture.memory.?.put(key, value);
     }
 
-    const tracking = utils.ptrCast(
+    const tracking = utils.ptr_cast(
         TracingAllocator,
         fixture.memory.?.allocator.ptr,
     );
@@ -152,4 +152,33 @@ test "should not return error.MemoryLimitExceed when max but deleted some" {
     const result = fixture.memory.?.put("test key", value);
 
     try std.testing.expectEqual(void{}, result);
+}
+
+test "memory should not grow if key overriden with put" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+
+    try helper.setup_storage(&fixture.memory.?);
+
+    var arena = std.heap.ArenaAllocator.init(fixture.allocator);
+    defer arena.deinit();
+
+    const string = "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.";
+    const value: types.ZType = .{ .str = @constCast(string) };
+    for (0..8) |i| {
+        const key = try std.fmt.allocPrint(arena.allocator(), "key-{d}", .{i});
+        fixture.memory.?.put(key, value) catch {};
+    }
+
+    const tracking = utils.ptr_cast(
+        TracingAllocator,
+        fixture.memory.?.allocator.ptr,
+    );
+
+    const before_put = tracking.real_size;
+    try fixture.memory.?.put("key-1", value);
+    try fixture.memory.?.put("key-2", value);
+
+    try std.testing.expectEqual(before_put + 76, tracking.real_size);
 }

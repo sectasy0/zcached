@@ -1,200 +1,347 @@
 const std = @import("std");
 
 const Config = @import("../../server/config.zig");
-const DEFAULT_PATH = Config.DEFAULT_PATH;
+const DEFAULT_PATH = "./tmp/zcached.conf.zon";
+
+const fixtures = @import("../fixtures.zig");
+const ConfigFile = fixtures.ConfigFile;
 
 test "config default values ipv4" {
-    var config = try Config.load(std.testing.allocator, null, null);
+    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    // try config_file.create(std.testing.allocator);
+    defer config_file.deinit();
+
+    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
     try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.maxclients, 512);
+    try std.testing.expectEqual(config.workers, 4);
+    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
     try std.testing.expectEqual(config.maxmemory, 0);
-
-    std.fs.cwd().deleteFile(DEFAULT_PATH) catch {};
 }
 
 test "config load custom values ipv4" {
-    std.fs.cwd().deleteFile(DEFAULT_PATH) catch {};
+    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    config_file.address = "192.168.0.1";
+    config_file.port = "1234";
+    config_file.maxclients = "1024";
+    config_file.maxmemory = "500";
+    config_file.cbuffer = "8192";
 
-    const file_content = "address=192.168.0.1\nport=1234\nmaxclients=1024\nmaxmemory=500\n";
-    const file = try std.fs.cwd().createFile(DEFAULT_PATH, .{});
-    try file.writeAll(file_content);
-    defer file.close();
+    try config_file.create(std.testing.allocator, null);
+    defer config_file.deinit();
 
-    var config = try Config.load(std.testing.allocator, null, null);
+    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234);
     try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.maxclients, 1024);
+    try std.testing.expectEqual(config.workers, 4);
+    try std.testing.expectEqual(config.cbuffer, 8192);
+    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
     try std.testing.expectEqual(config.maxmemory, 500);
-
-    try std.fs.cwd().deleteFile(DEFAULT_PATH);
 }
 
 test "config load custom values ipv6" {
-    std.fs.cwd().deleteFile(DEFAULT_PATH) catch {};
+    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    config_file.address = "1fa7:68c4:a912:a3a7:f882:706d:15eb:1fd1";
+    config_file.port = "1234";
+    config_file.maxclients = "1024";
+    config_file.workers = "12";
+    config_file.maxmemory = "500";
 
-    const file_content = "address=::1\nport=1234\nmaxclients=1024\nmaxmemory=500\n";
-    const file = try std.fs.cwd().createFile(DEFAULT_PATH, .{});
-    try file.writeAll(file_content);
-    defer file.close();
+    try config_file.create(std.testing.allocator, null);
+    defer config_file.deinit();
 
-    var config = try Config.load(std.testing.allocator, null, null);
+    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
     defer config.deinit();
 
-    const addr = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 };
+    const addr: [16]u8 = .{
+        0x1f, 0xa7, 0x68, 0xc4,
+        0xa9, 0x12, 0xa3, 0xa7,
+        0xf8, 0x82, 0x70, 0x6d,
+        0x15, 0xeb, 0x1f, 0xd1,
+    };
     const address = std.net.Address.initIp6(addr, 1234, 0, 0);
 
     try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.maxclients, 1024);
+    try std.testing.expectEqual(config.workers, 12);
+    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
     try std.testing.expectEqual(config.maxmemory, 500);
-
-    try std.fs.cwd().deleteFile(DEFAULT_PATH);
 }
 
 test "config load custom values empty port" {
-    std.fs.cwd().deleteFile("./tmp/zcached_empty_port.conf") catch {};
-    std.fs.cwd().deleteDir("tmp") catch {};
+    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    config_file.address = "1fa7:68c4:a912:a3a7:f882:706d:15eb:1fd1";
+    // in case there is empty port or another integer value
+    // parsing will fail and default values will be loaded.
+    config_file.port = "";
 
-    const file_content = "address=::1\nport=\nmaxclients=1024\nmaxmemory=500\n";
-    std.fs.cwd().makeDir("tmp") catch {};
-    const file = try std.fs.cwd().createFile("./tmp/zcached_empty_port.conf", .{});
-    try file.writeAll(file_content);
-    defer file.close();
+    try config_file.create(std.testing.allocator, null);
+    defer config_file.deinit();
 
-    var default_config = Config{ ._arena = std.heap.ArenaAllocator.init(std.testing.allocator) };
-
-    var config = try Config.load(std.testing.allocator, "./tmp/zcached_empty_port.conf", null);
+    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
     defer config.deinit();
 
-    const addr = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 };
-    const address = std.net.Address.initIp6(
-        addr,
-        default_config.address.getPort(),
-        0,
-        0,
-    );
+    const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
 
-    try std.testing.expectEqual(address.any, config.address.any);
+    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expectEqual(config.address.getPort(), 7556); // default
+    try std.testing.expectEqual(config.workers, 4);
+    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
+    try std.testing.expectEqual(config.maxmemory, 0);
 }
 
 test "config load custom values empty address" {
-    std.fs.cwd().deleteFile("./tmp/zcached_empty_address.conf") catch {};
-    std.fs.cwd().deleteDir("tmp") catch {};
+    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    // address will be ignored and port will be loaded
+    config_file.address = "";
+    config_file.port = "1234";
 
-    const file_content = "address=\nport=1234\nmaxclients=1024\nmaxmemory=500\n";
-    std.fs.cwd().makeDir("tmp") catch {};
-    const file = try std.fs.cwd().createFile("./tmp/zcached_empty_address.conf", .{});
-    try file.writeAll(file_content);
-    defer file.close();
+    try config_file.create(std.testing.allocator, null);
+    defer config_file.deinit();
 
-    var config = try Config.load(std.testing.allocator, "./tmp/zcached_empty_address.conf", null);
+    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 1234);
 
-    try std.testing.expectEqual(address.any, config.address.any);
-}
-
-test "config load custom values workers" {
-    std.fs.cwd().deleteFile("./tmp/zcached_thread.conf") catch {};
-    std.fs.cwd().deleteDir("tmp") catch {};
-
-    const file_content = "address=::1\nport=1234\nmaxclients=1024\nmaxmemory=500\nworkers=4\n";
-    std.fs.cwd().makeDir("tmp") catch {};
-    const file = try std.fs.cwd().createFile("./tmp/zcached_thread.conf", .{});
-    try file.writeAll(file_content);
-    defer file.close();
-
-    var config = try Config.load(std.testing.allocator, "./tmp/zcached_thread.conf", null);
-    defer config.deinit();
-
+    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expectEqual(config.address.getPort(), 1234); // default
     try std.testing.expectEqual(config.workers, 4);
+    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
+    try std.testing.expectEqual(config.maxmemory, 0);
 }
 
 test "config load custom values empty workers" {
-    std.fs.cwd().deleteFile("./tmp/zcached_empty_workers.conf") catch {};
-    std.fs.cwd().deleteDir("tmp") catch {};
+    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    config_file.address = "1fa7:68c4:a912:a3a7:f882:706d:15eb:1fd1";
+    // in case there is empty port or another integer value
+    // parsing will fail and default values will be loaded.
+    config_file.workers = "";
 
-    const file_content = "address=::1\nport=1234\nmaxclients=1024\nmaxmemory=500\nworkers=\n";
-    std.fs.cwd().makeDir("tmp") catch {};
-    const file = try std.fs.cwd().createFile("./tmp/zcached_empty_workers.conf", .{});
-    try file.writeAll(file_content);
-    defer file.close();
+    try config_file.create(std.testing.allocator, null);
+    defer config_file.deinit();
 
-    var config = try Config.load(std.testing.allocator, "./tmp/zcached_empty_workers.conf", null);
+    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
     defer config.deinit();
 
+    const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
+
+    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expectEqual(config.address.getPort(), 7556); // default
     try std.testing.expectEqual(config.workers, 4);
+    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
+    try std.testing.expectEqual(config.maxmemory, 0);
 }
 
 test "config load custom values whitelist" {
-    std.fs.cwd().deleteFile("./tmp/zcached_whitelist.conf") catch {};
-    std.fs.cwd().deleteDir("tmp") catch {};
+    // we alerady have set whitelist in ConfigFile
+    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    try config_file.create(std.testing.allocator, null);
+    defer config_file.deinit();
 
-    const file_content = "address=::1\nport=1234\nmaxclients=1024\nmaxmemory=500\nwhitelist=192.168.0.1,127.0.0.1\n";
-    std.fs.cwd().makeDir("tmp") catch {};
-    const file = try std.fs.cwd().createFile("./tmp/zcached_whitelist.conf", .{});
-    try file.writeAll(file_content);
-    defer file.close();
-
-    var config = try Config.load(std.testing.allocator, "./tmp/zcached_whitelist.conf", null);
+    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
     defer config.deinit();
 
-    const address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, config.address.getPort());
-    const address_second = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, config.address.getPort());
+    const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
+    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expectEqual(config.maxclients, 512);
+    try std.testing.expectEqual(config.workers, 4);
+    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
+    try std.testing.expectEqual(config.maxmemory, 0);
 
-    try std.testing.expectEqual(config.whitelist.items[0].any, address.any);
-    try std.testing.expectEqual(config.whitelist.items[1].any, address_second.any);
+    var whitelist = std.ArrayList(std.net.Address).init(std.testing.allocator);
+    defer whitelist.deinit();
+
+    try whitelist.append(std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556));
+    try whitelist.append(std.net.Address.initIp4(.{ 127, 0, 0, 2 }, 7556));
+    try whitelist.append(std.net.Address.initIp4(.{ 127, 0, 0, 3 }, 7556));
+    try whitelist.append(std.net.Address.initIp4(.{ 127, 0, 0, 4 }, 7556));
+
+    try std.testing.expectEqual(config.whitelist.items.len, 4);
 }
 
 test "config load custom values empty whitelist" {
-    std.fs.cwd().deleteFile("./tmp/zcached_empty_whitelist.conf") catch {};
-    std.fs.cwd().deleteDir("tmp") catch {};
+    // we alerady have set whitelist in ConfigFile
+    var config_file = try ConfigFile.init(DEFAULT_PATH);
 
-    const file_content = "address=::1\nport=1234\nmaxclients=1024\nmaxmemory=500\nwhitelist=\n";
-    std.fs.cwd().makeDir("tmp") catch {};
-    const file = try std.fs.cwd().createFile("./tmp/zcached_empty_whitelist.conf", .{});
-    try file.writeAll(file_content);
-    defer file.close();
+    const override: []const u8 =
+        \\ .{
+        \\     .address = "127.0.0.8",
+        \\     .port = 7556,
+        \\     .maxclients = 512,
+        \\     .maxmemory = 0,
+        \\     .proto_max_bulk_len = 0,
+        \\     .workers = 12,
+        \\     .cbuffer = 1024,
+        \\     .whitelist = .{}
+        \\ }
+    ;
 
-    var config = try Config.load(std.testing.allocator, "./tmp/zcached_empty_whitelist.conf", null);
+    try config_file.create(std.testing.allocator, override);
+    defer config_file.deinit();
+
+    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
     defer config.deinit();
+
+    const address = std.net.Address.initIp4(.{ 127, 0, 0, 8 }, 7556);
+    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expectEqual(config.maxclients, 512);
+    try std.testing.expectEqual(config.workers, 12);
+    try std.testing.expectEqual(config.cbuffer, 1024);
+    try std.testing.expectEqual(config.proto_max_bulk_len, 0);
+    try std.testing.expectEqual(config.maxmemory, 0);
 
     try std.testing.expectEqual(config.whitelist.items.len, 0);
 }
 
-test "config load custom values invalid whitelist delimiter" {
-    std.fs.cwd().deleteFile("./tmp/zcached_empty_whitelist.conf") catch {};
-    std.fs.cwd().deleteDir("tmp") catch {};
+test "config load custom values empty whitelist string in zon" {
+    var config_file = try ConfigFile.init(DEFAULT_PATH);
 
-    const file_content = "address=::1\nport=1234\nmaxclients=1024\nmaxmemory=500\nwhitelist=192.168.0.1;127.0.0.1\n";
-    std.fs.cwd().makeDir("tmp") catch {};
-    const file = try std.fs.cwd().createFile("./tmp/zcached_empty_whitelist.conf", .{});
-    try file.writeAll(file_content);
-    defer file.close();
+    const override: []const u8 =
+        \\ .{
+        \\     .address = "127.0.0.8",
+        \\     .port = 7556,
+        \\     .maxclients = 512,
+        \\     .maxmemory = 0,
+        \\     .proto_max_bulk_len = 0,
+        \\     .workers = 12,
+        \\     .cbuffer = 1024,
+        \\     .whitelist = "",
+        \\ }
+    ;
 
-    var config = try Config.load(std.testing.allocator, "./tmp/zcached_empty_whitelist.conf", null);
+    try config_file.create(std.testing.allocator, override);
+    defer config_file.deinit();
+
+    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
     defer config.deinit();
+
+    const address = std.net.Address.initIp4(.{ 127, 0, 0, 8 }, 7556);
+    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expectEqual(config.maxclients, 512);
+    try std.testing.expectEqual(config.workers, 12);
+    try std.testing.expectEqual(config.cbuffer, 1024);
+    try std.testing.expectEqual(config.proto_max_bulk_len, 0);
+    try std.testing.expectEqual(config.maxmemory, 0);
 
     try std.testing.expectEqual(config.whitelist.items.len, 0);
 }
 
-test "config load proto_max_bulk_len" {
-    std.fs.cwd().deleteFile("./tmp/zcached_proto_max_bulk_len.conf") catch {};
-    std.fs.cwd().deleteDir("tmp") catch {};
+test "config load custom values empty whitelist int in zon" {
+    // we alerady have set whitelist in ConfigFile
+    var config_file = try ConfigFile.init(DEFAULT_PATH);
 
-    const file_content = "address=::1\nport=1234\nmaxclients=1024\nmaxmemory=500\nproto_max_bulk_len=1024\n";
-    std.fs.cwd().makeDir("tmp") catch {};
-    const file = try std.fs.cwd().createFile("./tmp/zcached_proto_max_bulk_len.conf", .{});
-    try file.writeAll(file_content);
-    defer file.close();
+    const override: []const u8 =
+        \\ .{
+        \\     .address = "127.0.0.8",
+        \\     .port = 7556,
+        \\     .maxclients = 512,
+        \\     .maxmemory = 0,
+        \\     .proto_max_bulk_len = 0,
+        \\     .workers = 12,
+        \\     .cbuffer = 1024,
+        \\     .whitelist = 0,
+        \\ }
+    ;
 
-    var config = try Config.load(std.testing.allocator, "./tmp/zcached_proto_max_bulk_len.conf", null);
+    try config_file.create(std.testing.allocator, override);
+    defer config_file.deinit();
+
+    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
     defer config.deinit();
 
-    try std.testing.expectEqual(config.proto_max_bulk_len, 1024);
+    const address = std.net.Address.initIp4(.{ 127, 0, 0, 8 }, 7556);
+    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expectEqual(config.maxclients, 512);
+    try std.testing.expectEqual(config.workers, 12);
+    try std.testing.expectEqual(config.cbuffer, 1024);
+    try std.testing.expectEqual(config.proto_max_bulk_len, 0);
+    try std.testing.expectEqual(config.maxmemory, 0);
+
+    try std.testing.expectEqual(config.whitelist.items.len, 0);
+}
+
+test "config load custom values only root" {
+    var config_file = try ConfigFile.init(DEFAULT_PATH);
+
+    const override: []const u8 = ".{}";
+
+    try config_file.create(std.testing.allocator, override);
+    defer config_file.deinit();
+
+    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
+    defer config.deinit();
+
+    const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
+    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expectEqual(config.maxclients, 512);
+    try std.testing.expectEqual(config.workers, 4);
+    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
+    try std.testing.expectEqual(config.maxmemory, 0);
+
+    try std.testing.expectEqual(config.whitelist.items.len, 0);
+}
+
+test "config load custom values empty file" {
+    var config_file = try ConfigFile.init(DEFAULT_PATH);
+
+    const override: []const u8 = "";
+
+    try config_file.create(std.testing.allocator, override);
+    defer config_file.deinit();
+
+    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
+    defer config.deinit();
+
+    const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
+    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expectEqual(config.maxclients, 512);
+    try std.testing.expectEqual(config.workers, 4);
+    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
+    try std.testing.expectEqual(config.maxmemory, 0);
+
+    try std.testing.expectEqual(config.whitelist.items.len, 0);
+}
+
+test "config load custom values missing some fields" {
+    // we alerady have set whitelist in ConfigFile
+    var config_file = try ConfigFile.init(DEFAULT_PATH);
+
+    const override: []const u8 =
+        \\ .{{
+        \\     .address = "127.0.0.8",
+        \\     .port = 7556,
+        \\     .whitelist = .{},
+        \\ }}
+    ;
+
+    try config_file.create(std.testing.allocator, override);
+    defer config_file.deinit();
+
+    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
+    defer config.deinit();
+
+    const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
+    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expectEqual(config.maxclients, 512);
+    try std.testing.expectEqual(config.workers, 4);
+    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
+    try std.testing.expectEqual(config.maxmemory, 0);
+
+    try std.testing.expectEqual(config.whitelist.items.len, 0);
 }

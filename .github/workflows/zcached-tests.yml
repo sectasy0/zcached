@@ -25,4 +25,4 @@ jobs:
       run: zig-linux-x86_64-0.13.0/zig fmt --check .
 
     - name: Run Tests
-      run: zig-linux-x86_64-0.13.0/zig test src/test.zig -lc
+      run: zig-linux-x86_64-0.13.0/zig build test

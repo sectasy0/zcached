@@ -58,7 +58,7 @@ cat <<EOF > $SERVICE_FILE
 	[Service]
 	Type=forking
 	ExecStartPre=/usr/bin/rm -f $RUN_DIR/$SERVICE_NAME.pid
-	ExecStart=/usr/bin/zcached -c $CONFIG_DIR/$SERVICE_NAME.conf -l $LOG_DIR/$SERVICE_NAME.log -d
+	ExecStart=/usr/bin/zcached -c $CONFIG_DIR/$SERVICE_NAME.conf -l $LOG_DIR/$SERVICE_NAME.log -d -pid $RUN_DIR/$SERVICE_NAME.pid
 	TimeoutStopSec=5
 	TimeoutStartSec=5
 	Restart=always

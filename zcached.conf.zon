@@ -1,0 +1,20 @@
+.{
+    .address = "127.0.0.1",
+    .port = 7556,
+    .maxclients = 123,
+    .maxmemory = 0, // 0 means unlimited
+    .proto_max_bulk_len = 0,
+    .workers = 4,
+    .cbuffer = 1234,
+    // tls configuration
+    .secure_transport = "true",
+    .cert_path = "./cert.pem",
+    .key_path = "./key.pem",
+    // you can't connect if whitelist was specified and your address not specified in it.
+    .whitelist = .{
+        "127.0.0.1",
+        "127.0.0.2",
+        "127.0.0.3",
+        "127.0.0.4",
+    },
+}

@@ -2,6 +2,7 @@ const std = @import("std");
 
 const StreamServer = @import("../network/stream_server.zig");
 const Connection = @import("../network/connection.zig");
+const Stream = @import("stream.zig").Stream;
 
 const Worker = @import("../processing/worker.zig");
 const Context = @import("../processing/employer.zig").Context;
@@ -13,8 +14,7 @@ const AccessMiddleware = @import("../middleware/access.zig");
 
 const utils = @import("../utils.zig");
 const Logger = @import("../logger.zig");
-
-const DEFAULT_CLIENT_BUFFER: usize = 4096;
+const consts = @import("consts.zig");
 
 const Listener = @This();
 
@@ -37,7 +37,7 @@ pub fn init(
         .allocator = allocator,
         .server = server,
         .context = context,
-        .buffer_size = buffer_size orelse DEFAULT_CLIENT_BUFFER,
+        .buffer_size = buffer_size orelse consts.CLIENT_BUFFER,
     };
 }
 
@@ -76,7 +76,7 @@ pub fn listen(self: *Listener, worker: *Worker) void {
                 switch (err) {
                     // ConnectionAborted aborted is returned when:
                     // - cant set fd to non-block
-                    // - cant allocate buffer fo incoming connection
+                    // - cant allocate buffer for incoming connection
                     // - cant set fd to worker states
                     //
                     // NotPermitted is returned when:
@@ -91,9 +91,9 @@ pub fn listen(self: *Listener, worker: *Worker) void {
             }
 
             // file descriptor is ready for reading.
-            if (pollfd.revents == std.posix.POLL.IN) {
+            if (pollfd.revents & (std.posix.POLL.IN | std.posix.POLL.HUP) != 0) {
                 const connection = worker.states.getPtr(pollfd.fd) orelse continue;
-                self.handle_connection(worker, connection);
+                self.handle_connection(worker, connection, i);
                 continue;
             }
 
@@ -106,7 +106,7 @@ pub fn listen(self: *Listener, worker: *Worker) void {
 
 const AcceptError = struct {
     etype: anyerror,
-    fd: ?std.net.Stream,
+    fd: ?Stream,
 };
 const AcceptResult = union(enum) {
     ok: void,
@@ -206,12 +206,19 @@ fn handle_incoming(self: *Listener, worker: *Worker) AcceptResult {
     return .{ .ok = void{} };
 }
 
-fn handle_connection(self: *const Listener, worker: *Worker, connection: *Connection) void {
+fn handle_connection(self: *Listener, worker: *Worker, connection: *Connection, i: usize) void {
     while (true) {
-        self.handle_request(worker, connection) catch |err| {
+        self.on_receive(worker, connection) catch |err| {
             switch (err) {
                 error.WouldBlock => return,
                 error.NotOpenForReading => return,
+                error.SocketNotConnected => handle_disconnection(
+                    self,
+                    worker,
+                    connection,
+                    i,
+                ),
+                error.ConnectionClosed => return,
                 else => connection.close(),
             }
         };
@@ -246,7 +253,7 @@ fn handle_disconnection(self: *Listener, worker: *Worker, connection: *Connectio
     }
 }
 
-fn handle_request(self: *const Listener, worker: *Worker, connection: *Connection) !void {
+fn on_receive(self: *const Listener, worker: *Worker, connection: *Connection) !void {
     const read_size = try connection.stream.read(connection.buffer[connection.position..]);
 
     if (read_size == 0) return error.ConnectionClosed;
@@ -269,12 +276,14 @@ fn handle_request(self: *const Listener, worker: *Worker, connection: *Connectio
         u8,
         connection.buffer[0..actual_size],
         connection.position,
-        '\n',
+        consts.EXT_CHAR,
     ) orelse {
         // don't have a complete message yet
         connection.position = actual_size;
         return;
     };
+
+    // here we've got the completed message
 
     connection.position = 0;
 

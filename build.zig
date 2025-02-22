@@ -10,6 +10,11 @@ pub fn build(b: *std.Build) void {
     // for restricting supported target set are available.
     const target = b.standardTargetOptions(.{});
 
+    const tls_enabled = b.option(bool, "tls-enabled", "Enable TLS") orelse false;
+
+    const options = b.addOptions();
+    options.addOption(bool, "tls_enabled", tls_enabled);
+
     // Standard optimization options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
@@ -25,6 +30,14 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
+    exe.root_module.addOptions("build_options", options);
+
+    if (tls_enabled) {
+        exe.linkSystemLibrary("openssl");
+        exe.linkSystemLibrary("crypto");
+    }
+
     exe.linkLibC();
 
     // This declares intent for the executable to be installed into the
@@ -64,6 +77,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
+    unit_tests.root_module.addOptions("build_options", options);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
     unit_tests.linkLibC();

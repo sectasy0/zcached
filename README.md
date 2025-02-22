@@ -12,11 +12,12 @@ Welcome to `zcached`, a nimble and efficient in-memory caching system resembling
 Crafted using Zig, a versatile, modern, compiled programming language, `zcached` prides itself on a zero-dependency architecture. This unique feature enables seamless compilation and execution across systems equipped with a Zig compiler, ensuring exceptional portability and deployment ease.
 
 ## Features
-- **Zero-Dependency Architecture**: Entirely built using Zig, ensuring seamless execution across systems with a Zig compiler, enhancing portability.
+- **Zero-Dependency Architecture**: Entirely built using Zig, ensuring seamless execution across systems with a Zig compiler, enhancing portability (except openssl, but it's optional).
 - **Lightweight Design**: Engineered for efficiency, `zcached` boasts a small memory footprint and minimal CPU usage, optimizing performance while conserving resources.
 - **Optimized Efficiency**: Prioritizing swift data handling, `zcached` ensures prompt operations to cater to diverse application needs.
 - **Diverse Data Type Support**: Accommodates various data structures like strings, integers, floats, and lists, enhancing utility across different use cases.
 - **Evented I/O and Multithreading**: Leveraging evented I/O mechanisms and multithreading capabilities, zcached efficiently manages concurrent operations, enhancing responsiveness and scalability.
+- **TLS Support**: Ensures secure data transmission with encryption, protecting data integrity and confidentiality during client-server communication.
 
 ## Usage
 While `zcached` lacks a CLI, you can utilize nc (netcat) from the terminal to send commands to the server.
@@ -24,11 +25,11 @@ While `zcached` lacks a CLI, you can utilize nc (netcat) from the terminal to se
 #### SET
 Set a key to hold the string value. If key already holds a value, it is overwritten, regardless of its type.
 ```bash
-echo "*3\r\n\$3\r\nSET\r\n\$9\r\nmycounter\r\n:42\r\n" | netcat -N localhost 7556
+echo "*3\r\n\$3\r\nSET\r\n\$9\r\nmycounter\r\n:42\r\nx03" | netcat -N localhost 7556
 ```
 
 ```bash
-echo "*3\r\n\$3\r\nSET\r\n\$9\r\nmycounter\r\n%2\r\n+first\r\n:1\r\n+second\r\n:2\r\n" | netcat -N localhost 7556
+echo "*3\r\n\$3\r\nSET\r\n\$9\r\nmycounter\r\n%2\r\n+first\r\n:1\r\n+second\r\n:2\r\nx03" | netcat -N localhost 7556
 ```
 
 #### Command Breakdown:
@@ -40,19 +41,19 @@ echo "*3\r\n\$3\r\nSET\r\n\$9\r\nmycounter\r\n%2\r\n+first\r\n:1\r\n+second\r\n:
 #### GET
 Retrieve the value of a key. If the key doesn’t exist, `-not found` is returned. GET only accepts strings as keys.
 ```bash
-echo "*2\r\n\$3\r\nGET\r\n\$9\r\nmycounter\r\n" | netcat -N localhost 7556
+echo "*2\r\n\$3\r\nGET\r\n\$9\r\nmycounter\r\n\x03" | netcat -N localhost 7556
 ```
 
 #### PING
 Returns `PONG`. This command is often used to test if a connection is still alive, or to measure latency.
 ```bash
-echo "*1\r\n$4\r\nPING\r\n" | netcat -N localhost 7556
+echo "*1\r\n\$4\r\nPING\r\n\x03" | netcat -N localhost 7556
 ```
 
 ## Running Tests
 Run the tests using `zig` in the root directory of the project:
 ```bash
-zig test src/test.zig -lc
+zig build test
 ```
 
 ## Documentation
