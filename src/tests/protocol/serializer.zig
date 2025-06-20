@@ -248,13 +248,13 @@ test "serialize array with various types" {
     var array = std.ArrayList(types.ZType).init(std.testing.allocator);
     defer array.deinit();
 
-    const int = .{ .int = 124 };
-    const nint = .{ .int = -500 };
-    const float = .{ .float = 55.123 };
-    const nfloat = .{ .float = -23.2 };
-    const fbool = .{ .bool = false };
-    const tbool = .{ .bool = true };
-    const vnull = .{ .null = void{} };
+    const int: types.ZType = .{ .int = 124 };
+    const nint: types.ZType = .{ .int = -500 };
+    const float: types.ZType = .{ .float = 55.123 };
+    const nfloat: types.ZType = .{ .float = -23.2 };
+    const fbool: types.ZType = .{ .bool = false };
+    const tbool: types.ZType = .{ .bool = true };
+    const vnull: types.ZType = .{ .null = void{} };
 
     try array.append(int);
     try array.append(nint);

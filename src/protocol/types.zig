@@ -6,21 +6,21 @@ pub const ZType = union(enum) {
     sstr: []u8, // simple string
     int: i64,
     float: f64,
-    map: map,
+    map: Map,
     bool: bool,
-    array: array,
-    set: set,
-    uset: uset,
+    array: Array,
+    set: Set,
+    uset: USet,
     null: void,
     // ClientError only for compatibility with ProtocolHandler
     // and it will not be stored in Memory but will be returned
     err: ClientError,
 
-    pub const array = std.ArrayList(ZType);
-    pub const map = std.StringHashMap(ZType);
+    pub const Array = std.ArrayList(ZType);
+    pub const Map = std.StringHashMap(ZType);
 
-    pub const set = sets.Set(ZType);
-    pub const uset = sets.SetUnordered(ZType);
+    pub const Set = sets.Set(ZType);
+    pub const USet = sets.SetUnordered(ZType);
 };
 
 pub const ClientError = struct {
@@ -61,7 +61,7 @@ pub fn ztype_copy(value: ZType, allocator: std.mem.Allocator) anyerror!ZType {
             return .{ .map = result };
         },
         .set => {
-            var result = ZType.set.init(allocator);
+            var result = ZType.Set.init(allocator);
 
             var iter = value.set.iterator();
             while (iter.next()) |item| {
@@ -75,7 +75,7 @@ pub fn ztype_copy(value: ZType, allocator: std.mem.Allocator) anyerror!ZType {
             return .{ .set = result };
         },
         .uset => {
-            var result = ZType.uset.init(allocator);
+            var result = ZType.USet.init(allocator);
 
             var iter = value.uset.iterator();
             while (iter.next()) |item| {

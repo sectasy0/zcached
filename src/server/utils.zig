@@ -10,7 +10,7 @@ const ctime = @cImport(@cInclude("time.h"));
 ///
 pub inline fn enum_type_from_str(comptime T: type, str: []const u8) ?T {
     switch (@typeInfo(T)) {
-        .Enum, .Union => {},
+        .@"enum", .@"union" => {},
         else => @compileError("expected type T to be union or enum"),
     }
     const fields = std.meta.fields(T);

@@ -25,6 +25,9 @@ pub const ReadError = error{
     /// In WASI, this error occurs when the file descriptor does
     /// not hold the required rights to read from it.
     AccessDenied,
+    LockViolation,
+    ProcessNotFound,
+    Canceled
 } || std.posix.UnexpectedError;
 
 pub const WriteError = error{
@@ -55,6 +58,9 @@ pub const WriteError = error{
 
     /// Connection reset by peer.
     ConnectionResetByPeer,
+
+    NoDevice,
+    ProcessNotFound
 } || std.posix.UnexpectedError;
 
 pub const Stream = struct {

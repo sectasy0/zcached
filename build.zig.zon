@@ -1,6 +1,7 @@
 .{
-    .name = "zcached",
+    .name = .zcached,
     .version = "0.1.0",
+    .fingerprint = 0xc2448bc4a2b8b999,
     .dependencies = .{},
     .paths = .{
         "src",

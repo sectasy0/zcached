@@ -178,7 +178,7 @@ test "Set with ZType array" {
     var set = sets.Set(ZType).init(allocator);
     defer set.deinit();
 
-    var arr = ZType.array.init(allocator);
+    var arr = ZType.Array.init(allocator);
     defer arr.deinit();
     try arr.append(ZType{ .int = 1 });
     try arr.append(ZType{ .int = 2 });
@@ -197,7 +197,7 @@ test "Set with ZType map" {
     var set = sets.Set(ZType).init(allocator);
     defer set.deinit();
 
-    var map = ZType.map.init(allocator);
+    var map = ZType.Map.init(allocator);
     defer map.deinit();
     try map.put("key1", ZType{ .int = 1 });
     try map.put("key2", ZType{ .int = 2 });
@@ -212,7 +212,7 @@ test "Set with ZType set" {
     var set = sets.Set(ZType).init(allocator);
     defer set.deinit();
 
-    var inner_set = ZType.set.init(allocator);
+    var inner_set = ZType.Set.init(allocator);
     defer inner_set.deinit();
     try inner_set.insert(ZType{ .int = 1 });
     try inner_set.insert(ZType{ .int = 2 });
@@ -228,7 +228,7 @@ test "Set with ZType uset" {
     var set = sets.Set(ZType).init(allocator);
     defer set.deinit();
 
-    var inner_uset = ZType.uset.init(allocator);
+    var inner_uset = ZType.USet.init(allocator);
     defer inner_uset.deinit();
     try inner_uset.insert(ZType{ .int = 1 });
     try inner_uset.insert(ZType{ .int = 2 });
@@ -432,7 +432,7 @@ test "SetUnordered with ZType array" {
     var set = sets.SetUnordered(ZType).init(allocator);
     defer set.deinit();
 
-    var arr = ZType.array.init(allocator);
+    var arr = ZType.Array.init(allocator);
     defer arr.deinit();
     try arr.append(ZType{ .int = 1 });
     try arr.append(ZType{ .int = 2 });
@@ -451,7 +451,7 @@ test "SetUnordered with ZType map" {
     var set = sets.SetUnordered(ZType).init(allocator);
     defer set.deinit();
 
-    var map = ZType.map.init(allocator);
+    var map = ZType.Map.init(allocator);
     defer map.deinit();
     try map.put("key1", ZType{ .int = 1 });
     try map.put("key2", ZType{ .int = 2 });
@@ -466,7 +466,7 @@ test "SetUnordered with ZType set" {
     var set = sets.SetUnordered(ZType).init(allocator);
     defer set.deinit();
 
-    var inner_set = ZType.set.init(allocator);
+    var inner_set = ZType.Set.init(allocator);
     defer inner_set.deinit();
     try inner_set.insert(ZType{ .int = 1 });
     try inner_set.insert(ZType{ .int = 2 });
@@ -482,7 +482,7 @@ test "SetUnordered with ZType uset" {
     var set = sets.SetUnordered(ZType).init(allocator);
     defer set.deinit();
 
-    var inner_uset = ZType.uset.init(allocator);
+    var inner_uset = ZType.USet.init(allocator);
     defer inner_uset.deinit();
     try inner_uset.insert(ZType{ .int = 1 });
     try inner_uset.insert(ZType{ .int = 2 });

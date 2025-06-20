@@ -90,7 +90,7 @@ test "should not store error" {
     defer fixture.deinit();
     try fixture.create_memory();
 
-    const err_value = .{ .err = .{ .message = "random error" } };
+    const err_value: types.ZType = .{ .err = .{ .message = "random error" } };
     try std.testing.expectEqual(fixture.memory.?.put("test", err_value), error.InvalidValue);
 }
 

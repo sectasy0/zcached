@@ -19,7 +19,7 @@ test "test ztype_copy with string" {
 }
 
 test "test ztype_copy with array" {
-    var array = types.ZType.array.init(std.testing.allocator);
+    var array = types.ZType.Array.init(std.testing.allocator);
     defer array.deinit();
 
     try array.append(types.ZType{ .int = 1 });
@@ -36,7 +36,7 @@ test "test ztype_copy with array" {
 }
 
 test "test ztype_copy with map" {
-    var map = types.ZType.map.init(std.testing.allocator);
+    var map = types.ZType.Map.init(std.testing.allocator);
     defer map.deinit();
 
     try map.put("key1", types.ZType{ .int = 1 });
@@ -51,7 +51,7 @@ test "test ztype_copy with map" {
 }
 
 test "test ztype_copy and ztype_free with set" {
-    var set = types.ZType.set.init(std.testing.allocator);
+    var set = types.ZType.Set.init(std.testing.allocator);
     defer set.deinit();
 
     try set.insert(types.ZType{ .int = 1 });
@@ -66,7 +66,7 @@ test "test ztype_copy and ztype_free with set" {
 }
 
 test "test ztype_copy and ztype_free with uset" {
-    var uset = types.ZType.uset.init(std.testing.allocator);
+    var uset = types.ZType.USet.init(std.testing.allocator);
     defer uset.deinit();
 
     try uset.insert(types.ZType{ .int = 1 });
@@ -81,11 +81,11 @@ test "test ztype_copy and ztype_free with uset" {
 }
 
 test "test ztype_copy with nested structures" {
-    var map = types.ZType.map.init(std.testing.allocator);
+    var map = types.ZType.Map.init(std.testing.allocator);
     defer map.deinit();
     try map.put("nested_key", types.ZType{ .int = 99 });
 
-    var array = types.ZType.array.init(std.testing.allocator);
+    var array = types.ZType.Array.init(std.testing.allocator);
     defer array.deinit();
     try array.append(types.ZType{ .map = map });
 

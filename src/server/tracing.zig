@@ -32,11 +32,12 @@ pub fn allocator(self: *TracingAllocator) std.mem.Allocator {
             .alloc = alloc,
             .resize = resize,
             .free = free,
+            .remap = remap,
         },
     };
 }
 
-fn alloc(ctx: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]u8 {
+fn alloc(ctx: *anyopaque, len: usize, ptr_align: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
     var self = ptr_cast(TracingAllocator, ctx);
     self.mutex.lock();
     defer self.mutex.unlock();
@@ -54,7 +55,7 @@ fn alloc(ctx: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]u8 {
     return ptr;
 }
 
-fn resize(ctx: *anyopaque, buf: []u8, buf_align: u8, new_len: usize, ret_addr: usize) bool {
+fn resize(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
     var self = ptr_cast(TracingAllocator, ctx);
     self.mutex.lock();
     defer self.mutex.unlock();
@@ -82,7 +83,27 @@ fn resize(ctx: *anyopaque, buf: []u8, buf_align: u8, new_len: usize, ret_addr: u
     return stable;
 }
 
-fn free(ctx: *anyopaque, buf: []u8, buf_align: u8, ret_addr: usize) void {
+fn remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+    var self = ptr_cast(TracingAllocator, ctx);
+    self.mutex.lock();
+    defer self.mutex.unlock();
+
+    const memory_new = self.child_allocator.rawRemap(
+        memory,
+        alignment,
+        new_len,
+        ret_addr,
+    ) orelse return null;
+
+    if (memory_new != memory.ptr) self.real_size -= memory.len;
+    if (memory_new != memory.ptr) self.real_size += new_len;
+    if (memory_new != memory.ptr) self.total_size -= memory.len;
+    if (memory_new != memory.ptr) self.total_size += new_len;
+
+    return memory_new;
+}
+
+fn free(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, ret_addr: usize) void {
     var self = ptr_cast(TracingAllocator, ctx);
     self.mutex.lock();
     defer self.mutex.unlock();

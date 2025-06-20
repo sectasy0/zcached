@@ -14,8 +14,12 @@ const server = @import("server/network/listener.zig");
 
 const Employer = @import("server/processing/employer.zig");
 
-pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
-    @setCold(true);
+pub const panic = std.debug.FullPanic(panicHandler);
+
+fn panicHandler(msg: []const u8, first_trace_addr: ?usize) noreturn {
+    @branchHint(.cold);
+
+    _ = first_trace_addr; // unused, but required by the panic handler signature
 
     log: {
         const file = std.fs.cwd().createFile(
@@ -31,8 +35,11 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
             break :log;
         };
 
+        file.writeAll("== PANIC ==\r\n") catch break :log;
+        file.writeAll(msg) catch break :log;
+
         const debug_info = std.debug.getSelfDebugInfo() catch break :log;
-        const addr = ret_addr orelse @returnAddress();
+        const addr = @returnAddress();
 
         std.debug.writeCurrentStackTrace(
             file.writer(),
@@ -46,7 +53,7 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
         std.log.err("# server panicked, please check logs in ./log/zcached.log", .{});
     }
 
-    std.builtin.default_panic(msg, error_return_trace, ret_addr);
+    std.process.exit(1);
 }
 
 pub fn main() void {

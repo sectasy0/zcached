@@ -103,7 +103,7 @@ pub fn flush(self: *Memory) void {
 
     var iter = self.internal.iterator();
     while (iter.next()) |item| {
-        var key = .{ .str = @constCast(item.key_ptr.*) };
+        var key: types.ZType = .{ .str = @constCast(item.key_ptr.*) };
         var value = item.value_ptr.*;
 
         types.ztype_free(&key, self.allocator);
@@ -197,7 +197,7 @@ pub fn copy(self: *Memory, source: []const u8, destination: []const u8, replace:
 }
 
 pub fn deinit(self: *Memory) void {
-    var value = .{ .map = self.internal };
+    var value: types.ZType = .{ .map = self.internal };
 
     types.ztype_free(
         &value,
