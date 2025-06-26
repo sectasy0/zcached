@@ -6,9 +6,9 @@ const posix = std.posix;
 
 // Build configuration and conditional imports
 const build_options = @import("build_options");
-const secure = if (build_options.tls_enabled) 
-    @import("secure.zig") 
-else 
+const secure = if (build_options.tls_enabled)
+    @import("secure.zig")
+else
     @import("unsecure.zig");
 
 // Local modules

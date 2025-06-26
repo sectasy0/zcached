@@ -17,7 +17,6 @@ const Context = @import("employer.zig").Context;
 const commands = @import("commands.zig");
 const errors = @import("errors.zig");
 
-
 pub const Processor = @This();
 
 cmd_handler: commands.Handler,

@@ -5,11 +5,11 @@ const native_os = builtin.os.tag;
 
 // Build configuration and conditional imports
 const build_options = @import("build_options");
-const secure = if (build_options.tls_enabled) 
-    @import("secure.zig") 
-else 
+const secure = if (build_options.tls_enabled)
+    @import("secure.zig")
+else
     @import("unsecure.zig");
-    
+
 pub const ReadError = error{
     InputOutput,
     SystemResources,
@@ -20,7 +20,6 @@ pub const ReadError = error{
     ConnectionTimedOut,
     NotOpenForReading,
     SocketNotConnected,
-
     SSLProtocolError,
 
     /// This error occurs when no global event loop is configured,
@@ -32,7 +31,7 @@ pub const ReadError = error{
     AccessDenied,
     LockViolation,
     ProcessNotFound,
-    Canceled
+    Canceled,
 } || std.posix.UnexpectedError;
 
 pub const WriteError = error{
@@ -50,7 +49,6 @@ pub const WriteError = error{
     SystemResources,
     OperationAborted,
     NotOpenForWriting,
-
     SSLProtocolError,
 
     /// The process cannot access the file because another process has locked
@@ -65,7 +63,7 @@ pub const WriteError = error{
     ConnectionResetByPeer,
 
     NoDevice,
-    ProcessNotFound
+    ProcessNotFound,
 } || std.posix.UnexpectedError;
 
 pub const Stream = struct {
