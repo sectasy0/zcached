@@ -1,13 +1,18 @@
 const std = @import("std");
 
+// Protocol types
 const ZType = @import("../../protocol/types.zig").ZType;
 
+// Storage
 const Memory = @import("../storage/memory.zig");
 
+// Tracing utilities
 const TracingAllocator = @import("../tracing.zig").TracingAllocator;
+
+// Configuration and utilities
 const Config = @import("../config.zig");
-const utils = @import("../utils.zig");
 const Logger = @import("../logger.zig");
+const utils = @import("../utils.zig");
 
 const CommandType = enum {
     PING,

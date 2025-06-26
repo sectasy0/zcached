@@ -16,19 +16,19 @@ test "config default values ipv4" {
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
     try std.testing.expectEqual(config.address.any, address.any);
-    try std.testing.expectEqual(config.maxclients, 512);
+    try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.cbuffer, 4096);
-    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
-    try std.testing.expectEqual(config.maxmemory, 0);
+    try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
+    try std.testing.expectEqual(config.max_memory, 0);
 }
 
 test "config load custom values ipv4" {
     var config_file = try ConfigFile.init(DEFAULT_PATH);
     config_file.address = "192.168.0.1";
     config_file.port = "1234";
-    config_file.maxclients = "1024";
-    config_file.maxmemory = "500";
+    config_file.max_clients = "1024";
+    config_file.max_memory = "500";
     config_file.cbuffer = "8192";
 
     try config_file.create(std.testing.allocator, null);
@@ -39,20 +39,20 @@ test "config load custom values ipv4" {
 
     const address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234);
     try std.testing.expectEqual(config.address.any, address.any);
-    try std.testing.expectEqual(config.maxclients, 1024);
+    try std.testing.expectEqual(config.max_clients, 1024);
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.cbuffer, 8192);
-    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
-    try std.testing.expectEqual(config.maxmemory, 500);
+    try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
+    try std.testing.expectEqual(config.max_memory, 500);
 }
 
 test "config load custom values ipv6" {
     var config_file = try ConfigFile.init(DEFAULT_PATH);
     config_file.address = "1fa7:68c4:a912:a3a7:f882:706d:15eb:1fd1";
     config_file.port = "1234";
-    config_file.maxclients = "1024";
+    config_file.max_clients = "1024";
     config_file.workers = "12";
-    config_file.maxmemory = "500";
+    config_file.max_memory = "500";
 
     try config_file.create(std.testing.allocator, null);
     defer config_file.deinit();
@@ -69,11 +69,11 @@ test "config load custom values ipv6" {
     const address = std.net.Address.initIp6(addr, 1234, 0, 0);
 
     try std.testing.expectEqual(config.address.any, address.any);
-    try std.testing.expectEqual(config.maxclients, 1024);
+    try std.testing.expectEqual(config.max_clients, 1024);
     try std.testing.expectEqual(config.workers, 12);
     try std.testing.expectEqual(config.cbuffer, 4096);
-    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
-    try std.testing.expectEqual(config.maxmemory, 500);
+    try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
+    try std.testing.expectEqual(config.max_memory, 500);
 }
 
 test "config load custom values empty port" {
@@ -95,8 +95,8 @@ test "config load custom values empty port" {
     try std.testing.expectEqual(config.address.getPort(), 7556); // default
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.cbuffer, 4096);
-    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
-    try std.testing.expectEqual(config.maxmemory, 0);
+    try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
+    try std.testing.expectEqual(config.max_memory, 0);
 }
 
 test "config load custom values empty address" {
@@ -117,8 +117,8 @@ test "config load custom values empty address" {
     try std.testing.expectEqual(config.address.getPort(), 1234); // default
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.cbuffer, 4096);
-    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
-    try std.testing.expectEqual(config.maxmemory, 0);
+    try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
+    try std.testing.expectEqual(config.max_memory, 0);
 }
 
 test "config load custom values empty workers" {
@@ -140,8 +140,8 @@ test "config load custom values empty workers" {
     try std.testing.expectEqual(config.address.getPort(), 7556); // default
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.cbuffer, 4096);
-    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
-    try std.testing.expectEqual(config.maxmemory, 0);
+    try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
+    try std.testing.expectEqual(config.max_memory, 0);
 }
 
 test "config load custom values whitelist" {
@@ -155,11 +155,11 @@ test "config load custom values whitelist" {
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
     try std.testing.expectEqual(config.address.any, address.any);
-    try std.testing.expectEqual(config.maxclients, 512);
+    try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.cbuffer, 4096);
-    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
-    try std.testing.expectEqual(config.maxmemory, 0);
+    try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
+    try std.testing.expectEqual(config.max_memory, 0);
 
     var whitelist = std.ArrayList(std.net.Address).init(std.testing.allocator);
     defer whitelist.deinit();
@@ -180,9 +180,9 @@ test "config load custom values empty whitelist" {
         \\ .{
         \\     .address = "127.0.0.8",
         \\     .port = 7556,
-        \\     .maxclients = 512,
-        \\     .maxmemory = 0,
-        \\     .proto_max_bulk_len = 0,
+        \\     .max_clients = 512,
+        \\     .max_memory = 0,
+        \\     .max_request_size = 0,
         \\     .workers = 12,
         \\     .cbuffer = 1024,
         \\     .whitelist = .{}
@@ -197,11 +197,11 @@ test "config load custom values empty whitelist" {
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 8 }, 7556);
     try std.testing.expectEqual(config.address.any, address.any);
-    try std.testing.expectEqual(config.maxclients, 512);
+    try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 12);
     try std.testing.expectEqual(config.cbuffer, 1024);
-    try std.testing.expectEqual(config.proto_max_bulk_len, 0);
-    try std.testing.expectEqual(config.maxmemory, 0);
+    try std.testing.expectEqual(config.max_request_size, 0);
+    try std.testing.expectEqual(config.max_memory, 0);
 
     try std.testing.expectEqual(config.whitelist.items.len, 0);
 }
@@ -213,9 +213,9 @@ test "config load custom values empty whitelist string in zon" {
         \\ .{
         \\     .address = "127.0.0.8",
         \\     .port = 7556,
-        \\     .maxclients = 512,
-        \\     .maxmemory = 0,
-        \\     .proto_max_bulk_len = 0,
+        \\     .max_clients = 512,
+        \\     .max_memory = 0,
+        \\     .max_request_size = 0,
         \\     .workers = 12,
         \\     .cbuffer = 1024,
         \\     .whitelist = "",
@@ -230,11 +230,11 @@ test "config load custom values empty whitelist string in zon" {
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 8 }, 7556);
     try std.testing.expectEqual(config.address.any, address.any);
-    try std.testing.expectEqual(config.maxclients, 512);
+    try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 12);
     try std.testing.expectEqual(config.cbuffer, 1024);
-    try std.testing.expectEqual(config.proto_max_bulk_len, 0);
-    try std.testing.expectEqual(config.maxmemory, 0);
+    try std.testing.expectEqual(config.max_request_size, 0);
+    try std.testing.expectEqual(config.max_memory, 0);
 
     try std.testing.expectEqual(config.whitelist.items.len, 0);
 }
@@ -247,9 +247,9 @@ test "config load custom values empty whitelist int in zon" {
         \\ .{
         \\     .address = "127.0.0.8",
         \\     .port = 7556,
-        \\     .maxclients = 512,
-        \\     .maxmemory = 0,
-        \\     .proto_max_bulk_len = 0,
+        \\     .max_clients = 512,
+        \\     .max_memory = 0,
+        \\     .max_request_size = 0,
         \\     .workers = 12,
         \\     .cbuffer = 1024,
         \\     .whitelist = 0,
@@ -264,11 +264,11 @@ test "config load custom values empty whitelist int in zon" {
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 8 }, 7556);
     try std.testing.expectEqual(config.address.any, address.any);
-    try std.testing.expectEqual(config.maxclients, 512);
+    try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 12);
     try std.testing.expectEqual(config.cbuffer, 1024);
-    try std.testing.expectEqual(config.proto_max_bulk_len, 0);
-    try std.testing.expectEqual(config.maxmemory, 0);
+    try std.testing.expectEqual(config.max_request_size, 0);
+    try std.testing.expectEqual(config.max_memory, 0);
 
     try std.testing.expectEqual(config.whitelist.items.len, 0);
 }
@@ -286,11 +286,11 @@ test "config load custom values only root" {
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
     try std.testing.expectEqual(config.address.any, address.any);
-    try std.testing.expectEqual(config.maxclients, 512);
+    try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.cbuffer, 4096);
-    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
-    try std.testing.expectEqual(config.maxmemory, 0);
+    try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
+    try std.testing.expectEqual(config.max_memory, 0);
 
     try std.testing.expectEqual(config.whitelist.items.len, 0);
 }
@@ -308,11 +308,11 @@ test "config load custom values empty file" {
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
     try std.testing.expectEqual(config.address.any, address.any);
-    try std.testing.expectEqual(config.maxclients, 512);
+    try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.cbuffer, 4096);
-    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
-    try std.testing.expectEqual(config.maxmemory, 0);
+    try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
+    try std.testing.expectEqual(config.max_memory, 0);
 
     try std.testing.expectEqual(config.whitelist.items.len, 0);
 }
@@ -337,11 +337,11 @@ test "config load custom values missing some fields" {
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
     try std.testing.expectEqual(config.address.any, address.any);
-    try std.testing.expectEqual(config.maxclients, 512);
+    try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.cbuffer, 4096);
-    try std.testing.expectEqual(config.proto_max_bulk_len, 512 * 1024 * 1024);
-    try std.testing.expectEqual(config.maxmemory, 0);
+    try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
+    try std.testing.expectEqual(config.max_memory, 0);
 
     try std.testing.expectEqual(config.whitelist.items.len, 0);
 }

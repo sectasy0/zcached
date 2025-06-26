@@ -1,18 +1,23 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+// Core utilities
 const Config = @import("server/config.zig");
 const cli = @import("server/cli.zig");
 const log = @import("server/logger.zig");
 
-const TracingAllocator = @import("server/tracing.zig");
-
-const persistance = @import("server/storage/persistance.zig");
-const Memory = @import("server/storage/memory.zig");
-
+// Networking
 const server = @import("server/network/listener.zig");
 
+// Processing / application logic
 const Employer = @import("server/processing/employer.zig");
+
+// Storage / memory
+const Memory = @import("server/storage/memory.zig");
+const persistance = @import("server/storage/persistance.zig");
+
+// Tracing
+const TracingAllocator = @import("server/tracing.zig");
 
 pub const panic = std.debug.FullPanic(panicHandler);
 
@@ -177,8 +182,9 @@ fn handle_arguments(args: cli.Args) ?void {
 }
 
 fn run_supervisor(allocator: std.mem.Allocator, context: Employer.Context) void {
-    context.logger.log(.Info, "# starting zcached server on tcp:{?}", .{
+    context.logger.log(.Info, "# starting zcached server on tcp://{?} | Workers {}", .{
         context.config.address,
+        context.config.workers,
     });
 
     var employer = Employer.init(allocator, context) catch |err| {

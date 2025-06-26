@@ -2,9 +2,14 @@ const std = @import("std");
 
 const builtin = @import("builtin");
 const native_os = builtin.os.tag;
-const build_options = @import("build_options");
-const secure = if (build_options.tls_enabled) @import("secure.zig") else @import("unsecure.zig");
 
+// Build configuration and conditional imports
+const build_options = @import("build_options");
+const secure = if (build_options.tls_enabled) 
+    @import("secure.zig") 
+else 
+    @import("unsecure.zig");
+    
 pub const ReadError = error{
     InputOutput,
     SystemResources,

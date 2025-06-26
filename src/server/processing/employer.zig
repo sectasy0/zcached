@@ -1,17 +1,21 @@
+// Standard library
 const std = @import("std");
 const build_options = @import("build_options");
+const Allocator = std.mem.Allocator;
 
+// Network modules
 const Listener = @import("../network/listener.zig");
 const StreamServer = @import("../network/stream_server.zig");
 
-const Logger = @import("../logger.zig");
+// Logging and configuration
 const Config = @import("../config.zig");
+const Logger = @import("../logger.zig");
 const utils = @import("../utils.zig");
 
+// Storage and processing
 const Memory = @import("../storage/memory.zig");
 const Worker = @import("../processing/worker.zig");
 
-const Allocator = std.mem.Allocator;
 const Employer = @This();
 
 server: StreamServer,
@@ -79,9 +83,8 @@ pub fn supervise(self: *Employer) void {
         self.allocator,
         &self.server,
         self.context,
-        self.context.config.cbuffer,
     );
-    const fds_size = self.context.config.maxclients;
+    const fds_size = self.context.config.max_clients;
 
     for (0..self.context.config.workers) |i| {
         // every thread have own allocator.

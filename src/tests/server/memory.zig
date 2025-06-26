@@ -97,7 +97,7 @@ test "should not store error" {
 test "should return error.MemoryLimitExceeded" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
-    fixture.config.maxmemory = 1804460;
+    fixture.config.max_memory = 1804460;
     try fixture.create_memory();
 
     var arena = std.heap.ArenaAllocator.init(fixture.allocator);
@@ -116,7 +116,7 @@ test "should return error.MemoryLimitExceeded" {
 test "should not return error.MemoryLimitExceed when max but deleted some" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
-    fixture.config.maxmemory = 1880;
+    fixture.config.max_memory = 1880;
     try fixture.create_memory();
 
     var arena = std.heap.ArenaAllocator.init(fixture.allocator);

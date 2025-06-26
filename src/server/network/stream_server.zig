@@ -1,10 +1,17 @@
 const std = @import("std");
+const io = std.io;
 const mem = std.mem;
 const os = std.os;
-const io = std.io;
 const posix = std.posix;
+
+// Build configuration and conditional imports
 const build_options = @import("build_options");
-const secure = if (build_options.tls_enabled) @import("secure.zig") else @import("unsecure.zig");
+const secure = if (build_options.tls_enabled) 
+    @import("secure.zig") 
+else 
+    @import("unsecure.zig");
+
+// Local modules
 const Stream = @import("stream.zig").Stream;
 
 const StreamServer = @This();

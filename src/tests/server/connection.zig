@@ -11,16 +11,23 @@ test "Connection.init" {
         .address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234),
     };
 
-    const buffer_size = 10;
+    var pollfd = std.posix.pollfd{
+        .fd = incoming.stream.handle,
+        .events = std.posix.POLL.IN,
+        .revents = 0,
+    };
+
+    const buffer_size = 4096;
     var connection = try Connection.init(
         allocator,
         incoming,
-        buffer_size,
+        &pollfd,
+        0, // id
     );
     defer connection.deinit();
 
     try std.testing.expectEqual(buffer_size, connection.buffer.len);
-    try std.testing.expectEqual(0, connection.position);
+    try std.testing.expectEqual(0, connection.accumulator.items.len);
     try std.testing.expectEqual(1, connection.stream.handle);
     try std.testing.expectEqual(incoming.address.any, connection.address.any);
     try std.testing.expectEqual(allocator, connection.allocator);
@@ -33,11 +40,17 @@ test "Connection.deinit" {
         .address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234),
     };
 
-    const buffer_size = 10;
+    var pollfd = std.posix.pollfd{
+        .fd = incoming.stream.handle,
+        .events = std.posix.POLL.IN,
+        .revents = 0,
+    };
+
     var connection = try Connection.init(
         allocator,
         incoming,
-        buffer_size,
+        &pollfd,
+        0, // id
     );
 
     connection.deinit();
@@ -52,35 +65,21 @@ test "Connection.fd" {
         .address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234),
     };
 
-    const buffer_size = 10;
+    var pollfd = std.posix.pollfd{
+        .fd = incoming.stream.handle,
+        .events = std.posix.POLL.IN,
+        .revents = 0,
+    };
+
     var connection = try Connection.init(
         allocator,
         incoming,
-        buffer_size,
+        &pollfd,
+        0, // id
     );
     defer connection.deinit();
 
     try std.testing.expectEqual(1, connection.fd());
-}
-
-test "Connection.resize_buffer" {
-    const allocator = std.testing.allocator;
-
-    const incoming = server.Connection{
-        .stream = Stream{ .handle = 1 },
-        .address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234),
-    };
-
-    const buffer_size = 10;
-    var connection = try Connection.init(
-        allocator,
-        incoming,
-        buffer_size,
-    );
-    defer connection.deinit();
-
-    try connection.resize_buffer(20);
-    try std.testing.expectEqual(20, connection.buffer.len);
 }
 
 // this test now returns `thread 1049524 panic: internal test runner failure`
@@ -93,12 +92,7 @@ test "Connection.resize_buffer" {
 //         .address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234),
 //     };
 
-//     const buffer_size = 10;
-//     var connection = try Connection.init(
-//         allocator,
-//         incoming,
-//         buffer_size,
-//     );
+//     var connection = try Connection.init(allocator, incoming);
 //     defer connection.deinit();
 
 //     connection.close();

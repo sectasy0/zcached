@@ -63,9 +63,9 @@ pub const ContextFixture = struct {
 pub const ConfigFile = struct {
     address: []const u8 = "127.0.0.1",
     port: []const u8 = "7556",
-    maxclients: []const u8 = "512",
-    maxmemory: []const u8 = "0",
-    proto_max_bulk_len: []const u8 = "536870912",
+    max_clients: []const u8 = "512",
+    max_memory: []const u8 = "0",
+    max_request_size: []const u8 = "10485760",
     workers: []const u8 = "4",
     cbuffer: []const u8 = "4096",
     whitelist: std.ArrayList([]const u8),
@@ -98,9 +98,9 @@ pub const ConfigFile = struct {
             \\ .{{
             \\     .address = "{s}",
             \\     .port = {s},
-            \\     .maxclients = {s},
-            \\     .maxmemory = {s},
-            \\     .proto_max_bulk_len = {s},
+            \\     .max_clients = {s},
+            \\     .max_memory = {s},
+            \\     .max_request_size = {s},
             \\     .workers = {s},
             \\     .cbuffer = {s},
             \\     .whitelist = .{{
@@ -115,9 +115,9 @@ pub const ConfigFile = struct {
         const result = try std.fmt.allocPrint(allocator, content, .{
             self.address,
             self.port,
-            self.maxclients,
-            self.maxmemory,
-            self.proto_max_bulk_len,
+            self.max_clients,
+            self.max_memory,
+            self.max_request_size,
             self.workers,
             self.cbuffer,
             self.whitelist.items[0],

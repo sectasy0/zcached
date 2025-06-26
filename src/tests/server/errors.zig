@@ -10,8 +10,10 @@ test "BadRequest" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
 
+    const out_writer = stream.writer();
+
     var logger = try Logger.init(std.testing.allocator, null, false);
-    try errors.handle(&stream, error.BadRequest, .{}, &logger);
+    try errors.handle(&out_writer, error.BadRequest, .{}, &logger);
 
     const expected: []u8 = @constCast("-ERR bad request\r\n");
 
@@ -21,13 +23,14 @@ test "BadRequest" {
 test "UnknownCommand" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
+    const out_writer = stream.writer();
 
     var logger = try Logger.init(std.testing.allocator, null, false);
     var array = std.ArrayList(ZType).initCapacity(std.testing.allocator, 0) catch {
         return error.AllocatorError;
     };
     const args = errors.build_args(&array);
-    try errors.handle(&stream, error.UnknownCommand, args, &logger);
+    try errors.handle(&out_writer, error.UnknownCommand, args, &logger);
 
     const expected: []u8 = @constCast("-ERR unknown command\r\n");
 
@@ -38,6 +41,8 @@ test "UnknownCommand with command name" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
 
+    const out_writer = stream.writer();
+
     var logger = try Logger.init(std.testing.allocator, null, false);
     var array = std.ArrayList(ZType).initCapacity(std.testing.allocator, 1) catch {
         return error.AllocatorError;
@@ -46,7 +51,7 @@ test "UnknownCommand with command name" {
     defer array.deinit();
 
     const args = errors.build_args(&array);
-    try errors.handle(&stream, error.UnknownCommand, args, &logger);
+    try errors.handle(&out_writer, error.UnknownCommand, args, &logger);
 
     try std.testing.expectFmt(
         stream.getWritten(),
@@ -58,9 +63,10 @@ test "UnknownCommand with command name" {
 test "unexpected error" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
+    const out_writer = stream.writer();
 
     var logger = try Logger.init(std.testing.allocator, null, false);
-    try errors.handle(&stream, error.Unexpected, .{}, &logger);
+    try errors.handle(&out_writer, error.Unexpected, .{}, &logger);
 
     const expected: []u8 = @constCast("-ERR unexpected\r\n");
 
@@ -70,9 +76,10 @@ test "unexpected error" {
 test "max clients reached" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
+    const out_writer = stream.writer();
 
     var logger = try Logger.init(std.testing.allocator, null, false);
-    try errors.handle(&stream, error.MaxClientsReached, .{}, &logger);
+    try errors.handle(&out_writer, error.MaxClientsReached, .{}, &logger);
 
     const expected: []u8 = @constCast("-ERR max number of clients reached\r\n");
 
@@ -83,6 +90,8 @@ test "NotFound with key name" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
 
+    const out_writer = stream.writer();
+
     var logger = try Logger.init(std.testing.allocator, null, false);
     var array = std.ArrayList(ZType).initCapacity(std.testing.allocator, 2) catch {
         return error.AllocatorError;
@@ -92,7 +101,7 @@ test "NotFound with key name" {
     defer array.deinit();
 
     const args = errors.build_args(&array);
-    try errors.handle(&stream, error.NotFound, args, &logger);
+    try errors.handle(&out_writer, error.NotFound, args, &logger);
 
     try std.testing.expectFmt(
         stream.getWritten(),
@@ -105,8 +114,10 @@ test "KeyAlreadyExists" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
 
+    const out_writer = stream.writer();
+
     var logger = try Logger.init(std.testing.allocator, null, false);
-    try errors.handle(&stream, error.KeyAlreadyExists, .{}, &logger);
+    try errors.handle(&out_writer, error.KeyAlreadyExists, .{}, &logger);
 
     const expected: []u8 = @constCast("-ERR key already exists\r\n");
 

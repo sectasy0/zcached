@@ -1,5 +1,5 @@
-const os = @import("std").os;
 const std = @import("std");
+const os = std.os;
 
 const types = @import("types.zig");
 const SerializerT = @import("serializer.zig").SerializerT;

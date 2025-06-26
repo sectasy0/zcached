@@ -1,14 +1,15 @@
 const std = @import("std");
+const builtin = @import("builtin");
+const native_os = builtin.os.tag;
 
+// C libraries
 const openssl = @cImport({
     @cInclude("openssl/ssl.h");
     @cInclude("openssl/err.h");
 });
 
-const builtin = @import("builtin");
-const native_os = builtin.os.tag;
+// Local modules
 const utils = @import("../utils.zig");
-
 const Stream = @import("stream.zig").Stream;
 
 const OPENSSL_SUCCESS: c_int = 1;

@@ -1,4 +1,6 @@
 const std = @import("std");
+
+// Networking
 const Connection = @import("../network/connection.zig");
 
 const Worker = @This();

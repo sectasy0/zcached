@@ -11,9 +11,9 @@ address: std.net.Address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556),
 loger_path: []const u8 = DEFAULT_PATH,
 
 // maximum connections per thread
-// to calculate global max connctions: `workers` * `maxclients`
-maxclients: usize = 512,
-maxmemory: usize = 0, // 0 means unlimited, value in bytes
+// to calculate global max connctions: `workers` * `max_clients`
+max_clients: usize = 512,
+max_memory: usize = 0, // 0 means unlimited, value in bytes
 cbuffer: usize = 4096, // its resized if more space is requied
 workers: usize = 4,
 
@@ -22,7 +22,7 @@ cert_path: ?[]const u8 = null,
 key_path: ?[]const u8 = null,
 
 whitelist: std.ArrayList(std.net.Address) = undefined,
-proto_max_bulk_len: usize = 512 * 1024 * 1024, // 0 means unlimited, value in bytes
+max_request_size: usize = 10 * 1024 * 1024, // 0 means unlimited, value in bytes
 
 allocator: std.mem.Allocator,
 
@@ -80,9 +80,9 @@ pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]c
 const ConfigField = enum {
     address,
     port,
-    maxclients,
-    maxmemory,
-    proto_max_bulk_len,
+    max_clients,
+    max_memory,
+    max_request_size,
     workers,
     cbuffer,
     secure_transport,
@@ -214,17 +214,17 @@ fn assign_field_value(config: *Config, field_name: []const u8, value: anytype) !
             if (@TypeOf(value) != u64) return;
             config.address.setPort(@as(u16, @truncate(value)));
         },
-        .maxclients => {
+        .max_clients => {
             if (@TypeOf(value) != u64) return;
-            config.maxclients = value;
+            config.max_clients = value;
         },
-        .maxmemory => {
+        .max_memory => {
             if (@TypeOf(value) != u64) return;
-            config.maxmemory = value;
+            config.max_memory = value;
         },
-        .proto_max_bulk_len => {
+        .max_request_size => {
             if (@TypeOf(value) != u64) return;
-            config.proto_max_bulk_len = value;
+            config.max_request_size = value;
         },
         .workers => {
             if (@TypeOf(value) != u64) return;

@@ -1,15 +1,22 @@
+// Standard library
 const std = @import("std");
+
+// Networking
 const Connection = @import("../network/connection.zig");
 
+// Logging and utilities
 const Logger = @import("../logger.zig");
 const utils = @import("../utils.zig");
 
+// Protocol handling
 const proto = @import("../../protocol/handler.zig");
 const ZType = @import("../../protocol/types.zig").ZType;
 
+// Application logic
 const Context = @import("employer.zig").Context;
 const commands = @import("commands.zig");
 const errors = @import("errors.zig");
+
 
 pub const Processor = @This();
 
@@ -30,16 +37,19 @@ pub fn init(allocator: std.mem.Allocator, context: Context) Processor {
 }
 
 pub fn process(self: *Processor, connection: *Connection) void {
-    var stream = std.io.fixedBufferStream(connection.buffer);
+    var stream = std.io.fixedBufferStream(connection.accumulator.items);
     var reader = stream.reader();
 
     const ProtocolHandler = proto.ProtocolHandlerT(@TypeOf(&reader));
     var protocol = ProtocolHandler.init(self.allocator) catch return;
     defer protocol.deinit();
 
+    const out_writer = connection.out();
+    connection.signalWritable();
+
     const result: ZType = protocol.serialize(&reader) catch |err| {
         errors.handle(
-            connection.stream,
+            out_writer,
             err,
             .{},
             self.context.logger,
@@ -56,7 +66,7 @@ pub fn process(self: *Processor, connection: *Connection) void {
 
     if (result != .array) {
         errors.handle(
-            connection.stream,
+            out_writer,
             error.UnknownCommand,
             .{},
             self.context.logger,
@@ -78,7 +88,7 @@ pub fn process(self: *Processor, connection: *Connection) void {
         const args = errors.build_args(command_set);
 
         errors.handle(
-            connection.stream,
+            out_writer,
             cmd_result.err,
             args,
             self.context.logger,
@@ -102,7 +112,7 @@ pub fn process(self: *Processor, connection: *Connection) void {
 
     const response = protocol.deserialize(cmd_result.ok) catch |err| {
         errors.handle(
-            connection.stream,
+            out_writer,
             err,
             .{},
             self.context.logger,
@@ -115,9 +125,9 @@ pub fn process(self: *Processor, connection: *Connection) void {
         };
         return;
     };
-    connection.stream.writer().writeAll(response) catch |err| {
+    out_writer.writeAll(response) catch |err| {
         errors.handle(
-            connection.stream,
+            out_writer,
             err,
             .{},
             self.context.logger,
