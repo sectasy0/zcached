@@ -48,7 +48,11 @@ pub fn listen(self: *Listener, worker: *Worker) void {
 
     var warden = Warden.init(worker.allocator, self.context);
 
-    while (true) {
+    const flag = worker.running.load(.monotonic);
+
+    std.debug.print("{}\n", .{flag});
+
+    while (flag) {
         _ = std.posix.poll(worker.poll_fds[warden.start..worker.connections], -1) catch |err| {
             self.context.logger.log(
                 .Error,
@@ -60,6 +64,8 @@ pub fn listen(self: *Listener, worker: *Worker) void {
 
         for (0..worker.connections) |i| {
             const pollfd = worker.poll_fds[i];
+
+            std.debug.print("{}\n", .{pollfd});
 
             // there is no events for this file descriptor.
             if (pollfd.revents == 0) continue;

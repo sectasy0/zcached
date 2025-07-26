@@ -21,4 +21,6 @@ comptime {
     _ = @import("tests/server/utils.zig");
     _ = @import("tests/server/persistance.zig");
     _ = @import("tests/server/access.zig");
+
+    _ = @import("tests/e2e.zig");
 }

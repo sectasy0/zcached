@@ -25,6 +25,8 @@ context: Context,
 workers: []Worker,
 threads: []std.Thread,
 
+running: std.atomic.Value(bool) = std.atomic.Value(bool).init(true),
+
 allocator: std.mem.Allocator,
 
 pub const Context = struct {
@@ -96,7 +98,7 @@ pub fn supervise(self: *Employer) void {
         const allocator = gpa.allocator();
 
         // + 1 becouse first index is always listener fd
-        self.workers[i] = Worker.init(allocator, fds_size + 1) catch |err| {
+        self.workers[i] = Worker.init(allocator, fds_size + 1, &self.running) catch |err| {
             self.context.logger.log(
                 .Error,
                 "# failed to create worker: {?}",
@@ -121,7 +123,9 @@ pub fn supervise(self: *Employer) void {
         };
     }
 
-    for (0..self.context.config.workers) |i| self.threads[i].join();
+    for (0..self.context.config.workers) |i| {
+        self.threads[i].join();
+    }
 }
 
 fn delegate(worker: *Worker, listener: *Listener) void {

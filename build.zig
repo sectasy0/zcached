@@ -71,6 +71,7 @@ pub fn build(b: *std.Build) void {
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
     const unit_tests = b.addTest(.{
+        .name = "zcached-tests",
         .root_source_file = .{
             .src_path = .{ .owner = b, .sub_path = "src/test.zig" },
         },
@@ -88,4 +89,6 @@ pub fn build(b: *std.Build) void {
     // running the unit tests.
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
+
+    b.installArtifact(unit_tests);
 }

@@ -11,6 +11,15 @@
 			"program": "${workspaceFolder}/zig-out/bin/zcached",
 			"args": [],
 			"cwd": "${workspaceFolder}"
-		}
+		},
+		{
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug test",
+            "program": "${workspaceFolder}/zig-out/bin/zcached-tests",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "build",
+        }
 	]
 }
