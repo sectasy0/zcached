@@ -83,7 +83,7 @@ pub fn listen(self: *Listener, worker: *Worker) void {
                 if (handle_result != .err) continue;
 
                 const err = handle_result.err.etype;
-                const connection = handle_result.err.fd;
+                var connection = handle_result.err.fd;
                 if (connection == null) continue;
 
                 switch (err) {
@@ -96,7 +96,7 @@ pub fn listen(self: *Listener, worker: *Worker) void {
                     // - access control fails (that means client is not permitted to connect)
                     error.ConnectionAborted, error.NotPermitted, error.MaxConnections => {
                         // also send message to the client
-                        if (connection) |c| c.close();
+                        if (connection) |_| connection.?.close();
                         continue;
                     },
                     else => continue,
