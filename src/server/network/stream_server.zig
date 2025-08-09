@@ -4,6 +4,8 @@ const mem = std.mem;
 const os = std.os;
 const posix = std.posix;
 
+const Config = @import("../config.zig");
+
 // Build configuration and conditional imports
 const build_options = @import("build_options");
 const secure = if (build_options.tls_enabled)
@@ -12,7 +14,7 @@ else
     @import("unsecure.zig");
 
 // Local modules
-const Stream = @import("stream.zig").Stream;
+const Stream = @import("stream.zig");
 
 const StreamServer = @This();
 
@@ -22,13 +24,13 @@ reuse_address: bool,
 reuse_port: bool,
 force_nonblocking: bool,
 
-tls: bool,
+tls: Config.TLSConfig,
 tls_ctx: ?secure.Context = null,
 
 /// `undefined` until `listen` returns successfully.
 listen_address: std.net.Address,
 
-sockfd: ?std.posix.socket_t,
+sockfd: ?std.posix.socket_t = null,
 
 pub const Options = struct {
     /// How many connections the kernel will accept on the application's behalf.
@@ -42,10 +44,8 @@ pub const Options = struct {
     /// Enable SO.REUSEPORT on the socket.
     reuse_port: bool = false,
 
-    /// Enable TLS 1.3 on the socket.
-    tls: bool = true,
-    cert_path: ?[]const u8 = null,
-    key_path: ?[]const u8 = null,
+    /// TLS 1.3 configuration.
+    tls: Config.TLSConfig = .{},
 
     /// Force non-blocking mode.
     force_nonblocking: bool = false,
@@ -56,12 +56,17 @@ pub const Options = struct {
 pub fn init(options: Options) !StreamServer {
     var tls_ctx: ?secure.Context = null;
 
-    if (options.tls and build_options.tls_enabled) {
-        if (options.cert_path == null or options.key_path == null) {
+    if (options.tls.enabled and build_options.tls_enabled) {
+        if (options.tls.cert_path == null or options.tls.key_path == null) {
             return error.InvalidTLSConfig;
         }
 
-        tls_ctx = try secure.Context.init(options.key_path.?, options.cert_path.?);
+        tls_ctx = try secure.Context.init(
+            options.tls.key_path.?,
+            options.tls.cert_path.?,
+            options.tls.ca_path,
+            options.tls.verify_mode,
+        );
     }
 
     return StreamServer{
@@ -169,7 +174,7 @@ pub const AcceptError = error{
 } || posix.UnexpectedError;
 
 pub const Connection = struct {
-    stream: Stream,
+    stream: Stream.Stream,
     address: std.net.Address,
 };
 
@@ -191,7 +196,7 @@ pub fn accept(self: *StreamServer) AcceptError!Connection {
     );
 
     if (accept_result) |fd| {
-        var stream = Stream{ .handle = fd };
+        var stream: Stream.Stream = .{ .handle = fd, .ctx = null };
         if (build_options.tls_enabled) {
             if (self.tls_ctx) |ctx| try ctx.upgrade(&stream);
         }
