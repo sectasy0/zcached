@@ -1,4 +1,4 @@
-name: zcached tests
+name: zcached end-to-end tests
 
 on:
   push:
@@ -22,5 +22,5 @@ jobs:
     - name: Lint code
       uses: ./.github/actions/lint
 
-    - name: Run tests
-      run: zig build test
+    - name: Run end-to-end tests
+      run: zig build e2e

@@ -9,20 +9,47 @@ on:
   pull_request:
 
 jobs:
-  build:
+  build-linux:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Install Zig
-      run: |
-        curl -sSfL https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz | tar -xJ
-      shell: bash
+      - name: Install Zig
+        uses: ./.github/actions/install
 
-    - name: Lint Code
-      run: zig-linux-x86_64-0.14.0/zig fmt --check .
+      - name: Lint code
+        uses: ./.github/actions/lint
 
-    - name: Build
-      run: zig-linux-x86_64-0.14.0/zig build
+      - name: Build (Linux)
+        run: zig build
+
+      - name: Build (Linux TLS)
+        run: zig build -Dtls-enabled=true
+
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Homebrew dependencies
+        run: |
+          brew update
+          brew install openssl
+
+      - name: Install zig
+        uses: ./.github/actions/install
+
+      - name: Lint code
+        uses: ./.github/actions/lint
+
+      - name: Build (macOS)
+        run: zig build
+
+      - name: Build (macOS TLS)
+        env:
+          OPENSSL_DIR: $(brew --prefix openssl)
+        run: zig build -Dtls-enabled=true
