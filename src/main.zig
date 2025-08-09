@@ -73,7 +73,7 @@ pub fn main() void {
     const allocator = gpa.allocator();
 
     const result = cli.Parser.parse(allocator) catch {
-        cli.Parser.show_help() catch |err| {
+        cli.Parser.showHelp() catch |err| {
             std.log.err("# failed to show help: {}", .{err});
             return;
         };
@@ -81,7 +81,7 @@ pub fn main() void {
     };
     defer result.parser.deinit();
 
-    handle_arguments(result.args) orelse return;
+    handleArguments(result.args) orelse return;
 
     var logger = log.Logger.init(
         allocator,
@@ -149,13 +149,13 @@ pub fn main() void {
         .memory = &memory,
     };
 
-    run_supervisor(allocator, context);
+    runSupervisor(allocator, context);
 }
 
 // null indicates that function should return from main
-fn handle_arguments(args: cli.Args) ?void {
+fn handleArguments(args: cli.Args) ?void {
     if (args.help) {
-        cli.Parser.show_help() catch |err| {
+        cli.Parser.showHelp() catch |err| {
             std.log.err("# failed to show help: {}", .{err});
             return null;
         };
@@ -163,7 +163,7 @@ fn handle_arguments(args: cli.Args) ?void {
     }
 
     if (args.version) {
-        cli.Parser.show_version() catch |err| {
+        cli.Parser.showVersion() catch |err| {
             std.log.err("# failed to show version: {}", .{err});
             return null;
         };
@@ -181,7 +181,7 @@ fn handle_arguments(args: cli.Args) ?void {
     }
 }
 
-fn run_supervisor(allocator: std.mem.Allocator, context: Employer.Context) void {
+fn runSupervisor(allocator: std.mem.Allocator, context: Employer.Context) void {
     context.logger.log(.Info, "# starting zcached server on tcp://{?} | Workers {}", .{
         context.config.address,
         context.config.workers,
