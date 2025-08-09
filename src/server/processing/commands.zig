@@ -217,7 +217,7 @@ pub const Handler = struct {
             return .{ .err = err };
         };
 
-        return .{ .ok = .{ .str = @constCast("OK") } };
+        return .{ .ok = .{ .sstr = @constCast("OK") } };
     }
 
     fn copy(self: *Handler, entries: []ZType) Result {
