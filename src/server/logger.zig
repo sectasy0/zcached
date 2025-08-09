@@ -75,7 +75,7 @@ pub fn log(self: *const Logger, level: LogLevel, comptime format: []const u8, ar
         return;
     };
 
-    if (self.sout) std.debug.print("{s}", .{formatted});
+    if (self.sout or level == .Error) std.debug.print("{s}", .{formatted});
 
     _ = self.file.write(formatted) catch |err| {
         std.log.err("# failed to write log message: {?}", .{err});
@@ -91,12 +91,12 @@ pub fn log_event(self: *const Logger, etype: EType, payload: []const u8) void {
     defer self.allocator.free(repr);
 
     switch (etype) {
-        EType.Request => self.log(
+        .Request => self.log(
             .Info,
             "> request: {s}",
             .{repr},
         ),
-        EType.Response => self.log(
+        .Response => self.log(
             .Info,
             "> response: {s}",
             .{repr},
