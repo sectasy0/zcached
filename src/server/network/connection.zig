@@ -73,6 +73,10 @@ pub fn fd(self: *Self) std.posix.socket_t {
     return self.stream.handle;
 }
 
+pub fn isClosed(self: *Self) bool {
+    return self.stream.handle < 0;
+}
+
 pub fn out(self: *Self) @TypeOf(self.tx_accumulator).Writer {
     return self.tx_accumulator.writer();
 }
@@ -104,6 +108,10 @@ pub fn writePending(self: *Self) !void {
         return;
     }
 
+    // Add the end character to the outgoing data
+    self.tx_accumulator.append(consts.EXT_CHAR) catch |err| {
+        return err;
+    };
     _ = try self.stream.writeAll(self.tx_accumulator.items);
 
     self.clearWritable();
