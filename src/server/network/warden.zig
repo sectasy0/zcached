@@ -121,7 +121,10 @@ pub fn dispatch(self: *Warden, worker: *Worker, connection: *Connection) void {
                 error.OperationAborted,
                 error.SSLProtocolError,
                 error.ConnectionClosed,
-                => self.teardownConnection(worker, connection),
+                => {
+                    self.teardownConnection(worker, connection);
+                    return;
+                },
                 else => {
                     self.context.logger.log(
                         .Error,
@@ -153,12 +156,18 @@ pub fn handleOutgoing(self: *Warden, worker: *Worker, connection: *Connection) v
                 return;
             },
             // these errors mean that we can't write to the stream, do nothin
-            error.NotOpenForWriting => self.teardownConnection(worker, connection),
+            error.NotOpenForWriting => {
+                self.teardownConnection(worker, connection);
+                return;
+            },
             error.ConnectionResetByPeer,
             error.BrokenPipe,
             error.OperationAborted,
             error.SSLProtocolError,
-            => self.teardownConnection(worker, connection),
+            => {
+                self.teardownConnection(worker, connection);
+                return;
+            },
             else => {
                 self.context.logger.log(
                     .Error,
@@ -176,11 +185,7 @@ pub fn handleOutgoing(self: *Warden, worker: *Worker, connection: *Connection) v
     connection.tx_accumulator.clearRetainingCapacity();
 }
 
-pub fn teardownConnection(
-    self: *Warden,
-    worker: *Worker,
-    connection: *Connection,
-) void {
+pub fn teardownConnection(self: *Warden, worker: *Worker, connection: *Connection) void {
     self.context.logger.log(
         .Debug,
         "# connection with client closed {any}",
@@ -222,6 +227,7 @@ pub fn teardownConnection(
 
 fn _processIncoming(self: *const Warden, worker: *Worker, connection: *Connection) !void {
     const max_size = self.context.config.max_request_size;
+
     connection.readPending(max_size) catch |err| {
         switch (err) {
             error.IncompleteMessage => return,
@@ -238,7 +244,6 @@ fn _processIncoming(self: *const Warden, worker: *Worker, connection: *Connectio
     };
 
     // here we've got the completed message, let's process it
-
     var processor = requests.Processor.init(
         worker.allocator,
         self.context,
