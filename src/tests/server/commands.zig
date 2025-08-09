@@ -559,7 +559,7 @@ test "should handle RENAME command" {
 
     const result = cmd_handler.process(&command_set);
 
-    try helper.expectEqualZTypes(result.ok, .{ .str = @constCast("OK") });
+    try helper.expectEqualZTypes(result.ok, .{ .sstr = @constCast("OK") });
     try helper.expectEqualZTypes(try fixture.memory.?.get("key2"), .{ .bool = true });
 }
 
