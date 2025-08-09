@@ -13,16 +13,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Repository
+    - name: Checkout repository
       uses: actions/checkout@v4
 
     - name: Install Zig
-      run: |
-        curl -sSfL https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz | tar -xJ
-      shell: bash
+      uses: ./.github/actions/install
 
-    - name: Lint Code
-      run: zig-linux-x86_64-0.14.0/zig fmt --check .
+    - name: Lint code
+      uses: ./.github/actions/lint
 
     - name: Build
-      run: zig-linux-x86_64-0.14.0/zig build
+      run: zig build

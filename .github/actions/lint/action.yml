@@ -1,0 +1,8 @@
+name: "Lint code"
+description: "Runs zig fmt --check"
+runs:
+  using: "composite"
+  steps:
+    - name: Lint code
+      run: zig fmt --check .
+      shell: bash
