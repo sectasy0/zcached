@@ -2,8 +2,10 @@ const std = @import("std");
 const builtin = @import("builtin");
 const native_os = builtin.os.tag;
 
+const VerifyMode = @import("../config.zig").TLSConfig.VerifyMode;
+
 // C libraries
-const openssl = @cImport({
+pub const openssl = @cImport({
     @cInclude("openssl/ssl.h");
     @cInclude("openssl/err.h");
 });
@@ -27,16 +29,18 @@ pub const SSL_ERROR = enum(i32) {
 pub const Context = struct {
     ctx: *openssl.SSL_CTX = undefined,
 
-    pub fn init(key: []const u8, cert: []const u8) !Context {
+    pub fn init(key: []const u8, cert: []const u8, ca: ?[]const u8, verify_mode: VerifyMode) !Context {
         const ctx: *openssl.SSL_CTX = openssl.SSL_CTX_new(openssl.TLS_server_method()) orelse {
+            printSSLErrors();
             return error.SSLContextFailure;
         };
         errdefer openssl.SSL_CTX_free(ctx);
 
         if (openssl.SSL_CTX_set_min_proto_version(
             ctx,
-            openssl.TLS1_2_VERSION,
+            openssl.TLS1_3_VERSION,
         ) != OPENSSL_SUCCESS) {
+            printSSLErrors();
             return error.SSLMinVersion;
         }
 
@@ -46,7 +50,26 @@ pub const Context = struct {
         const keyz: [:0]u8 = try std.fmt.bufPrintZ(&key_buffer, "{s}", .{key});
 
         openssl.SSL_CTX_set_info_callback(ctx, ssl_info_callback);
-        openssl.SSL_CTX_set_verify(ctx, openssl.SSL_VERIFY_NONE, null);
+
+        const openssl_verify_mode = switch (verify_mode) {
+            .none => openssl.SSL_VERIFY_NONE,
+            .peer => openssl.SSL_VERIFY_PEER,
+            .fail_if_no_peer_cert => openssl.SSL_VERIFY_PEER | openssl.SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
+            .client_once => openssl.SSL_VERIFY_PEER | openssl.SSL_VERIFY_CLIENT_ONCE,
+        };
+
+        openssl.SSL_CTX_set_verify(ctx, openssl_verify_mode, null);
+
+        if (ca) |ca_path| {
+            if (openssl.SSL_CTX_load_verify_locations(
+                ctx,
+                ca_path.ptr,
+                null,
+            ) != OPENSSL_SUCCESS) {
+                printSSLErrors();
+                return error.CALoadFailure;
+            }
+        }
 
         _ = openssl.SSL_CTX_set_mode(ctx, openssl.SSL_MODE_AUTO_RETRY);
 
@@ -55,7 +78,7 @@ pub const Context = struct {
             certz.ptr,
             openssl.SSL_FILETYPE_PEM,
         ) != OPENSSL_SUCCESS) {
-            print_ssl_error();
+            printSSLErrors();
             return error.CertFailure;
         }
 
@@ -64,12 +87,12 @@ pub const Context = struct {
             keyz.ptr,
             openssl.SSL_FILETYPE_PEM,
         ) != OPENSSL_SUCCESS) {
-            print_ssl_error();
+            printSSLErrors();
             return error.KeyFailure;
         }
 
         if (openssl.SSL_CTX_check_private_key(ctx) != OPENSSL_SUCCESS) {
-            print_ssl_error();
+            printSSLErrors();
             return error.InvalidKey;
         }
 
@@ -91,6 +114,8 @@ pub const Context = struct {
             openssl.SSL_free(ctx);
             return error.SSLSetFdFailure;
         }
+
+        openssl.SSL_set_accept_state(ctx);
 
         while (true) {
             // https://docs.openssl.org/3.0/man3/SSL_accept/#return-values
@@ -115,37 +140,55 @@ pub const Context = struct {
             }
         }
 
-        stream.ctx = StreamContext{ .ctx = ctx };
+        stream.ctx = .{ .ctx = ctx };
     }
 
     pub fn deinit(self: *Context) void {
-        _ = self;
-        // openssl.SSL_CTX_free(self.ctx);
+        openssl.SSL_CTX_free(self.ctx);
     }
 };
 
 pub const StreamContext = struct {
-    ctx: *openssl.SSL = undefined,
+    ctx: ?*anyopaque = null,
 
-    pub fn deinit(self: StreamContext) void {
-        _ = openssl.SSL_shutdown(self.ctx);
-        openssl.SSL_free(self.ctx);
+    pub fn deinit(self: *StreamContext) void {
+        if (self.ctx) |ssl| {
+            var rc: c_int = openssl.SSL_shutdown(ssl);
+
+            if (rc == 0) {
+                rc = openssl.SSL_shutdown(ssl);
+            }
+
+            if (rc < 0) {
+                const err_code = openssl.SSL_get_error(ssl, rc);
+                const enum_error: SSL_ERROR = @enumFromInt(err_code);
+                switch (enum_error) {
+                    .WANT_READ,
+                    .WANT_WRITE,
+                    => {}, // forcing shutdown, so we can ignore these errors
+                    .ZERO_RETURN => {}, // connection was closed cleanly, so we can ignore this
+                    else => printSSLErrors(),
+                }
+            }
+
+            openssl.SSL_free(ssl);
+            self.ctx = null;
+        }
     }
 };
 
 fn ssl_info_callback(ssl: ?*const openssl.SSL, t: c_int, v: c_int) callconv(.C) void {
     _ = ssl;
-    _ = t;
 
     var timestamp: [40]u8 = undefined;
     const t_size = utils.timestampf(&timestamp);
     std.debug.print(
         "INFO [{s}] SSL_info callback: type={any}, val={any}\n",
-        .{ timestamp[0..t_size], type, v },
+        .{ timestamp[0..t_size], t, v },
     );
 }
 
-pub fn print_ssl_error() void {
+pub fn printSSLErrors() void {
     const bio = openssl.BIO_new(openssl.BIO_s_mem());
     defer _ = openssl.BIO_free(bio);
     openssl.ERR_print_errors(bio);
@@ -161,7 +204,11 @@ pub fn print_ssl_error() void {
     }
 }
 
-pub fn ssl_read(ctx: ?*openssl.SSL, buffer: []u8) !usize {
+pub fn read(ctx_ptr: ?*anyopaque, buffer: []u8) !usize {
+    if (ctx_ptr == null) return error.SSLProtocolError;
+
+    const ctx: ?*openssl.SSL = @ptrCast(ctx_ptr);
+
     const max_count = switch (native_os) {
         .linux => 0x7ffff000,
         .macos, .ios, .watchos, .tvos, .visionos => std.math.maxInt(i32),
@@ -202,7 +249,11 @@ pub fn ssl_read(ctx: ?*openssl.SSL, buffer: []u8) !usize {
     }
 }
 
-pub fn ssl_write(ctx: ?*openssl.SSL, buffer: []const u8) !usize {
+pub fn write(ctx_ptr: ?*anyopaque, buffer: []const u8) !usize {
+    if (ctx_ptr == null) return error.SSLProtocolError;
+
+    const ctx: ?*openssl.SSL = @ptrCast(ctx_ptr);
+
     const max_count = switch (native_os) {
         .linux => 0x7ffff000,
         .macos, .ios, .watchos, .tvos, .visionos => std.math.maxInt(i32),
@@ -216,15 +267,16 @@ pub fn ssl_write(ctx: ?*openssl.SSL, buffer: []const u8) !usize {
         const rc: u32 = @intCast(openssl.SSL_get_error(ctx, result));
 
         const error_code: SSL_ERROR = @enumFromInt(rc);
+
         switch (error_code) {
             SSL_ERROR.NONE => return @intCast(result), // Successful read, return the number of bytes read
             SSL_ERROR.ZERO_RETURN => return error.ConnectionResetByPeer, // SSL connection was closed cleanly
             SSL_ERROR.WANT_READ => return error.WouldBlock, // Non-blocking read requested more data, so retry
             SSL_ERROR.WANT_WRITE => return error.WouldBlock, // Retry due to "want write" condition in a read
             SSL_ERROR.WANT_CONNECT => return error.WouldBlock,
-            SSL_ERROR.SYSCALL => |err| {
+            SSL_ERROR.SYSCALL => {
                 // System-level error encountered, return specific system errors
-                switch (std.posix.errno(@intFromEnum(err))) {
+                switch (std.posix.errno(rc)) {
                     .INTR => continue,
                     .INVAL => unreachable,
                     .FAULT => unreachable,

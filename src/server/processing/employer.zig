@@ -34,7 +34,9 @@ pub const Context = struct {
 };
 
 pub fn init(allocator: Allocator, context: Context) !Employer {
-    if (context.config.secure_transport and build_options.tls_enabled) {
+    std.debug.assert(context.config.workers > 0);
+
+    if (context.config.tls.enabled and build_options.tls_enabled) {
         context.logger.log(.Info, "# zcached is running with TLS enabled", .{});
     }
 
@@ -42,9 +44,7 @@ pub fn init(allocator: Allocator, context: Context) !Employer {
         .server = try StreamServer.init(.{
             .reuse_address = true,
             .reuse_port = true,
-            .tls = context.config.secure_transport,
-            .cert_path = context.config.cert_path,
-            .key_path = context.config.key_path,
+            .tls = context.config.tls,
             .force_nonblocking = true,
         }),
         .context = context,
@@ -55,7 +55,7 @@ pub fn init(allocator: Allocator, context: Context) !Employer {
 }
 
 pub fn supervise(self: *Employer) void {
-    self.server.listen(self.context.config.address) catch |err| {
+    self.server.listen(self.context.config.getAddress()) catch |err| {
         self.context.logger.log(
             .Error,
             "# failed to run server listener: {?}",
@@ -121,7 +121,9 @@ pub fn supervise(self: *Employer) void {
         };
     }
 
-    for (0..self.context.config.workers) |i| self.threads[i].join();
+    for (0..self.context.config.workers) |i| {
+        self.threads[i].join();
+    }
 }
 
 fn delegate(worker: *Worker, listener: *Listener) void {

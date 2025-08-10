@@ -1,6 +1,10 @@
 const std = @import("std");
 const ctime = @cImport(@cInclude("time.h"));
 
+const openssl = @cImport({
+    @cInclude("openssl/err.h");
+});
+
 /// Converts a string representation of an enum or union type to the corresponding enum value (Ignores case).
 ///
 /// Example usage:
@@ -66,39 +70,15 @@ pub fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
 
 pub const NodeIndex = std.zig.Ast.Node.Index;
 
-// Parses the name of a field from the AST, handling string literals.
-// Returns a byte slice representing the field name.
-pub fn parse_field_name(
-    alloc: std.mem.Allocator,
-    ast: std.zig.Ast,
-    idx: NodeIndex,
-) ![]const u8 {
-    const name = ast.tokenSlice(ast.firstToken(idx) - 2);
-    if (name[0] == '@') {
-        return std.zig.string_literal.parseAlloc(
-            alloc,
-            name[1..],
-        );
-    }
-    return name;
-}
-
 // Parses a string literal from the AST and returns it as a byte slice.
-pub fn parse_string(
-    alloc: std.mem.Allocator,
-    ast: std.zig.Ast,
-    idx: NodeIndex,
-) ![]const u8 {
+pub fn parseString(alloc: std.mem.Allocator, ast: std.zig.Ast, idx: NodeIndex) ![]const u8 {
     return std.zig.string_literal.parseAlloc(alloc, ast.tokenSlice(
         ast.nodes.items(.main_token)[idx],
     ));
 }
 
 // Parses a numeric literal from the AST and returns it as a Result.
-pub fn parse_number(
-    ast: std.zig.Ast,
-    idx: NodeIndex,
-) std.zig.number_literal.Result {
+pub fn parseNumber(ast: std.zig.Ast, idx: NodeIndex) std.zig.number_literal.Result {
     return std.zig.number_literal.parseNumberLiteral(ast.tokenSlice(
         ast.nodes.items(.main_token)[idx],
     ));

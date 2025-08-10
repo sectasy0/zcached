@@ -1,0 +1,29 @@
+name: "Install zig"
+description: "Downloads and extracts zig compiler"
+
+runs:
+  using: "composite"
+  steps:
+    # Linux
+    - name: Install zig 0.14.1 (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        curl -sSfL https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz | tar -xJ
+      shell: bash
+
+    - name: Add zig to PATH (Linux)
+      if: runner.os == 'Linux'
+      run: echo "${{ github.workspace }}/zig-x86_64-linux-0.14.1" >> $GITHUB_PATH
+      shell: bash
+
+    # macOS
+    - name: Install zig 0.14.1 (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        curl -sSfL https://ziglang.org/download/0.14.1/zig-aarch64-macos-0.14.1.tar.xz | tar -xJ
+      shell: bash
+
+    - name: Add zig to PATH (macOS)
+      if: runner.os == 'macOS'
+      run: echo "${{ github.workspace }}/zig-aarch64-macos-0.14.1" >> $GITHUB_PATH
+      shell: bash

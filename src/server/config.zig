@@ -6,6 +6,34 @@ pub const DEFAULT_PATH: []const u8 = "./zcached.conf.zon";
 
 const Config = @This();
 
+pub const TLSConfig = struct {
+    enabled: bool = false,
+    // Path to the certificate file
+    cert_path: ?[]const u8 = null,
+    // Path to the private key file
+    key_path: ?[]const u8 = null,
+    // Path to the CA certificate file
+    ca_path: ?[]const u8 = null,
+    // Whether to verify peer certificates
+    // If true, the server will verify the peer's certificate against the CA certificate.
+    verify_mode: TLSConfig.VerifyMode = .none,
+
+    pub const VerifyMode = enum {
+        none, // No verification
+        peer, // Verify peer's certificate
+        fail_if_no_peer_cert, // Fail if no peer certificate is provided
+        client_once, // Verify client certificate once
+    };
+
+    const Fields = enum {
+        enabled,
+        cert_path,
+        key_path,
+        ca_path,
+        verify_mode,
+    };
+};
+
 address: std.net.Address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556),
 
 loger_path: []const u8 = DEFAULT_PATH,
@@ -17,9 +45,7 @@ max_memory: usize = 0, // 0 means unlimited, value in bytes
 cbuffer: usize = 4096, // its resized if more space is requied
 workers: usize = 4,
 
-secure_transport: bool = false,
-cert_path: ?[]const u8 = null,
-key_path: ?[]const u8 = null,
+tls: TLSConfig = .{},
 
 whitelist: std.ArrayList(std.net.Address) = undefined,
 max_request_size: usize = 10 * 1024 * 1024, // 0 means unlimited, value in bytes
@@ -28,8 +54,13 @@ allocator: std.mem.Allocator,
 
 pub fn deinit(config: *const Config) void {
     config.whitelist.deinit();
-    if (config.cert_path != null) config.allocator.free(config.cert_path.?);
-    if (config.key_path != null) config.allocator.free(config.key_path.?);
+    if (config.tls.cert_path != null) config.allocator.free(config.tls.cert_path.?);
+    if (config.tls.key_path != null) config.allocator.free(config.tls.key_path.?);
+    if (config.tls.ca_path != null) config.allocator.free(config.tls.ca_path.?);
+}
+
+pub fn getAddress(self: *const Config) std.net.Address {
+    return self.address;
 }
 
 pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]const u8) !Config {
@@ -72,7 +103,7 @@ pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]c
     var ast = try std.zig.Ast.parse(allocator, config_bytes, .zon);
     defer ast.deinit(allocator);
 
-    try process_ast(&config, ast);
+    try processAst(&config, ast);
 
     return config;
 }
@@ -85,13 +116,11 @@ const ConfigField = enum {
     max_request_size,
     workers,
     cbuffer,
-    secure_transport,
-    cert_path,
-    key_path,
+    tls,
     whitelist,
 };
 
-fn process_ast(config: *Config, ast: std.zig.Ast) !void {
+fn processAst(config: *Config, ast: std.zig.Ast) !void {
     var buf: [2]NodeIndex = undefined;
     const root = ast.fullStructInit(
         &buf,
@@ -110,7 +139,7 @@ fn process_ast(config: *Config, ast: std.zig.Ast) !void {
     for (root.ast.fields) |field_idx| {
         const field_name = ast.tokenSlice(ast.firstToken(field_idx) - 2);
 
-        process_field(
+        processField(
             config,
             &buf,
             ast,
@@ -121,7 +150,20 @@ fn process_ast(config: *Config, ast: std.zig.Ast) !void {
     }
 }
 
-fn process_field(
+const Node = union(enum) {
+    null,
+    bool: bool,
+
+    int: u64,
+    float: f64,
+    string: []const u8,
+    @"enum": []const u8,
+
+    object: std.StringArrayHashMapUnmanaged(Node),
+    empty, // .{}
+};
+
+fn processField(
     config: *Config,
     buf: *[2]NodeIndex,
     ast: std.zig.Ast,
@@ -131,14 +173,99 @@ fn process_field(
 ) !void {
     const allocator = config.allocator;
 
-    if (ast.fullStructInit(buf, field_idx)) |_| return;
+    // wip kurwy
+    if (ast.fullStructInit(buf, field_idx)) |v| {
+        var object = std.StringArrayHashMapUnmanaged(Node){};
+        defer {
+            object.clearAndFree(config.allocator);
+            object.deinit(config.allocator);
+        }
+
+        for (v.ast.fields) |i| {
+            const token_index = ast.firstToken(i) - 2;
+            const token_name = ast.tokenSlice(token_index);
+
+            const node = ast.nodes.get(i);
+
+            var timestamp: [40]u8 = undefined;
+            const t_size = utils.timestampf(&timestamp);
+
+            switch (node.tag) {
+                .number_literal => {
+                    const value = utils.parseNumber(ast, i);
+
+                    object.put(allocator, token_name, .{ .int = value.int }) catch |err| {
+                        std.debug.print(
+                            "ERROR [{d}] * Failed to put number literal into object: {?}\n",
+                            .{ timestamp[0..t_size], err },
+                        );
+                        continue;
+                    };
+                },
+                .string_literal => {
+                    const value = try utils.parseString(allocator, ast, i);
+
+                    object.put(allocator, token_name, .{ .string = value }) catch |err| {
+                        std.debug.print(
+                            "ERROR [{d}] * Failed to put string literal into object: {?}\n",
+                            .{ timestamp[0..t_size], err },
+                        );
+                        continue;
+                    };
+                },
+                .enum_literal => {
+                    const value = ast.tokenSlice(node.main_token);
+
+                    object.put(allocator, token_name, .{ .@"enum" = value }) catch |err| {
+                        std.debug.print(
+                            "ERROR [{d}] * Failed to put enum literal into object: {?}\n",
+                            .{ timestamp[0..t_size], err },
+                        );
+                        continue;
+                    };
+                },
+                .identifier => {
+                    const value: []const u8 = ast.tokenSlice(node.main_token);
+
+                    if (std.mem.eql(u8, value, "true")) {
+                        object.put(allocator, token_name, .{ .bool = true }) catch |err| {
+                            std.debug.print(
+                                "ERROR [{d}] * Failed to put identifier into object: {?}\n",
+                                .{ timestamp[0..t_size], err },
+                            );
+                            continue;
+                        };
+                    } else {
+                        object.put(allocator, token_name, .{ .bool = false }) catch |err| {
+                            std.debug.print(
+                                "ERROR [{d}] * Failed to put identifier into object: {?}\n",
+                                .{ timestamp[0..t_size], err },
+                            );
+                            continue;
+                        };
+                    }
+                },
+                else => {
+                    std.debug.print(
+                        "WARN [{d}] * Unsupported node tag: {s}, skipping\n",
+                        .{ timestamp[0..t_size], @tagName(node.tag) },
+                    );
+                    continue;
+                },
+            }
+        }
+
+        try assignFieldValue(config, field_name, object);
+
+        return;
+    }
 
     if (ast.fullArrayInit(buf, field_idx)) |v| {
-        var result = std.ArrayList(std.net.Address).init(allocator);
+        var result: std.ArrayList(std.net.Address) = .init(allocator);
         errdefer result.deinit();
 
         for (v.ast.elements) |v_idx| {
-            const value = utils.parse_string(
+            const value = utils.parseString(
                 allocator,
                 ast,
                 v_idx,
@@ -149,9 +276,11 @@ fn process_field(
                 value,
                 config.address.getPort(),
             ) catch |err| {
+                var timestamp: [40]u8 = undefined;
+                const t_size = utils.timestampf(&timestamp);
                 std.debug.print(
                     "ERROR [{d}] * parsing {s} as std.net.Address, {?}\n",
-                    .{ std.time.timestamp(), value, err },
+                    .{ timestamp[0..t_size], value, err },
                 );
                 return;
             };
@@ -159,7 +288,7 @@ fn process_field(
             try result.append(parsed);
         }
 
-        try assign_field_value(config, field_name, result);
+        try assignFieldValue(config, field_name, result);
 
         return;
     }
@@ -167,31 +296,65 @@ fn process_field(
     const node: u32 = root.ast.fields[field_idx - 1];
     const info: std.zig.Ast.Node = ast.nodes.get(node);
 
-    switch (info.tag) {
-        std.zig.Ast.Node.Tag.number_literal => {
-            const value = utils.parse_number(ast, field_idx);
+    try _parseByNodeTag(
+        config,
+        allocator,
+        field_name,
+        ast,
+        info,
+        field_idx,
+    );
+}
 
-            try assign_field_value(config, field_name, value.int);
+fn _parseByNodeTag(
+    config: *Config,
+    allocator: std.mem.Allocator,
+    field_name: []const u8,
+    ast: std.zig.Ast,
+    node: std.zig.Ast.Node,
+    index: u32,
+) !void {
+    switch (node.tag) {
+        .number_literal => {
+            const value: std.zig.number_literal.Result = utils.parseNumber(ast, index);
+            switch (value) {
+                .failure => {
+                    var timestamp: [40]u8 = undefined;
+                    const t_size = utils.timestampf(&timestamp);
+                    std.debug.print(
+                        "ERROR [{d}] * Failed to parse number literal: {}\n",
+                        .{ timestamp[0..t_size], value.failure },
+                    );
+                    return;
+                },
+                else => try assignFieldValue(config, field_name, value.int),
+            }
         },
-        std.zig.Ast.Node.Tag.string_literal => {
-            const Booleans = enum { true, false, True, False };
-
-            const value = try utils.parse_string(allocator, ast, field_idx);
+        .string_literal => {
+            const value: []const u8 = try utils.parseString(allocator, ast, index);
             defer allocator.free(value);
 
-            const boolean_result = std.meta.stringToEnum(Booleans, value) orelse {
-                return try assign_field_value(config, field_name, value);
-            };
-            switch (boolean_result) {
-                .true, .True => try assign_field_value(config, field_name, true),
-                .false, .False => try assign_field_value(config, field_name, false),
+            return try assignFieldValue(config, field_name, value);
+        },
+        .enum_literal => {
+            const value: []const u8 = ast.tokenSlice(node.main_token);
+
+            return try assignFieldValue(config, field_name, value);
+        },
+        .identifier => {
+            const value: []const u8 = ast.tokenSlice(node.main_token);
+
+            if (std.mem.eql(u8, value, "true")) {
+                return try assignFieldValue(config, field_name, true);
+            } else {
+                return try assignFieldValue(config, field_name, false);
             }
         },
         else => return,
     }
 }
 
-fn assign_field_value(config: *Config, field_name: []const u8, value: anytype) !void {
+fn assignFieldValue(config: *Config, field_name: []const u8, value: anytype) !void {
     const config_field = std.meta.stringToEnum(ConfigField, field_name) orelse {
         return;
     };
@@ -201,9 +364,11 @@ fn assign_field_value(config: *Config, field_name: []const u8, value: anytype) !
             if (@TypeOf(value) != []const u8) return;
 
             const parsed = std.net.Address.parseIp(value, config.address.getPort()) catch |err| {
+                var timestamp: [40]u8 = undefined;
+                const t_size = utils.timestampf(&timestamp);
                 std.debug.print(
-                    "ERROR [{d}] * parsing {s} as std.net.Address, {?}\n",
-                    .{ std.time.timestamp(), value, err },
+                    "ERROR [{s}] * parsing {s} as std.net.Address, {?}\n",
+                    .{ timestamp[0..t_size], value, err },
                 );
                 return;
             };
@@ -234,17 +399,94 @@ fn assign_field_value(config: *Config, field_name: []const u8, value: anytype) !
             if (@TypeOf(value) != u64) return;
             config.cbuffer = value;
         },
-        .secure_transport => {
-            if (@TypeOf(value) != bool) return;
-            config.secure_transport = value;
-        },
-        .cert_path => {
-            if (@TypeOf(value) != []const u8) return;
-            config.cert_path = try config.allocator.dupe(u8, value);
-        },
-        .key_path => {
-            if (@TypeOf(value) != []const u8) return;
-            config.key_path = try config.allocator.dupe(u8, value);
+        .tls => {
+            var tls_config: TLSConfig = .{};
+
+            if (@TypeOf(value) != std.StringArrayHashMapUnmanaged(Node)) return;
+
+            var iterator = value.iterator();
+            while (iterator.next()) |item| {
+                const k = item.key_ptr.*;
+                const v = item.value_ptr.*;
+
+                var timestamp: [40]u8 = undefined;
+                const t_size = utils.timestampf(&timestamp);
+
+                const field = std.meta.stringToEnum(TLSConfig.Fields, k) orelse {
+                    std.debug.print("[ERROR {d}] Unknown field: {s}\n", .{ timestamp[0..t_size], k });
+                    continue;
+                };
+
+                switch (field) {
+                    .enabled => {
+                        if (std.meta.activeTag(v) != .bool) {
+                            std.debug.print("ERROR [{d}] Unknown enabled type: {any}\n", .{
+                                timestamp[0..t_size],
+                                v,
+                            });
+                            continue;
+                        }
+
+                        tls_config.enabled = v.bool;
+                    },
+                    .cert_path => {
+                        if (std.meta.activeTag(v) != .string) {
+                            std.debug.print("ERROR [{d}] Unknown cert_path type: {any}\n", .{
+                                timestamp[0..t_size],
+                                v,
+                            });
+                            continue;
+                        }
+
+                        tls_config.cert_path = v.string;
+                    },
+                    .key_path => {
+                        if (std.meta.activeTag(v) != .string) {
+                            std.debug.print("ERROR [{d}] Unknown key_path type: {any}\n", .{
+                                timestamp[0..t_size],
+                                v,
+                            });
+                            continue;
+                        }
+
+                        tls_config.key_path = v.string;
+                    },
+                    .ca_path => {
+                        switch (std.meta.activeTag(v)) {
+                            .null, .bool => tls_config.ca_path = null,
+                            .string => tls_config.ca_path = v.string,
+                            else => {
+                                std.debug.print("ERROR [{d}] Unknown ca_path type: {any}\n", .{
+                                    timestamp[0..t_size],
+                                    v,
+                                });
+                                continue;
+                            },
+                        }
+                    },
+                    .verify_mode => {
+                        if (std.meta.activeTag(v) != .@"enum") {
+                            std.debug.print("ERROR [{d}] Unknown verify_mode type: {any}\n", .{
+                                timestamp[0..t_size],
+                                v,
+                            });
+                            continue;
+                        }
+
+                        const verify_mode = std.meta.stringToEnum(TLSConfig.VerifyMode, v.@"enum") orelse {
+                            std.debug.print("ERROR [{d}] Unknown verify_mode: {s}\n", .{
+                                timestamp[0..t_size],
+                                v.string,
+                            });
+                            continue;
+                        };
+
+                        tls_config.verify_mode = verify_mode;
+                    },
+                }
+            }
+
+            config.tls = tls_config;
         },
         .whitelist => {
             if (@TypeOf(value) != std.ArrayList(std.net.Address)) return;

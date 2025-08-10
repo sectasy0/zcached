@@ -31,7 +31,7 @@ pub const Parser = struct {
 
     args: Args,
 
-    pub fn show_help() !void {
+    pub fn showHelp() !void {
         const stdout = std.io.getStdOut().writer();
         const help_text: []const u8 =
             \\Usage: zcached [OPTIONS]
@@ -54,7 +54,7 @@ pub const Parser = struct {
         try stdout.print("{s}\n", .{help_text});
     }
 
-    pub fn show_version() !void {
+    pub fn showVersion() !void {
         const stdout = std.io.getStdOut().writer();
         const version_text: []const u8 =
             \\zcached 0.0.1
@@ -72,9 +72,9 @@ pub const Parser = struct {
         if (parser._process_args.len == 1) return .{ .parser = parser, .args = args };
 
         inline for (std.meta.fields(Args)) |field| {
-            const short = try field_shorthand(field.name);
+            const short = try fieldShorthand(field.name);
 
-            const field_args = try args_for_field(
+            const field_args = try argsForField(
                 field,
                 short,
                 parser._process_args,
@@ -84,7 +84,7 @@ pub const Parser = struct {
                     bool => @field(args, field.name) = true,
                     ?[]const u8 => {
                         if (std.mem.eql(u8, field_args.?[1], "")) {
-                            try show_help();
+                            try showHelp();
                             return error.MissingValue;
                         }
 
@@ -101,7 +101,7 @@ pub const Parser = struct {
         std.process.argsFree(self._allocator, self._process_args);
     }
 
-    fn field_shorthand(field_name: []const u8) ![]const u8 {
+    fn fieldShorthand(field_name: []const u8) ![]const u8 {
         inline for (std.meta.fields(@TypeOf(Args.shorthands))) |shorthand| {
             const value = @field(Args.shorthands, shorthand.name);
             if (std.mem.eql(u8, value, field_name)) return shorthand.name;
@@ -110,7 +110,7 @@ pub const Parser = struct {
         return error.InvalidShorthand;
     }
 
-    fn args_for_field(field: anytype, short: []const u8, args: [][:0]u8) !?[2][]const u8 {
+    fn argsForField(field: anytype, short: []const u8, args: [][:0]u8) !?[2][]const u8 {
         for (args, 0..) |arg, index| {
             if (index & 1 == 0) continue;
             if (arg.len < 2) return error.InvalidArg;

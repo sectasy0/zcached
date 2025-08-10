@@ -5,10 +5,12 @@ const native_os = builtin.os.tag;
 
 // Build configuration and conditional imports
 const build_options = @import("build_options");
-const secure = if (build_options.tls_enabled)
+const transport = if (build_options.tls_enabled)
     @import("secure.zig")
 else
     @import("unsecure.zig");
+
+pub const Stream = StreamT(transport);
 
 pub const ReadError = error{
     InputOutput,
@@ -66,91 +68,80 @@ pub const WriteError = error{
     ProcessNotFound,
 } || std.posix.UnexpectedError;
 
-pub const Stream = struct {
-    /// Underlying platform-defined type which may or may not be
-    /// interchangeable with a file system file descriptor.
-    handle: std.posix.socket_t,
-    ctx: ?secure.StreamContext = null,
+pub fn StreamT(comptime T: type) type {
+    return struct {
+        handle: std.posix.socket_t,
+        ctx: ?T.StreamContext = null,
 
-    pub fn close(self: Stream) void {
-        if (self.ctx != null and build_options.tls_enabled) self.ctx.?.deinit();
+        pub const transport = T;
 
-        switch (native_os) {
-            .windows => std.windows.closesocket(self.handle) catch unreachable,
-            else => std.posix.close(self.handle),
-        }
-    }
+        pub fn close(self: *StreamT(T)) void {
+            if (@hasDecl(T, "deinit")) {
+                self.ctx.deinit();
+            }
 
-    pub const Reader = std.io.Reader(Stream, ReadError, read);
-    pub const Writer = std.io.Writer(Stream, WriteError, write);
-
-    pub fn reader(self: Stream) Reader {
-        return .{ .context = self };
-    }
-
-    pub fn writer(self: Stream) Writer {
-        return .{ .context = self };
-    }
-
-    pub fn read(self: Stream, buffer: []u8) ReadError!usize {
-        if (buffer.len == 0) return 0;
-
-        if (self.ctx != null and build_options.tls_enabled) {
-            return secure.ssl_read(@ptrCast(self.ctx.?.ctx), buffer);
+            switch (native_os) {
+                .windows => std.windows.closesocket(self.handle) catch unreachable,
+                else => std.posix.close(self.handle),
+            }
         }
 
-        if (native_os == .windows) {
-            return std.windows.ReadFile(self.handle, buffer, null);
+        pub const Reader = std.io.Reader(StreamT(T), ReadError, read);
+        pub const Writer = std.io.Writer(StreamT(T), WriteError, write);
+
+        pub fn reader(self: StreamT(T)) Reader {
+            return .{ .context = self };
         }
 
-        return std.posix.read(self.handle, buffer);
-    }
-
-    /// Returns the number of bytes read. If the number read is smaller than
-    /// `buffer.len`, it means the stream reached the end. Reaching the end of
-    /// a stream is not an error condition.
-    pub fn readAll(s: Stream, buffer: []u8) ReadError!usize {
-        return readAtLeast(s, buffer, buffer.len);
-    }
-
-    /// Returns the number of bytes read, calling the underlying read function
-    /// the minimal number of times until the buffer has at least `len` bytes
-    /// filled. If the number read is less than `len` it means the stream
-    /// reached the end. Reaching the end of the stream is not an error
-    /// condition.
-    pub fn readAtLeast(s: Stream, buffer: []u8, len: usize) ReadError!usize {
-        std.assert(len <= buffer.len);
-
-        var index: usize = 0;
-        while (index < len) {
-            const amt = try s.read(buffer[index..]);
-            if (amt == 0) break;
-            index += amt;
-        }
-        return index;
-    }
-
-    /// TODO in evented I/O mode, this implementation incorrectly uses the event loop's
-    /// file system thread instead of non-blocking. It needs to be reworked to properly
-    /// use non-blocking I/O.
-    pub fn write(self: Stream, buffer: []const u8) WriteError!usize {
-        if (buffer.len == 0) return 0;
-
-        if (self.ctx != null and build_options.tls_enabled) {
-            return secure.ssl_write(@ptrCast(self.ctx.?.ctx), buffer);
+        pub fn writer(self: StreamT(T)) Writer {
+            return .{ .context = self };
         }
 
-        if (native_os == .windows) {
-            return std.windows.WriteFile(self.handle, buffer, null);
+        pub fn read(self: StreamT(T), buffer: []u8) ReadError!usize {
+            if (buffer.len == 0) return 0;
+
+            const ctx_ptr: ?*anyopaque = if (self.ctx) |ctx| blk: {
+                break :blk ctx.ctx;
+            } else blk: {
+                break :blk @constCast(@ptrCast(&self.handle));
+            };
+
+            return StreamT(T).transport.read(ctx_ptr, buffer);
         }
 
-        return std.posix.write(self.handle, buffer);
-    }
-
-    pub fn writeAll(self: Stream, bytes: []const u8) WriteError!void {
-        var index: usize = 0;
-        while (index < bytes.len) {
-            index += try self.write(bytes[index..]);
+        pub fn readAll(s: StreamT(T), buffer: []u8) ReadError!usize {
+            return readAtLeast(s, buffer, buffer.len);
         }
-    }
-};
+
+        pub fn readAtLeast(s: StreamT(T), buffer: []u8, len: usize) ReadError!usize {
+            std.assert(len <= buffer.len);
+
+            var index: usize = 0;
+            while (index < len) {
+                const amt = try s.read(buffer[index..]);
+                if (amt == 0) break;
+                index += amt;
+            }
+            return index;
+        }
+
+        pub fn write(self: StreamT(T), buffer: []const u8) WriteError!usize {
+            if (buffer.len == 0) return 0;
+
+            const ctx_ptr: ?*anyopaque = if (self.ctx) |ctx| blk: {
+                break :blk ctx.ctx;
+            } else blk: {
+                break :blk @constCast(@ptrCast(&self.handle));
+            };
+
+            return StreamT(T).transport.write(ctx_ptr, buffer);
+        }
+
+        pub fn writeAll(self: StreamT(T), bytes: []const u8) WriteError!void {
+            var index: usize = 0;
+            while (index < bytes.len) {
+                index += try self.write(bytes[index..]);
+            }
+        }
+    };
+}

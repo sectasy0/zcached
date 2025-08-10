@@ -35,7 +35,7 @@ const ArrayContext = struct {
 };
 
 fn ztypeHash(ctx: anytype, key: ZType) u64 {
-    var hasher = std.hash.Wyhash.init(0);
+    var hasher: std.hash.Wyhash = .init(0);
 
     switch (key) {
         .str, .sstr => |v| hasher.update(v),
