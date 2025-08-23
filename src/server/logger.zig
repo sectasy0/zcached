@@ -127,6 +127,11 @@ pub fn log_event(self: *Logger, etype: EType, payload: []const u8) void {
 pub fn flush(self: *Logger) void {
     if (self.buffer.items.len == 0) return;
 
+    self.file.seekFromEnd(0) catch |err| {
+        std.log.err("# failed to seek log file: {?}", .{err});
+        return;
+    };
+
     _ = self.file.writeAll(self.buffer.items) catch |err| {
         std.log.err("# failed to write log message: {?}", .{err});
         return;
