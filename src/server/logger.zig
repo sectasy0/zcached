@@ -1,10 +1,12 @@
 const std = @import("std");
 const utils = @import("utils.zig");
+const builtin = @import("builtin");
 
 pub const Logger = @This();
 
 pub const DEFAULT_PATH: []const u8 = "./log/zcached.log";
-const BUFFER_SIZE: usize = 4096;
+const buffer_size: usize = 4096;
+const max_buffer_size: usize = 256 * 1024;
 
 pub const LogLevel = enum {
     Debug,
@@ -17,18 +19,26 @@ pub const EType = enum {
     Request,
     Response,
 };
+
 file: std.fs.File = undefined,
+stdout: std.fs.File = undefined,
 log_path: []const u8 = DEFAULT_PATH,
+
+buffer: std.ArrayList(u8),
 
 sout: bool = undefined,
 
 allocator: std.mem.Allocator,
 
 pub fn init(allocator: std.mem.Allocator, file_path: ?[]const u8, sout: bool) !Logger {
-    var logger = Logger{ .allocator = allocator, .sout = sout };
-
+    var logger = Logger{
+        .allocator = allocator,
+        .sout = sout,
+        .buffer = try .initCapacity(allocator, buffer_size),
+        .stdout = std.io.getStdOut(),
+    };
     if (file_path != null) logger.log_path = file_path.?;
-    utils.create_path(logger.log_path);
+    utils.createPath(logger.log_path);
 
     logger.file = try std.fs.cwd().createFile(
         logger.log_path,
@@ -48,7 +58,7 @@ pub fn init(allocator: std.mem.Allocator, file_path: ?[]const u8, sout: bool) !L
     return logger;
 }
 
-pub fn log(self: *const Logger, level: LogLevel, comptime format: []const u8, args: anytype) void {
+pub fn log(self: *Logger, level: LogLevel, comptime format: []const u8, args: anytype) void {
     var timestamp: [40]u8 = undefined;
     const t_size = utils.timestampf(&timestamp);
 
@@ -59,13 +69,13 @@ pub fn log(self: *const Logger, level: LogLevel, comptime format: []const u8, ar
         LogLevel.Error => "ERROR",
     };
 
-    var buf: [BUFFER_SIZE]u8 = undefined;
+    var buf: [buffer_size]u8 = undefined;
     const message = std.fmt.bufPrint(&buf, format, args) catch |err| {
         std.log.err("# failed to format log message: {?}", .{err});
         return;
     };
 
-    var fbuf: [BUFFER_SIZE]u8 = undefined;
+    var fbuf: [buffer_size]u8 = undefined;
     const formatted = std.fmt.bufPrint(&fbuf, "{s} [{s}] {s}\n", .{
         log_level,
         timestamp[0..t_size],
@@ -75,15 +85,23 @@ pub fn log(self: *const Logger, level: LogLevel, comptime format: []const u8, ar
         return;
     };
 
-    if (self.sout or level == .Error) std.debug.print("{s}", .{formatted});
+    if (self.sout or level == .Error or builtin.is_test) {
+        self.stdout.writeAll(formatted) catch |err| {
+            std.log.err("# failed to write log message to stdout: {?}", .{err});
+        };
+    }
 
-    _ = self.file.write(formatted) catch |err| {
-        std.log.err("# failed to write log message: {?}", .{err});
+    self.buffer.appendSlice(formatted) catch |err| {
+        std.log.err("# failed to buffer log message: {?}", .{err});
         return;
     };
+
+    if (self.buffer.items.len + formatted.len >= self.buffer.capacity) {
+        self.flush();
+    }
 }
 
-pub fn log_event(self: *const Logger, etype: EType, payload: []const u8) void {
+pub fn log_event(self: *Logger, etype: EType, payload: []const u8) void {
     const repr = utils.repr(self.allocator, payload) catch |err| {
         self.log(.Error, "* failed to repr payload: {any}", .{err});
         return;
@@ -102,4 +120,26 @@ pub fn log_event(self: *const Logger, etype: EType, payload: []const u8) void {
             .{repr},
         ),
     }
+}
+
+pub fn flush(self: *Logger) void {
+    if (self.buffer.items.len == 0) return;
+
+    _ = self.file.writeAll(self.buffer.items) catch |err| {
+        std.log.err("# failed to write log message: {?}", .{err});
+        return;
+    };
+
+    if (self.buffer.items.len > max_buffer_size) {
+        self.buffer.shrinkAndFree(buffer_size);
+    } else {
+        self.buffer.clearRetainingCapacity();
+    }
+}
+
+pub fn deinit(self: *Logger) void {
+    self.flush();
+    self.buffer.deinit();
+    self.file.close();
+    self.stdout.close();
 }

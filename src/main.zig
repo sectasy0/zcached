@@ -21,11 +21,18 @@ const TracingAllocator = @import("server/tracing.zig");
 
 pub const panic = std.debug.FullPanic(panicHandler);
 
+var quantum_flow: std.atomic.Value(bool) = .init(true);
+
+fn handleSig(sig: c_int) callconv(.C) void {
+    _ = sig; // unused, but required by the signal handler signature
+    // we want to stop the server gracefully, and also flush any pending logs
+    quantum_flow.store(false, .seq_cst);
+}
+
 fn panicHandler(msg: []const u8, first_trace_addr: ?usize) noreturn {
     @branchHint(.cold);
 
     _ = first_trace_addr; // unused, but required by the panic handler signature
-
     log: {
         const file = std.fs.cwd().createFile(
             log.DEFAULT_PATH,
@@ -91,8 +98,18 @@ pub fn main() void {
         std.log.err("# failed to initialize logger: {}", .{err});
         return;
     };
+    defer logger.deinit();
 
-    const config = Config.load(
+    var act: std.posix.Sigaction = .{
+        .handler = .{ .handler = handleSig },
+        .mask = std.posix.empty_sigset,
+        .flags = 0,
+    };
+
+    std.posix.sigaction(std.posix.SIG.TERM, &act, null);
+    std.posix.sigaction(std.posix.SIG.INT, &act, null);
+
+    var config = Config.load(
         allocator,
         result.args.@"config-path",
         result.args.@"log-path",
@@ -145,8 +162,11 @@ pub fn main() void {
 
     const context = Employer.Context{
         .config = &config,
-        .logger = &logger,
-        .memory = &memory,
+        .resources = .{
+            .memory = &memory,
+            .logger = &logger,
+        },
+        .quantum_flow = &quantum_flow,
     };
 
     runSupervisor(allocator, context);
@@ -182,13 +202,13 @@ fn handleArguments(args: cli.Args) ?void {
 }
 
 fn runSupervisor(allocator: std.mem.Allocator, context: Employer.Context) void {
-    context.logger.log(.Info, "# starting zcached server on tcp://{?} | Workers {}", .{
+    context.resources.logger.log(.Info, "# starting zcached server on tcp://{?} | Workers {}", .{
         context.config.address,
         context.config.workers,
     });
 
     var employer = Employer.init(allocator, context) catch |err| {
-        context.logger.log(.Error, "# failed to initialize server: {any}", .{err});
+        context.resources.logger.log(.Error, "# failed to initialize server: {any}", .{err});
         return;
     };
     defer employer.deinit();

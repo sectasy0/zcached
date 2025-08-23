@@ -27,17 +27,29 @@ threads: []std.Thread,
 
 allocator: std.mem.Allocator,
 
+/// `Context` holds data needed by zcached components.
+///
+/// - `resources` – runtime resources
+/// - `config` – zcached configuration struct
 pub const Context = struct {
-    memory: *Memory,
-    config: *const Config,
-    logger: *Logger,
+    /// Runtime resources used by functions.
+    pub const Resources = struct {
+        memory: *Memory,
+        logger: *Logger,
+    };
+
+    resources: Resources,
+    config: *Config,
+
+    // Flag indicating whether the server is runnin'
+    quantum_flow: *std.atomic.Value(bool),
 };
 
 pub fn init(allocator: Allocator, context: Context) !Employer {
     std.debug.assert(context.config.workers > 0);
 
     if (context.config.tls.enabled and build_options.tls_enabled) {
-        context.logger.log(.Info, "# zcached is running with TLS enabled", .{});
+        context.resources.logger.log(.Info, "# zcached is running with TLS enabled", .{});
     }
 
     return .{
@@ -56,7 +68,7 @@ pub fn init(allocator: Allocator, context: Context) !Employer {
 
 pub fn supervise(self: *Employer) void {
     self.server.listen(self.context.config.getAddress()) catch |err| {
-        self.context.logger.log(
+        self.context.resources.logger.log(
             .Error,
             "# failed to run server listener: {?}",
             .{err},
@@ -67,15 +79,15 @@ pub fn supervise(self: *Employer) void {
         const err = error.AddressNotAvailable;
 
         // temporary set `sout` to true to force stdout print.
-        const prev_sout = self.context.logger.sout;
-        self.context.logger.sout = true;
+        const prev_sout = self.context.resources.logger.sout;
+        self.context.resources.logger.sout = true;
 
-        self.context.logger.log(
+        self.context.resources.logger.log(
             .Error,
             "# failed to run server listener: {?}",
             .{err},
         );
-        self.context.logger.sout = prev_sout;
+        self.context.resources.logger.sout = prev_sout;
         return;
     }
 
@@ -97,7 +109,7 @@ pub fn supervise(self: *Employer) void {
 
         // + 1 becouse first index is always listener fd
         self.workers[i] = Worker.init(allocator, fds_size + 1) catch |err| {
-            self.context.logger.log(
+            self.context.resources.logger.log(
                 .Error,
                 "# failed to create worker: {?}",
                 .{err},
@@ -112,7 +124,7 @@ pub fn supervise(self: *Employer) void {
             delegate,
             .{ &self.workers[i], &listener },
         ) catch |err| {
-            self.context.logger.log(
+            self.context.resources.logger.log(
                 .Error,
                 "# failed to swpan std.Thread: {?}",
                 .{err},
@@ -121,9 +133,13 @@ pub fn supervise(self: *Employer) void {
         };
     }
 
+    self.context.resources.logger.flush();
+
     for (0..self.context.config.workers) |i| {
         self.threads[i].join();
     }
+
+    std.debug.print("INFO [] * all worker threads joined\n", .{});
 }
 
 fn delegate(worker: *Worker, listener: *Listener) void {
