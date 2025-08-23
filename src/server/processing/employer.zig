@@ -138,8 +138,6 @@ pub fn supervise(self: *Employer) void {
     for (0..self.context.config.workers) |i| {
         self.threads[i].join();
     }
-
-    std.debug.print("INFO [] * all worker threads joined\n", .{});
 }
 
 fn delegate(worker: *Worker, listener: *Listener) void {

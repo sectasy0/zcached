@@ -64,9 +64,9 @@ fn send(socket: anytype, command: []const u8) ![]const u8 {
 }
 
 pub fn runServer(tls: bool) !std.process.Child {
-    var argv = [_][]const u8{"/Users/lsd/Documents/zcached/zig-out/bin/zcached"};
+    var argv = [_][]const u8{"./zig-out/bin/zcached"};
     if (tls) {
-        argv = [_][]const u8{"/Users/lsd/Documents/zcached/zig-out/bin/zcached_tls"};
+        argv = [_][]const u8{"./zig-out/bin/zcached_tls"};
     }
     var child = std.process.Child.init(&argv, std.heap.page_allocator);
     child.stderr_behavior = .Ignore;
