@@ -11,8 +11,8 @@ const Config = @import("../server/config.zig");
 const Logger = @import("../server/logger.zig");
 const activeTag = std.meta.activeTag;
 
-pub const STRING: []u8 = @constCast("Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.");
-pub const SIMPLE_STRING: []u8 = @constCast("simple string");
+pub const STRING: []const u8 = "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.";
+pub const SIMPLE_STRING: []const u8 = "simple string";
 
 pub fn setup_array(allocator: std.mem.Allocator) !std.ArrayList(types.ZType) {
     var array = std.ArrayList(types.ZType).init(allocator);

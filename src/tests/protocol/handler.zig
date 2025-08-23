@@ -23,9 +23,9 @@ test "deserialize" {
     var array = std.ArrayList(types.ZType).init(std.testing.allocator);
     defer array.deinit();
 
-    try array.append(.{ .str = @constCast("first") });
-    try array.append(.{ .str = @constCast("second") });
-    try array.append(.{ .str = @constCast("third") });
+    try array.append(.{ .str = "first" });
+    try array.append(.{ .str = "second" });
+    try array.append(.{ .str = "third" });
 
     const HandlerType = ProtocolHandlerT(*const std.net.Stream.Reader);
     var handler = try HandlerType.init(std.testing.allocator);

@@ -7,7 +7,7 @@ test "deserialize string" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
 
-    const input = types.ZType{ .str = @constCast("hello world") };
+    const input = types.ZType{ .str = "hello world" };
 
     const expected = "$11\r\nhello world\r\n";
     const result = try deserializer.process(input);
@@ -18,7 +18,7 @@ test "deserialize empty string" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
 
-    const input = types.ZType{ .str = @constCast("") };
+    const input = types.ZType{ .str = "" };
 
     const expected = "$0\r\n\r\n";
     const result = try deserializer.process(input);
@@ -84,7 +84,7 @@ test "deserialize simple string" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
 
-    const input = types.ZType{ .sstr = @constCast("hello world") };
+    const input = types.ZType{ .sstr = "hello world" };
 
     const expected = "+hello world\r\n";
     const result = try deserializer.process(input);
@@ -95,9 +95,9 @@ test "deserialize array" {
     var array = std.ArrayList(types.ZType).init(std.testing.allocator);
     defer array.deinit();
 
-    try array.append(.{ .str = @constCast("first") });
-    try array.append(.{ .str = @constCast("second") });
-    try array.append(.{ .str = @constCast("third") });
+    try array.append(.{ .str = "first" });
+    try array.append(.{ .str = "second" });
+    try array.append(.{ .str = "third" });
 
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
@@ -113,9 +113,9 @@ test "serialize map" {
     var map = std.StringHashMap(types.ZType).init(std.testing.allocator);
     defer map.deinit();
 
-    try map.put("a", .{ .str = @constCast("first") });
-    try map.put("b", .{ .str = @constCast("second") });
-    try map.put("c", .{ .str = @constCast("third") });
+    try map.put("a", .{ .str = "first" });
+    try map.put("b", .{ .str = "second" });
+    try map.put("c", .{ .str = "third" });
 
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
@@ -132,9 +132,9 @@ test "serialize set" {
     var set = types.sets.Set(types.ZType).init(std.testing.allocator);
     defer set.deinit();
 
-    try set.insert(.{ .str = @constCast("first") });
-    try set.insert(.{ .str = @constCast("second") });
-    try set.insert(.{ .str = @constCast("third") });
+    try set.insert(.{ .str = "first" });
+    try set.insert(.{ .str = "second" });
+    try set.insert(.{ .str = "third" });
 
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
@@ -151,9 +151,9 @@ test "serialize uset" {
     var uset = types.sets.SetUnordered(types.ZType).init(std.testing.allocator);
     defer uset.deinit();
 
-    try uset.insert(.{ .str = @constCast("first") });
-    try uset.insert(.{ .str = @constCast("second") });
-    try uset.insert(.{ .str = @constCast("third") });
+    try uset.insert(.{ .str = "first" });
+    try uset.insert(.{ .str = "second" });
+    try uset.insert(.{ .str = "third" });
 
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();

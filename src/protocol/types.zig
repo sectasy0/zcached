@@ -2,8 +2,9 @@ const std = @import("std");
 pub const sets = @import("set.zig");
 
 pub const ZType = union(enum) {
-    str: []u8,
-    sstr: []u8, // simple string
+    str: []const u8,
+    // sstring (simple string) is rather response format than data
+    sstr: []const u8,
     int: i64,
     float: f64,
     map: Map,
@@ -50,7 +51,7 @@ pub fn ztype_copy(value: ZType, allocator: std.mem.Allocator) anyerror!ZType {
             var iter = v.iterator();
             while (iter.next()) |entry| {
                 const zkey = try ztype_copy(
-                    .{ .str = @constCast(entry.key_ptr.*) },
+                    .{ .str = entry.key_ptr.* },
                     allocator,
                 );
                 const zvalue = try ztype_copy(entry.value_ptr.*, allocator);
@@ -100,17 +101,17 @@ pub fn ztype_free(value: *ZType, allocator: std.mem.Allocator) void {
         .array => |array| {
             defer array.deinit();
 
-            for (array.items) |item| ztype_free(
+            for (value.array.items) |item| ztype_free(
                 @constCast(&item),
                 allocator,
             );
         },
         .map => |v| {
-            defer @constCast(&v).deinit();
+            defer value.*.map.deinit();
 
             var iter = v.iterator();
             while (iter.next()) |item| {
-                var zkey: ZType = .{ .str = @constCast(item.key_ptr.*) };
+                var zkey: ZType = .{ .str = item.key_ptr.* };
                 var zvalue: ZType = item.value_ptr.*;
 
                 ztype_free(&zkey, allocator);

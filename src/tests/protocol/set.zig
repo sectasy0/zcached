@@ -138,11 +138,11 @@ test "Set with ZType str" {
     var set = sets.Set(ZType).init(allocator);
     defer set.deinit();
 
-    try set.insert(ZType{ .str = @constCast("hello") });
-    try std.testing.expect(set.contains(ZType{ .str = @constCast("hello") }));
+    try set.insert(ZType{ .str = "hello" });
+    try std.testing.expect(set.contains(ZType{ .str = "hello" }));
     try std.testing.expectEqual(
-        ZType{ .str = @constCast("hello") },
-        set.remove(ZType{ .str = @constCast("hello") }).?.key,
+        ZType{ .str = "hello" },
+        set.remove(ZType{ .str = "hello" }).?.key,
     );
 }
 
@@ -151,12 +151,12 @@ test "Set with ZType sstr" {
     var set = sets.Set(ZType).init(allocator);
     defer set.deinit();
 
-    try set.insert(ZType{ .sstr = @constCast("world") });
+    try set.insert(ZType{ .sstr = "world" });
 
-    try std.testing.expect(set.contains(ZType{ .sstr = @constCast("world") }));
+    try std.testing.expect(set.contains(ZType{ .sstr = "world" }));
     try std.testing.expectEqual(
-        ZType{ .sstr = @constCast("world") },
-        set.remove(ZType{ .sstr = @constCast("world") }).?.key,
+        ZType{ .sstr = "world" },
+        set.remove(ZType{ .sstr = "world" }).?.key,
     );
 }
 
@@ -391,11 +391,11 @@ test "SetUnordered with ZType str" {
     var set = sets.SetUnordered(ZType).init(allocator);
     defer set.deinit();
 
-    try set.insert(ZType{ .str = @constCast("hello") });
-    try std.testing.expect(set.contains(ZType{ .str = @constCast("hello") }));
+    try set.insert(ZType{ .str = "hello" });
+    try std.testing.expect(set.contains(ZType{ .str = "hello" }));
     try std.testing.expectEqual(
-        ZType{ .str = @constCast("hello") },
-        set.remove(ZType{ .str = @constCast("hello") }).?.key,
+        ZType{ .str = "hello" },
+        set.remove(ZType{ .str = "hello" }).?.key,
     );
 }
 
@@ -404,12 +404,12 @@ test "SetUnordered with ZType sstr" {
     var set = sets.SetUnordered(ZType).init(allocator);
     defer set.deinit();
 
-    try set.insert(ZType{ .sstr = @constCast("world") });
+    try set.insert(ZType{ .sstr = "world" });
 
-    try std.testing.expect(set.contains(ZType{ .sstr = @constCast("world") }));
+    try std.testing.expect(set.contains(ZType{ .sstr = "world" }));
     try std.testing.expectEqual(
-        ZType{ .sstr = @constCast("world") },
-        set.remove(ZType{ .sstr = @constCast("world") }).?.key,
+        ZType{ .sstr = "world" },
+        set.remove(ZType{ .sstr = "world" }).?.key,
     );
 }
 

@@ -14,7 +14,7 @@ test "should load" {
 
     try std.testing.expectEqual(fixture.memory.?.internal.count(), 0);
 
-    const file_content = "zcpf%4\r\n$5\r\ntest2\r\n$8\r\ntesttest\r\n$5\r\ntest1\r\n$8\r\ntesttest\r\n$5\r\ntest3\r\n$8\r\ntesttest\r\n$5\r\ntest4\r\n$8\r\ntesttest\r\n";
+    const file_content = "zcpf%4\r\n$5\r\ntest2\r\n$8\r\ntesttest\r\n$5\r\ntest1\r\n$8\r\ntesttest\r\n$5\r\ntest3\r\n$8\r\ntesttest\r\n$5\r\ntest4\r\n$8\r\ntesttest\r\n\x03";
     const file = try std.fs.cwd().createFile("./tmp/persist/dump_123.zcpf", .{});
     try file.writeAll(file_content);
     defer file.close();
@@ -103,10 +103,10 @@ test "should save" {
     defer fixture.deinit();
     try fixture.create_memory();
 
-    try fixture.memory.?.put("test1", .{ .str = @constCast("testtest") });
-    try fixture.memory.?.put("test2", .{ .str = @constCast("testtest") });
-    try fixture.memory.?.put("test3", .{ .str = @constCast("testtest") });
-    try fixture.memory.?.put("test4", .{ .str = @constCast("testtest") });
+    try fixture.memory.?.put("test1", .{ .str = "testtest" });
+    try fixture.memory.?.put("test2", .{ .str = "testtest" });
+    try fixture.memory.?.put("test3", .{ .str = "testtest" });
+    try fixture.memory.?.put("test4", .{ .str = "testtest" });
 
     const result = try fixture.persistance.?.save(&fixture.memory.?);
 

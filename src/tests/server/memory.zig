@@ -50,7 +50,7 @@ test "should delete existing key" {
     try fixture.create_memory();
 
     const string = "Die meisten Menschen sind nichts als Bauern auf einem Schachbrett, das von einer unbekannten Hand geführt wird.";
-    const value: types.ZType = .{ .str = @constCast(string) };
+    const value: types.ZType = .{ .str = string };
 
     try fixture.memory.?.put("foo", .{ .int = 42 });
     try fixture.memory.?.put("bar", value);
@@ -74,7 +74,7 @@ test "should flush storage" {
     try fixture.create_memory();
 
     const string = "Es gibt Momente im Leben, da muss man verstehen, dass die Entscheidungen, die man trifft, nicht nur das eigene Schicksal angehen.";
-    const value: types.ZType = .{ .str = @constCast(string) };
+    const value: types.ZType = .{ .str = string };
 
     try fixture.memory.?.put("foo", .{ .int = 42 });
     try fixture.memory.?.put("bar", value);
@@ -104,7 +104,7 @@ test "should return error.MemoryLimitExceeded" {
     defer arena.deinit();
 
     const string = "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.";
-    const value: types.ZType = .{ .str = @constCast(string) };
+    const value: types.ZType = .{ .str = string };
     for (0..6554) |i| {
         const key = try std.fmt.allocPrint(arena.allocator(), "key-{d}", .{i});
         try fixture.memory.?.put(key, value);
@@ -123,7 +123,7 @@ test "should not return error.MemoryLimitExceed when max but deleted some" {
     defer arena.deinit();
 
     const string = "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.";
-    const value: types.ZType = .{ .str = @constCast(string) };
+    const value: types.ZType = .{ .str = string };
     for (0..8) |i| {
         const key = try std.fmt.allocPrint(arena.allocator(), "key-{d}", .{i});
         fixture.memory.?.put(key, value) catch {};
@@ -151,13 +151,13 @@ test "memory should not grow if key overriden with put" {
     defer arena.deinit();
 
     const string = "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.";
-    const value: types.ZType = .{ .str = @constCast(string) };
+    const value: types.ZType = .{ .str = string };
     for (0..8) |i| {
         const key = try std.fmt.allocPrint(arena.allocator(), "key-{d}", .{i});
         fixture.memory.?.put(key, value) catch {};
     }
 
-    const tracking = utils.ptr_cast(
+    const tracking = utils.ptrCast(
         TracingAllocator,
         fixture.memory.?.allocator.ptr,
     );

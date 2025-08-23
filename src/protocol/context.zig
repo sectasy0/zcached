@@ -51,7 +51,7 @@ fn ztypeHash(ctx: anytype, key: ZType) u64 {
         .map => |v| {
             var iter = v.iterator();
             while (iter.next()) |item| {
-                var hashed_key: u64 = ctx.hash(.{ .str = @constCast(item.key_ptr.*) });
+                var hashed_key: u64 = ctx.hash(.{ .str = item.key_ptr.* });
                 var hashed_value: u64 = ctx.hash(item.value_ptr.*);
 
                 hasher.update(std.mem.asBytes(&hashed_key));
@@ -121,8 +121,8 @@ fn ztypeEql(a: ZType, b: ZType) bool {
 
                     // map keys are always strings.
                     const keys_equals = ztypeEql(
-                        ZType{ .str = @constCast(v_entry.key_ptr.*) },
-                        ZType{ .str = @constCast(b_entry.key_ptr.*) },
+                        ZType{ .str = v_entry.key_ptr.* },
+                        ZType{ .str = b_entry.key_ptr.* },
                     );
                     const values_equals = ztypeEql(
                         v_entry.value_ptr.*,
