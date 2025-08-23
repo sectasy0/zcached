@@ -1,4 +1,4 @@
-name: zcached tests
+name: zcached end-to-end
 
 on:
   push:

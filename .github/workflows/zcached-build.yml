@@ -13,14 +13,43 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Install Zig
-      uses: ./.github/actions/install
+      - name: Install Zig
+        uses: ./.github/actions/install
 
-    - name: Lint code
-      uses: ./.github/actions/lint
+      - name: Lint code
+        uses: ./.github/actions/lint
 
-    - name: Build
-      run: zig build
+      - name: Build (Linux)
+        run: zig build
+
+      - name: Build (Linux TLS)
+        run: zig build -Dtls-enabled=true
+
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Homebrew dependencies
+        run: |
+          brew update
+          brew install openssl
+
+      - name: Install zig
+        uses: ./.github/actions/install
+
+      - name: Lint code
+        uses: ./.github/actions/lint
+
+      - name: Build (macOS)
+        run: zig build
+
+      - name: Build (macOS TLS)
+        env:
+          OPENSSL_DIR: $(brew --prefix openssl)
+        run: zig build -Dtls-enabled=true
