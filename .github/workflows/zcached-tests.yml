@@ -9,7 +9,7 @@ on:
   pull_request:
 
 jobs:
-  build:
+  tests-linux:
     runs-on: ubuntu-latest
 
     steps:
@@ -24,3 +24,24 @@ jobs:
 
     - name: Run tests
       run: zig build test
+
+  tests-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Homebrew dependencies
+        run: |
+          brew update
+          brew install openssl
+
+      - name: Install zig
+        uses: ./.github/actions/install
+
+      - name: Lint code
+        uses: ./.github/actions/lint
+
+      - name: Run tests
+        run: zig build test
