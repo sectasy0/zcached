@@ -25,14 +25,14 @@ pub fn daemonize(pid_path: []const u8) void {
     std.posix.close(std.posix.STDOUT_FILENO);
     std.posix.close(std.posix.STDERR_FILENO);
 
-    __create_pid_file(pid_path, os.getpid()) catch {
+    createPidFile(pid_path, os.getpid()) catch {
         std.posix.exit(@intFromEnum(EXIT.PIDERR));
     };
 }
 
 const MAX_PID_STRING: u8 = 100;
 
-fn __create_pid_file(pid_path: []const u8, pid: std.posix.pid_t) !void {
+fn createPidFile(pid_path: []const u8, pid: std.posix.pid_t) !void {
     var pid_file = try std.fs.cwd().createFile(
         pid_path,
         .{

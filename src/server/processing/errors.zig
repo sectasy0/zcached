@@ -9,7 +9,7 @@ const Args = struct {
     key: ?[]const u8 = null,
 };
 
-pub fn build_args(command_set: *const std.ArrayList(ZType)) Args {
+pub fn buildArgs(command_set: *const std.ArrayList(ZType)) Args {
     var args: Args = Args{};
 
     if (command_set.items.len < 1) return args;
@@ -20,28 +20,26 @@ pub fn build_args(command_set: *const std.ArrayList(ZType)) Args {
     return args;
 }
 
-// stream is a std.net.Stream
-pub fn handle(out: anytype, err: anyerror, args: Args, logger: *const Logger) !void {
+pub fn handle(out: std.io.AnyWriter, err: anyerror, args: Args, logger: *Logger) !void {
     logger.log(.Debug, "handling error: {}", .{err});
 
     _ = switch (err) {
-        error.BadRequest => try out.writeAll("-ERR bad request\r\n"),
-        error.UnknownCommand => try handle_unknown_command(out, args),
-        error.NotInteger => try out.writeAll("-TYPERR not integer\r\n"),
-        error.NotBoolean => try out.writeAll("-TYPERR not boolean\r\n"),
-        error.KeyNotString => try out.writeAll("-TYPERR key not string\r\n"),
-        error.NotFound => try handle_not_found(out, args),
+        error.Unprocessable => try out.writeAll("-ERR unprocessable\r\n"),
+        error.UnknownCommand => try handleUnknownCommand(out, args),
+        error.InvalidType => try out.writeAll("-TYPERR invalid type\r\n"),
+        error.InvalidKey => try out.writeAll("-ERR key must be a string\r\n"),
+        error.NotFound => try handleNotFound(out, args),
         error.MaxClientsReached => try out.writeAll("-ERR max number of clients reached\r\n"),
-        error.BulkTooLarge => try out.writeAll("-ERR bulk too large\r\n"),
-        error.NotWhitelisted => try out.writeAll("-ERR not whitelisted\r\n"),
-        error.SaveFailure => try out.writeAll("-ERR there is no data to save\r\n"),
-        error.InvalidLength => try out.writeAll("-ERR invalid length\r\n"),
-        error.KeyAlreadyExists => try out.writeAll("-ERR key already exists\r\n"),
+        error.PayloadExceeded => try out.writeAll("-ERR maximum payload size exceeded\r\n"),
+        error.NotWhitelisted => try out.writeAll("-NOAUTH not whitelisted\r\n"),
+        error.SaveFailure => try out.writeAll("-NOSAVE error while saving data\r\n"),
+        error.InvalidLength => try out.writeAll("-INVAL invalid length\r\n"),
+        error.BusyKey => try out.writeAll("-BUSYKEY key already exists\r\n"),
         else => try out.writeAll("-ERR unexpected\r\n"),
     };
 }
 
-fn handle_unknown_command(out: anytype, args: Args) !void {
+fn handleUnknownCommand(out: anytype, args: Args) !void {
     if (args.command) |command| {
         try out.print("-ERR unknown command '{s}'\r\n", .{command});
     } else {
@@ -49,7 +47,7 @@ fn handle_unknown_command(out: anytype, args: Args) !void {
     }
 }
 
-fn handle_not_found(out: anytype, args: Args) !void {
+fn handleNotFound(out: anytype, args: Args) !void {
     if (args.key) |key| {
         try out.print("-ERR '{s}' not found\r\n", .{key});
     } else {

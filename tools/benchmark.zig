@@ -5,7 +5,7 @@ const MAX_WORKERS = 8;
 const ITERATIONS = 10000;
 
 fn randomString(comptime len: usize) ![len]u8 {
-    var prng = std.rand.DefaultPrng.init(blk: {
+    var prng = std.Random.DefaultPrng.init(blk: {
         var seed: u64 = undefined;
         try std.posix.getrandom(std.mem.asBytes(&seed));
         break :blk seed;
@@ -25,6 +25,7 @@ fn randomString(comptime len: usize) ![len]u8 {
 fn runCommandFmt(socket: *std.net.Stream, comptime fmt: []const u8, args: anytype) !void {
     var bw = std.io.bufferedWriter(socket.writer());
     try std.fmt.format(bw.writer(), fmt, args);
+    _ = try bw.write("\x03");
     try bw.flush();
     var buffer: [1024]u8 = undefined;
     const reader = socket.reader();

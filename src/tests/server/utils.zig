@@ -2,31 +2,31 @@ const std = @import("std");
 const ctime = @cImport(@cInclude("time.h"));
 const utils = @import("../../server/utils.zig");
 
-test "enum_type_from_str" {
+test "enumTypeFromStr" {
     const Tag = enum {
         a,
         b,
     };
     const str = "A";
     const expected = Tag.a;
-    const actual = utils.enum_type_from_str(Tag, str).?;
+    const actual = utils.enumTypeFromStr(Tag, str).?;
     try std.testing.expectEqual(expected, actual);
 }
 
-test "create_path" {
+test "createPath" {
     const file_path = "./test/file.txt";
     const path = std.fs.path.dirname(file_path).?;
 
     defer std.fs.cwd().deleteDir(path) catch {};
 
-    utils.create_path(file_path);
+    utils.createPath(file_path);
 
     std.fs.cwd().makeDir(path) catch |err| {
         try std.testing.expectEqual(err, error.PathAlreadyExists);
     };
 }
 
-test "create_path absolute" {
+test "createPath absolute" {
     const file_path = "/home/sectasy/zcached/test/file.txt";
     const path = std.fs.path.dirname(file_path).?;
 
@@ -41,7 +41,7 @@ test "create_path absolute" {
 
     defer std.testing.allocator.free(absolute_path);
 
-    utils.create_path(absolute_path);
+    utils.createPath(absolute_path);
 
     std.fs.cwd().makeDir(absolute_path) catch |err| {
         try std.testing.expectEqual(err, error.PathAlreadyExists);

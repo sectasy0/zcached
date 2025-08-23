@@ -6,6 +6,9 @@ const ZType = @import("../../protocol/types.zig").ZType;
 // Storage
 const Memory = @import("../storage/memory.zig");
 
+// Processing / application logic
+const Context = @import("../processing/employer.zig").Context;
+
 // Tracing utilities
 const TracingAllocator = @import("../tracing.zig").TracingAllocator;
 
@@ -33,22 +36,13 @@ const CommandType = enum {
 };
 pub const Handler = struct {
     allocator: std.mem.Allocator,
-    memory: *Memory,
 
-    logger: *Logger,
+    context: Context,
 
     pub const Result = union(enum) { ok: ZType, err: anyerror };
 
-    pub fn init(
-        allocator: std.mem.Allocator,
-        memory: *Memory,
-        logger: *Logger,
-    ) Handler {
-        return Handler{
-            .allocator = allocator,
-            .memory = memory,
-            .logger = logger,
-        };
+    pub fn init(allocator: std.mem.Allocator, context: Context) Handler {
+        return Handler{ .allocator = allocator, .context = context };
     }
 
     pub fn process(self: *Handler, command_set: *const std.ArrayList(ZType)) Result {
@@ -57,7 +51,7 @@ pub const Handler = struct {
             return .{ .err = error.UnknownCommand };
         }
 
-        const command_type = utils.enum_type_from_str(CommandType, command_set.items[0].str) orelse {
+        const command_type = utils.enumTypeFromStr(CommandType, command_set.items[0].str) orelse {
             return .{ .err = error.UnknownCommand };
         };
 
@@ -85,7 +79,8 @@ pub const Handler = struct {
             .ECHO => {
                 if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
                 switch (command_set.items[1]) {
-                    .str, .sstr => |text| return .{ .ok = .{ .str = text } },
+                    .str => |text| return .{ .ok = .{ .str = text } },
+                    .sstr => |text| return .{ .ok = .{ .sstr = text } },
                     else => return .{ .err = error.KeyNotString }, // Maybe rename it to FieldNotString or ValueNotString?
                 }
             },
@@ -95,9 +90,13 @@ pub const Handler = struct {
             },
             .MGET => return self.mget(command_set.items[1..command_set.items.len]),
             .MSET => return self.mset(command_set.items[1..command_set.items.len]),
-            .PING => return .{ .ok = .{ .sstr = @constCast("PONG") } },
-            .DBSIZE => return .{ .ok = .{ .int = self.memory.size() } },
-            .LASTSAVE => return .{ .ok = .{ .int = self.memory.last_save } },
+            .PING => return .{ .ok = .{ .sstr = "PONG" } },
+            .DBSIZE => return .{
+                .ok = .{ .int = self.context.resources.memory.size() },
+            },
+            .LASTSAVE => return .{
+                .ok = .{ .int = self.context.resources.memory.last_save },
+            },
             .SAVE => return self.save(),
             .KEYS => return self.zkeys(),
             .FLUSH => return self.flush(),
@@ -105,7 +104,7 @@ pub const Handler = struct {
     }
 
     fn get(self: *Handler, key: ZType) Result {
-        const value = self.memory.get(key.str) catch |err| {
+        const value = self.context.resources.memory.get(key.str) catch |err| {
             return .{ .err = err };
         };
 
@@ -116,40 +115,40 @@ pub const Handler = struct {
         // second element in command_set is key and should be always str
         if (key != .str) return .{ .err = error.KeyNotString };
 
-        self.memory.put(key.str, value) catch |err| {
+        self.context.resources.memory.put(key.str, value) catch |err| {
             return .{ .err = err };
         };
 
-        return .{ .ok = .{ .sstr = @constCast("OK") } };
+        return .{ .ok = .{ .sstr = "OK" } };
     }
 
     fn delete(self: *Handler, key: ZType) Result {
-        const result = self.memory.delete(key.str);
+        const result = self.context.resources.memory.delete(key.str);
 
         if (result) {
-            return .{ .ok = .{ .sstr = @constCast("OK") } };
+            return .{ .ok = .{ .sstr = "OK" } };
         } else {
             return .{ .err = error.NotFound };
         }
     }
 
     fn flush(self: *Handler) Result {
-        self.memory.flush();
-        return .{ .ok = .{ .sstr = @constCast("OK") } };
+        self.context.resources.memory.flush();
+        return .{ .ok = .{ .sstr = "OK" } };
     }
 
     fn save(self: *Handler) Result {
-        if (self.memory.size() == 0) return .{ .err = error.SaveFailure };
+        if (self.context.resources.memory.size() == 0) return .{ .err = error.SaveFailure };
 
-        const size = self.memory.save() catch |err| {
-            self.logger.log(.Error, "# failed to save data: {?}", .{err});
+        const size = self.context.resources.memory.save() catch |err| {
+            self.context.resources.logger.log(.Error, "# failed to save data: {?}", .{err});
 
             return .{ .err = error.SaveFailure };
         };
 
-        self.logger.log(.Debug, "# saved {d} bytes", .{size});
+        self.context.resources.logger.log(.Debug, "# saved {d} bytes", .{size});
 
-        if (size > 0) return .{ .ok = .{ .sstr = @constCast("OK") } };
+        if (size > 0) return .{ .ok = .{ .sstr = "OK" } };
 
         return .{ .err = error.SaveFailure };
     }
@@ -160,7 +159,7 @@ pub const Handler = struct {
         for (keys) |key| {
             if (key != .str) return .{ .err = error.KeyNotString };
 
-            const value: ZType = self.memory.get(key.str) catch .{ .null = void{} };
+            const value: ZType = self.context.resources.memory.get(key.str) catch .{ .null = void{} };
 
             result.put(key.str, value) catch |err| {
                 return .{ .err = err };
@@ -180,22 +179,22 @@ pub const Handler = struct {
 
             const value = entries[index + 1];
 
-            self.memory.put(entry.str, value) catch |err| {
+            self.context.resources.memory.put(entry.str, value) catch |err| {
                 return .{ .err = err };
             };
         }
-        return .{ .ok = .{ .sstr = @constCast("OK") } };
+        return .{ .ok = .{ .sstr = "OK" } };
     }
 
     fn zkeys(self: *Handler) Result {
-        const result = self.memory.keys() catch |err| {
+        const result = self.context.resources.memory.keys() catch |err| {
             return .{ .err = err };
         };
         return .{ .ok = .{ .array = result } };
     }
 
     fn sizeof(self: *Handler, key: ZType) Result {
-        const value: ZType = self.memory.get(key.str) catch |err| {
+        const value: ZType = self.context.resources.memory.get(key.str) catch |err| {
             return .{ .err = err };
         };
 
@@ -213,11 +212,11 @@ pub const Handler = struct {
     fn rename(self: *Handler, key: ZType, value: ZType) Result {
         if (key != .str or value != .str) return .{ .err = error.KeyNotString };
 
-        self.memory.rename(key.str, value.str) catch |err| {
+        self.context.resources.memory.rename(key.str, value.str) catch |err| {
             return .{ .err = err };
         };
 
-        return .{ .ok = .{ .sstr = @constCast("OK") } };
+        return .{ .ok = .{ .sstr = "OK" } };
     }
 
     fn copy(self: *Handler, entries: []ZType) Result {
@@ -231,20 +230,20 @@ pub const Handler = struct {
 
             // To check if entries[2] is "REPLACE" string.
             // If not, return error.BadRequest.
-            _ = utils.enum_type_from_str(CopyArgs, entries[2].str) orelse return .{ .err = error.BadRequest };
+            _ = utils.enumTypeFromStr(CopyArgs, entries[2].str) orelse return .{ .err = error.BadRequest };
             replace = true;
         }
-        self.memory.copy(entries[0].str, entries[1].str, replace) catch |err| {
+        self.context.resources.memory.copy(entries[0].str, entries[1].str, replace) catch |err| {
             return .{ .err = err };
         };
-        return .{ .ok = .{ .str = @constCast("OK") } };
+        return .{ .ok = .{ .str = "OK" } };
     }
 
     // method to free data needs to be freeded, for example keys command
     // is creating std.ArrayList so it have to be freed after
     pub fn free(self: *Handler, command_set: *const std.ArrayList(ZType), result: *Result) void {
         _ = self;
-        const command_type = utils.enum_type_from_str(CommandType, command_set.items[0].str) orelse return;
+        const command_type = utils.enumTypeFromStr(CommandType, command_set.items[0].str) orelse return;
 
         switch (command_type) {
             .KEYS => result.ok.array.deinit(),

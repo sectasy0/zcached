@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const ptr_cast = @import("utils.zig").ptr_cast;
+const ptrCast = @import("utils.zig").ptrCast;
 
 const TracingAllocator = @This();
 
@@ -38,7 +38,7 @@ pub fn allocator(self: *TracingAllocator) std.mem.Allocator {
 }
 
 fn alloc(ctx: *anyopaque, len: usize, ptr_align: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
-    var self = ptr_cast(TracingAllocator, ctx);
+    var self = ptrCast(TracingAllocator, ctx);
     self.mutex.lock();
     defer self.mutex.unlock();
 
@@ -56,7 +56,7 @@ fn alloc(ctx: *anyopaque, len: usize, ptr_align: std.mem.Alignment, ret_addr: us
 }
 
 fn resize(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
-    var self = ptr_cast(TracingAllocator, ctx);
+    var self = ptrCast(TracingAllocator, ctx);
     self.mutex.lock();
     defer self.mutex.unlock();
 
@@ -84,7 +84,7 @@ fn resize(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, new_len: usi
 }
 
 fn remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
-    var self = ptr_cast(TracingAllocator, ctx);
+    var self = ptrCast(TracingAllocator, ctx);
     self.mutex.lock();
     defer self.mutex.unlock();
 
@@ -104,7 +104,7 @@ fn remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: u
 }
 
 fn free(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, ret_addr: usize) void {
-    var self = ptr_cast(TracingAllocator, ctx);
+    var self = ptrCast(TracingAllocator, ctx);
     self.mutex.lock();
     defer self.mutex.unlock();
 

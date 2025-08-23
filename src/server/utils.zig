@@ -10,9 +10,9 @@ const openssl = @cImport({
 /// Example usage:
 ///
 /// const MyEnum = enum { A, B, C };
-/// const value = enum_type_from_str(MyEnum, "B"); // returns MyEnum.B
+/// const value = enumTypeFromStr(MyEnum, "B"); // returns MyEnum.B
 ///
-pub inline fn enum_type_from_str(comptime T: type, str: []const u8) ?T {
+pub inline fn enumTypeFromStr(comptime T: type, str: []const u8) ?T {
     switch (@typeInfo(T)) {
         .@"enum", .@"union" => {},
         else => @compileError("expected type T to be union or enum"),
@@ -26,13 +26,13 @@ pub inline fn enum_type_from_str(comptime T: type, str: []const u8) ?T {
 }
 
 // Performs a pointer cast from an opaque pointer to a typed pointer of type `T`.
-pub fn ptr_cast(comptime T: type, ptr: *anyopaque) *T {
+pub fn ptrCast(comptime T: type, ptr: *anyopaque) *T {
     if (@alignOf(T) == 0) @compileError(@typeName(T));
     return @ptrCast(@alignCast(ptr));
 }
 
 // Creates the directory path for the given file path if it does not already exist.
-pub fn create_path(file_path: []const u8) void {
+pub fn createPath(file_path: []const u8) void {
     const path = std.fs.path.dirname(file_path) orelse return;
 
     std.fs.cwd().makePath(path) catch |err| {

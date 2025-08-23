@@ -36,11 +36,12 @@ pub fn init(
     };
 }
 
-fn is_memory_limit_reached(self: *Memory) bool {
-    const tracking = utils.ptr_cast(TracingAllocator, self.allocator.ptr);
+fn isMemoryLimitReached(self: *Memory) bool {
+    const tracking = utils.ptrCast(TracingAllocator, self.allocator.ptr);
     if (tracking.real_size >= self.config.max_memory and self.config.max_memory != 0) {
         return true;
     }
+
     return false;
 }
 
@@ -48,7 +49,7 @@ pub fn put(self: *Memory, key: []const u8, value: types.ZType) !void {
     self.lock.lock();
     defer self.lock.unlock();
 
-    if (self.is_memory_limit_reached()) return error.MemoryLimitExceeded;
+    if (self.isMemoryLimitReached()) return error.MemoryLimitExceeded;
 
     switch (value) {
         .err => return error.InvalidValue,
@@ -85,7 +86,7 @@ pub fn delete(self: *Memory, key: []const u8) bool {
 
     const kv = self.internal.fetchRemove(key) orelse return false;
 
-    var zkey: types.ZType = .{ .str = @constCast(kv.key) };
+    var zkey: types.ZType = .{ .str = kv.key };
     types.ztype_free(
         &zkey,
         self.allocator,
@@ -103,7 +104,7 @@ pub fn flush(self: *Memory) void {
 
     var iter = self.internal.iterator();
     while (iter.next()) |item| {
-        var key: types.ZType = .{ .str = @constCast(item.key_ptr.*) };
+        var key: types.ZType = .{ .str = item.key_ptr.* };
         var value = item.value_ptr.*;
 
         types.ztype_free(&key, self.allocator);
@@ -135,7 +136,7 @@ pub fn keys(self: *Memory) !std.ArrayList(types.ZType) {
 
     var iter = self.internal.keyIterator();
     while (iter.next()) |key| {
-        const zkey: types.ZType = .{ .str = @constCast(key.*) };
+        const zkey: types.ZType = .{ .str = key.* };
         try result.append(zkey);
     }
 
@@ -148,7 +149,7 @@ pub fn rename(self: *Memory, key: []const u8, new_key: []const u8) !void {
 
     // If we are changing the key to a smaller one, it is pointless to block it.
     // The memory usage would be smaller.
-    if (new_key.len > key.len and self.is_memory_limit_reached()) return error.MemoryLimitExceeded;
+    if (new_key.len > key.len and self.isMemoryLimitReached()) return error.MemoryLimitExceeded;
 
     var entry = self.internal.fetchRemove(key) orelse return error.NotFound;
     var new_key_entry = self.internal.fetchRemove(new_key);
@@ -174,14 +175,14 @@ pub fn copy(self: *Memory, source: []const u8, destination: []const u8, replace:
     self.lock.lock();
     defer self.lock.unlock();
 
-    if (self.is_memory_limit_reached()) return error.MemoryLimitExceeded;
+    if (self.isMemoryLimitReached()) return error.MemoryLimitExceeded;
 
     // Value to copy.
     const value: types.ZType = self.internal.get(source) orelse return error.NotFound;
     const destination_result = try self.internal.getOrPut(destination);
 
     if (destination_result.found_existing) {
-        if (replace == false) return error.KeyAlreadyExists;
+        if (replace == false) return error.BusyKey;
 
         // Free old value of the destination key.
         types.ztype_free(destination_result.value_ptr, self.allocator);
@@ -194,6 +195,12 @@ pub fn copy(self: *Memory, source: []const u8, destination: []const u8, replace:
 
     destination_result.key_ptr.* = zkey;
     destination_result.value_ptr.* = zvalue;
+}
+
+pub fn iterator(self: *Memory) @TypeOf(self.internal.iterator()) {
+    self.lock.lockShared();
+
+    return self.internal.iterator();
 }
 
 pub fn deinit(self: *Memory) void {

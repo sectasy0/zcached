@@ -30,7 +30,7 @@ test "ProtocolHandler handle empty bufferr" {
     defer handler.deinit();
 
     const result = handler.process(reader);
-    try std.testing.expectEqual(result, error.BadRequest);
+    try std.testing.expectEqual(result, error.EndOfStream);
 }
 
 test "ProtocolHandler handle simple string" {
@@ -43,7 +43,7 @@ test "ProtocolHandler handle simple string" {
     defer handler.deinit();
 
     const result = try handler.process(reader);
-    try std.testing.expectEqualStrings("OK", result.str);
+    try std.testing.expectEqualStrings("OK", result.sstr);
 }
 
 test "ProtocolHandler handle integer" {
@@ -69,7 +69,7 @@ test "ProtocolHandler handle integer without value" {
     defer handler.deinit();
 
     const result = handler.process(reader);
-    try std.testing.expectEqual(result, error.NotInteger);
+    try std.testing.expectEqual(result, error.InvalidType);
 }
 
 test "ProtocolHandler handle string" {
@@ -95,7 +95,7 @@ test "ProtocolHandler handle string invalid length" {
     defer handler.deinit();
 
     const result = handler.process(reader);
-    try std.testing.expectEqual(result, error.BadRequest);
+    try std.testing.expectEqual(result, error.Unprocessable);
 }
 
 test "ProtocolHandler handle string lenght passed but value not" {
@@ -108,7 +108,7 @@ test "ProtocolHandler handle string lenght passed but value not" {
     defer handler.deinit();
 
     const result = handler.process(reader);
-    try std.testing.expectEqual(result, error.BadRequest);
+    try std.testing.expectEqual(result, error.Unprocessable);
 }
 
 test "ProtocolHandler handle boolean f value" {
@@ -147,7 +147,7 @@ test "ProtocolHandler handle boolean invalid value" {
     defer handler.deinit();
 
     const result = handler.process(reader);
-    try std.testing.expectEqual(result, error.NotBoolean);
+    try std.testing.expectEqual(result, error.InvalidType);
 }
 
 test "ProtocolHandler handle null" {
@@ -198,7 +198,7 @@ test "not serialize too large bulk" {
     var handler = try HandlerType.init(std.testing.allocator);
     defer handler.deinit();
 
-    try std.testing.expectEqual(handler.process(reader), error.BulkTooLarge);
+    try std.testing.expectEqual(handler.process(reader), error.PayloadExceeded);
 }
 
 test "serialize map with various types" {

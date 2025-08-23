@@ -36,7 +36,10 @@ pub fn init(allocator: std.mem.Allocator, context: Context) Warden {
     return .{
         .allocator = allocator,
         .context = context,
-        .access_control = AccessMiddleware.init(context.config, context.logger),
+        .access_control = AccessMiddleware.init(
+            context.config,
+            context.resources.logger,
+        ),
     };
 }
 
@@ -57,7 +60,7 @@ pub fn setupConnection(self: *Warden, worker: *Worker, incoming: StreamServer.Co
         },
     };
 
-    self.context.logger.log(
+    self.context.resources.logger.log(
         .Debug,
         "# new connection from: {any}",
         .{incoming.address},
@@ -75,7 +78,7 @@ pub fn setupConnection(self: *Warden, worker: *Worker, incoming: StreamServer.Co
         &worker.poll_fds[worker.connections],
         worker.connections,
     ) catch |err| {
-        self.context.logger.log(
+        self.context.resources.logger.log(
             .Error,
             "# failed to create client struct: {?}",
             .{err},
@@ -90,7 +93,7 @@ pub fn setupConnection(self: *Warden, worker: *Worker, incoming: StreamServer.Co
     };
 
     worker.states.put(incoming.stream.handle, connection) catch |err| {
-        self.context.logger.log(
+        self.context.resources.logger.log(
             .Error,
             "# failed to put to states: {?}",
             .{err},
@@ -112,7 +115,7 @@ pub fn setupConnection(self: *Warden, worker: *Worker, incoming: StreamServer.Co
 
 pub fn dispatch(self: *Warden, worker: *Worker, connection: *Connection) void {
     while (true) {
-        self._processIncoming(worker, connection) catch |err| {
+        self.processIncoming(worker, connection) catch |err| {
             switch (err) {
                 error.WouldBlock, error.NotOpenForReading => return,
                 error.SocketNotConnected,
@@ -126,7 +129,7 @@ pub fn dispatch(self: *Warden, worker: *Worker, connection: *Connection) void {
                     return;
                 },
                 else => {
-                    self.context.logger.log(
+                    self.context.resources.logger.log(
                         .Error,
                         "Unexpected read error: {?}, disconnecting.",
                         .{err},
@@ -169,7 +172,7 @@ pub fn handleOutgoing(self: *Warden, worker: *Worker, connection: *Connection) v
                 return;
             },
             else => {
-                self.context.logger.log(
+                self.context.resources.logger.log(
                     .Error,
                     "# failed to write to stream: {?}",
                     .{err},
@@ -186,7 +189,7 @@ pub fn handleOutgoing(self: *Warden, worker: *Worker, connection: *Connection) v
 }
 
 pub fn teardownConnection(self: *Warden, worker: *Worker, connection: *Connection) void {
-    self.context.logger.log(
+    self.context.resources.logger.log(
         .Debug,
         "# connection with client closed {any}",
         .{connection.address},
@@ -199,7 +202,7 @@ pub fn teardownConnection(self: *Warden, worker: *Worker, connection: *Connectio
         const last_fd = worker.poll_fds[worker.connections - 1];
         // need to get the last connection from the states and change its id
         var last_connection = worker.states.get(last_fd.fd) orelse {
-            self.context.logger.log(
+            self.context.resources.logger.log(
                 .Error,
                 "# failed to get last connection from states: {any}",
                 .{last_fd.fd},
@@ -216,7 +219,7 @@ pub fn teardownConnection(self: *Warden, worker: *Worker, connection: *Connectio
     connection.deinit();
     const remove_result = worker.states.remove(connection.fd());
     if (!remove_result) {
-        self.context.logger.log(
+        self.context.resources.logger.log(
             .Error,
             "# failed to remove from states",
             .{},
@@ -225,14 +228,14 @@ pub fn teardownConnection(self: *Warden, worker: *Worker, connection: *Connectio
     }
 }
 
-fn _processIncoming(self: *const Warden, worker: *Worker, connection: *Connection) !void {
+fn processIncoming(self: *const Warden, worker: *Worker, connection: *Connection) !void {
     const max_size = self.context.config.max_request_size;
 
     connection.readPending(max_size) catch |err| {
         switch (err) {
             error.IncompleteMessage => return,
             error.MessageTooLarge => {
-                self.context.logger.log(
+                self.context.resources.logger.log(
                     .Error,
                     "# message too large, max size is {d} bytes",
                     .{max_size},
@@ -249,7 +252,7 @@ fn _processIncoming(self: *const Warden, worker: *Worker, connection: *Connectio
         self.context,
     );
 
-    self.context.logger.log_event(.Request, connection.accumulator.items);
+    self.context.resources.logger.log_event(.Request, connection.accumulator.items);
 
     // for now only 1 command - 1 response
     processor.process(connection);

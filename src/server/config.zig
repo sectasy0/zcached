@@ -6,6 +6,33 @@ pub const DEFAULT_PATH: []const u8 = "./zcached.conf.zon";
 
 const Config = @This();
 
+pub const AOFConfig = struct {
+    pub const FlushStrategy = enum { always, everysec, auto, no };
+    /// Flush strategy for the AOF file.
+    /// Options: "always", "everysec", "no", default: "everysec"
+    /// - "always" - flush every write operation (not recommended for performance)
+    /// - "everysec" - flush every second (default)
+    /// - "no" - never flush, only write to the file (not recommended for performance)
+    ///   and can lead to data loss in case of a crash
+    /// If you want to disable AOF, set `flush_strategy` to `no`.
+    flush_strategy: AOFConfig.FlushStrategy = .everysec, // default: "everysec"
+    /// Path to the AOF file.
+    path: ?[]const u8 = null,
+    /// Percentage of the AOF file to rewrite.
+    rewrite_percentage: u32 = 100, // 100%
+    /// Minimum size of the AOF file to rewrite.
+    rewrite_min_size: usize = 64 * 1024 * 1024, // 64MB
+    rewrite_buffer_size: usize = 64 * 1024, // 64KB
+    rewrite_buffer_max_size: usize = 256 * 1024, // 256KB
+
+    const Fields = enum {
+        flush_strategy,
+        path,
+        rewrite_percentage,
+        rewrite_min_size,
+    };
+};
+
 pub const TLSConfig = struct {
     enabled: bool = false,
     // Path to the certificate file
@@ -42,9 +69,10 @@ loger_path: []const u8 = DEFAULT_PATH,
 // to calculate global max connctions: `workers` * `max_clients`
 max_clients: usize = 512,
 max_memory: usize = 0, // 0 means unlimited, value in bytes
-cbuffer: usize = 4096, // its resized if more space is requied
+client_buffer: usize = 4096, // its resized if more space is requied
 workers: usize = 4,
 
+aof: AOFConfig = .{},
 tls: TLSConfig = .{},
 
 whitelist: std.ArrayList(std.net.Address) = undefined,
@@ -57,6 +85,7 @@ pub fn deinit(config: *const Config) void {
     if (config.tls.cert_path != null) config.allocator.free(config.tls.cert_path.?);
     if (config.tls.key_path != null) config.allocator.free(config.tls.key_path.?);
     if (config.tls.ca_path != null) config.allocator.free(config.tls.ca_path.?);
+    if (config.aof.path != null) config.allocator.free(config.aof.path.?);
 }
 
 pub fn getAddress(self: *const Config) std.net.Address {
@@ -81,7 +110,7 @@ pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]c
         .{ timestamp[0..t_size], path },
     );
 
-    utils.create_path(path);
+    utils.createPath(path);
 
     const file = std.fs.cwd().openFile(path, .{ .mode = .read_only }) catch |err| {
         // if the file doesn't exist, just return the default config
@@ -115,8 +144,9 @@ const ConfigField = enum {
     max_memory,
     max_request_size,
     workers,
-    cbuffer,
+    client_buffer,
     tls,
+    aof,
     whitelist,
 };
 
@@ -296,7 +326,7 @@ fn processField(
     const node: u32 = root.ast.fields[field_idx - 1];
     const info: std.zig.Ast.Node = ast.nodes.get(node);
 
-    try _parseByNodeTag(
+    try parseByNodeTag(
         config,
         allocator,
         field_name,
@@ -306,7 +336,7 @@ fn processField(
     );
 }
 
-fn _parseByNodeTag(
+fn parseByNodeTag(
     config: *Config,
     allocator: std.mem.Allocator,
     field_name: []const u8,
@@ -395,9 +425,67 @@ fn assignFieldValue(config: *Config, field_name: []const u8, value: anytype) !vo
             if (@TypeOf(value) != u64) return;
             config.workers = value;
         },
-        .cbuffer => {
+        .client_buffer => {
             if (@TypeOf(value) != u64) return;
-            config.cbuffer = value;
+            config.client_buffer = value;
+        },
+        .aof => {
+            var aof_config: AOFConfig = .{};
+
+            if (@TypeOf(value) != std.StringArrayHashMapUnmanaged(Node)) return;
+
+            var iterator = value.iterator();
+            while (iterator.next()) |item| {
+                const k = item.key_ptr.*;
+                const v = item.value_ptr.*;
+
+                const field = std.meta.stringToEnum(AOFConfig.Fields, k) orelse {
+                    std.debug.print("Unknown field: {s}\n", .{k});
+                    continue;
+                };
+
+                switch (field) {
+                    .flush_strategy => {
+                        if (std.meta.activeTag(v) != .@"enum") {
+                            std.debug.print("Unknown flush_strategy type: {any}\n", .{v});
+                            continue;
+                        }
+
+                        const strategy = std.meta.stringToEnum(AOFConfig.FlushStrategy, v.@"enum") orelse {
+                            std.debug.print("Unknown flush_strategy: {s}\n", .{v.string});
+                            continue;
+                        };
+
+                        aof_config.flush_strategy = strategy;
+                    },
+                    .path => {
+                        if (std.meta.activeTag(v) != .string) {
+                            std.debug.print("Unknown path type: {any}\n", .{v});
+                            continue;
+                        }
+
+                        aof_config.path = v.string;
+                    },
+                    .rewrite_percentage => {
+                        if (std.meta.activeTag(v) != .int) {
+                            std.debug.print("Unknown rewrite_percentage type: {any}\n", .{v});
+                            continue;
+                        }
+
+                        aof_config.rewrite_percentage = @truncate(v.int);
+                    },
+                    .rewrite_min_size => {
+                        if (std.meta.activeTag(v) != .int) {
+                            std.debug.print("Unknown rewrite_min_size type: {any}\n", .{v});
+                            continue;
+                        }
+
+                        aof_config.rewrite_min_size = @truncate(v.int);
+                    },
+                }
+            }
+
+            config.aof = aof_config;
         },
         .tls => {
             var tls_config: TLSConfig = .{};

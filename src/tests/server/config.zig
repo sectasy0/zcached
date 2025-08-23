@@ -18,7 +18,7 @@ test "config default values ipv4" {
     try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 4);
-    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.client_buffer, 4096);
     try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
     try std.testing.expectEqual(config.max_memory, 0);
 }
@@ -29,7 +29,7 @@ test "config load custom values ipv4" {
     config_file.port = "1234";
     config_file.max_clients = "1024";
     config_file.max_memory = "500";
-    config_file.cbuffer = "8192";
+    config_file.client_buffer = "8192";
 
     try config_file.create(std.testing.allocator, null);
     defer config_file.deinit();
@@ -41,7 +41,7 @@ test "config load custom values ipv4" {
     try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.max_clients, 1024);
     try std.testing.expectEqual(config.workers, 4);
-    try std.testing.expectEqual(config.cbuffer, 8192);
+    try std.testing.expectEqual(config.client_buffer, 8192);
     try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
     try std.testing.expectEqual(config.max_memory, 500);
 }
@@ -71,7 +71,7 @@ test "config load custom values ipv6" {
     try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.max_clients, 1024);
     try std.testing.expectEqual(config.workers, 12);
-    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.client_buffer, 4096);
     try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
     try std.testing.expectEqual(config.max_memory, 500);
 }
@@ -94,7 +94,7 @@ test "config load custom values empty port" {
     try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.address.getPort(), 7556); // default
     try std.testing.expectEqual(config.workers, 4);
-    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.client_buffer, 4096);
     try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
     try std.testing.expectEqual(config.max_memory, 0);
 }
@@ -116,7 +116,7 @@ test "config load custom values empty address" {
     try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.address.getPort(), 1234); // default
     try std.testing.expectEqual(config.workers, 4);
-    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.client_buffer, 4096);
     try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
     try std.testing.expectEqual(config.max_memory, 0);
 }
@@ -139,7 +139,7 @@ test "config load custom values empty workers" {
     try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.address.getPort(), 7556); // default
     try std.testing.expectEqual(config.workers, 4);
-    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.client_buffer, 4096);
     try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
     try std.testing.expectEqual(config.max_memory, 0);
 }
@@ -157,7 +157,7 @@ test "config load custom values whitelist" {
     try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 4);
-    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.client_buffer, 4096);
     try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
     try std.testing.expectEqual(config.max_memory, 0);
 
@@ -184,7 +184,7 @@ test "config load custom values empty whitelist" {
         \\     .max_memory = 0,
         \\     .max_request_size = 0,
         \\     .workers = 12,
-        \\     .cbuffer = 1024,
+        \\     .client_buffer = 1024,
         \\     .whitelist = .{}
         \\ }
     ;
@@ -199,7 +199,7 @@ test "config load custom values empty whitelist" {
     try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 12);
-    try std.testing.expectEqual(config.cbuffer, 1024);
+    try std.testing.expectEqual(config.client_buffer, 1024);
     try std.testing.expectEqual(config.max_request_size, 0);
     try std.testing.expectEqual(config.max_memory, 0);
 
@@ -217,7 +217,7 @@ test "config load custom values empty whitelist string in zon" {
         \\     .max_memory = 0,
         \\     .max_request_size = 0,
         \\     .workers = 12,
-        \\     .cbuffer = 1024,
+        \\     .client_buffer = 1024,
         \\     .whitelist = "",
         \\ }
     ;
@@ -232,7 +232,7 @@ test "config load custom values empty whitelist string in zon" {
     try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 12);
-    try std.testing.expectEqual(config.cbuffer, 1024);
+    try std.testing.expectEqual(config.client_buffer, 1024);
     try std.testing.expectEqual(config.max_request_size, 0);
     try std.testing.expectEqual(config.max_memory, 0);
 
@@ -251,7 +251,7 @@ test "config load custom values empty whitelist int in zon" {
         \\     .max_memory = 0,
         \\     .max_request_size = 0,
         \\     .workers = 12,
-        \\     .cbuffer = 1024,
+        \\     .client_buffer = 1024,
         \\     .whitelist = 0,
         \\ }
     ;
@@ -266,7 +266,7 @@ test "config load custom values empty whitelist int in zon" {
     try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 12);
-    try std.testing.expectEqual(config.cbuffer, 1024);
+    try std.testing.expectEqual(config.client_buffer, 1024);
     try std.testing.expectEqual(config.max_request_size, 0);
     try std.testing.expectEqual(config.max_memory, 0);
 
@@ -288,7 +288,7 @@ test "config load custom values only root" {
     try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 4);
-    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.client_buffer, 4096);
     try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
     try std.testing.expectEqual(config.max_memory, 0);
 
@@ -310,7 +310,7 @@ test "config load custom values empty file" {
     try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 4);
-    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.client_buffer, 4096);
     try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
     try std.testing.expectEqual(config.max_memory, 0);
 
@@ -339,7 +339,7 @@ test "config load custom values missing some fields" {
     try std.testing.expectEqual(config.address.any, address.any);
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 4);
-    try std.testing.expectEqual(config.cbuffer, 4096);
+    try std.testing.expectEqual(config.client_buffer, 4096);
     try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
     try std.testing.expectEqual(config.max_memory, 0);
 

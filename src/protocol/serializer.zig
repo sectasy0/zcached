@@ -6,87 +6,91 @@ const Config = @import("../server/config.zig");
 
 pub var MAX_BULK_LEN: usize = 0;
 
+const SerializerError = error{
+    Unprocessable,
+    InvalidType,
+    EndOfStream,
+    InvalidLength,
+    InvalidKey,
+    OutOfMemory,
+    AllocatorError,
+    PayloadExceeded,
+};
+
 pub fn SerializerT(comptime GenericReader: type) type {
     return struct {
         const Self = @This();
 
-        const HandlerFunc = fn (self: *Self, reader: GenericReader) anyerror!types.ZType;
-        const types_map = std.StaticStringMap(*const HandlerFunc).initComptime(.{
-            .{ "+", serialize_sstr },
-            .{ "$", serialize_str },
-            .{ ",", serialize_float },
-            .{ "*", serialize_array },
-            .{ "-", serialize_error },
-            .{ "#", serialize_bool },
-            .{ "_", serialize_null },
-            .{ "%", serialize_map },
-            .{ ":", serialize_int },
-            .{ "~", serialize_uset },
-            .{ "/", serialize_set },
-        });
-
         arena: std.heap.ArenaAllocator,
 
         pub fn init(allocator: std.mem.Allocator) !Self {
-            return Self{
+            return .{
                 .arena = std.heap.ArenaAllocator.init(allocator),
             };
         }
 
-        pub fn process(self: *Self, reader: GenericReader) !types.ZType {
-            var request_type: [1]u8 = undefined;
-            const size = try reader.readAtLeast(&request_type, 1);
-
-            if (size == 0) return error.BadRequest;
-
-            const handler_ref = types_map.get(&request_type) orelse return error.BadRequest;
-            return try handler_ref(self, reader);
+        pub fn process(self: *Self, reader: GenericReader) SerializerError!types.ZType {
+            const request_type: u8 = try reader.readByte();
+            switch (request_type) {
+                '+' => return try self.serializeSimpleString(reader),
+                '$' => return try self.serializeString(reader),
+                ',' => return try self.serializeFloat(reader),
+                '*' => return try self.serializeArray(reader),
+                '-' => return try self.serializeError(reader),
+                '#' => return try self.serializeBool(reader),
+                '_' => return try self.serializeNull(reader),
+                '%' => return try self.serializeMap(reader),
+                ':' => return try self.serializeInt(reader),
+                '~' => return try self.serializeUnorderedSet(reader),
+                '/' => return try self.serializeSet(reader),
+                else => return error.Unprocessable,
+            }
         }
 
         pub fn deinit(self: *Self) void {
             self.arena.deinit();
         }
 
-        fn serialize_sstr(self: *Self, reader: GenericReader) !types.ZType {
-            const string = try self.read_line_alloc(reader);
-            if (string.len == 0) return error.BadRequest;
+        fn serializeSimpleString(self: *Self, reader: GenericReader) SerializerError!types.ZType {
+            const string = try self.readLineAlloc(reader);
+            if (string.len == 0) return error.Unprocessable;
 
-            return .{ .str = @constCast(string[0 .. string.len - 1]) };
+            return .{ .sstr = string[0 .. string.len - 1] };
         }
 
-        fn serialize_str(self: *Self, reader: GenericReader) !types.ZType {
-            const bytes = try self.read_line_alloc(reader);
+        fn serializeString(self: *Self, reader: GenericReader) SerializerError!types.ZType {
+            const bytes = try self.readLineAlloc(reader);
 
             const string_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
-                return error.BadRequest;
+                return error.Unprocessable;
             };
 
-            if (string_len > MAX_BULK_LEN and MAX_BULK_LEN != 0) return error.BulkTooLarge;
+            if (string_len > MAX_BULK_LEN and MAX_BULK_LEN != 0) return error.PayloadExceeded;
 
-            const string = try self.read_line_alloc(reader);
-            if (string.len == 0) return error.BadRequest;
+            const string = try self.readLineAlloc(reader);
+            if (string.len == 0) return error.Unprocessable;
             // .len - 1 because we don't want to include the \n
-            if (string_len != string.len - 1) return error.BadRequest;
+            if (string_len != string.len - 1) return error.Unprocessable;
 
-            return .{ .str = @constCast(string[0 .. string.len - 1]) };
+            return .{ .str = string[0 .. string.len - 1] };
         }
 
-        fn serialize_int(self: *Self, reader: GenericReader) !types.ZType {
-            const bytes = try self.read_line_alloc(reader);
-            if (bytes.len == 0) return error.BadRequest;
+        fn serializeInt(self: *Self, reader: GenericReader) SerializerError!types.ZType {
+            const bytes = try self.readLineAlloc(reader);
+            if (bytes.len == 0) return error.Unprocessable;
 
             const int = std.fmt.parseInt(i64, bytes[0 .. bytes.len - 1], 10) catch {
-                return error.NotInteger;
+                return error.InvalidType;
             };
 
             return .{ .int = int };
         }
 
-        fn serialize_bool(self: *Self, reader: GenericReader) !types.ZType {
-            const bytes = try self.read_line_alloc(reader);
+        fn serializeBool(self: *Self, reader: GenericReader) SerializerError!types.ZType {
+            const bytes = try self.readLineAlloc(reader);
 
             // <bool> is either "t" or "f", with \n at the end is 2 bytes
-            if (bytes.len != 2) return error.BadRequest;
+            if (bytes.len != 2) return error.Unprocessable;
 
             const value = bytes[0 .. bytes.len - 1];
             if (std.mem.eql(u8, value, "t") or std.mem.eql(u8, value, "T")) {
@@ -96,36 +100,34 @@ pub fn SerializerT(comptime GenericReader: type) type {
                 return .{ .bool = false };
             }
 
-            return error.NotBoolean;
+            return error.InvalidType;
         }
 
-        fn serialize_float(self: *Self, reader: GenericReader) !types.ZType {
-            const bytes = try self.read_line_alloc(reader);
+        fn serializeFloat(self: *Self, reader: GenericReader) SerializerError!types.ZType {
+            const bytes = try self.readLineAlloc(reader);
 
-            if (bytes.len == 0) return error.BadRequest;
+            if (bytes.len == 0) return error.Unprocessable;
 
             const float = std.fmt.parseFloat(f64, bytes[0 .. bytes.len - 1]) catch {
-                return error.NotFloat;
+                return error.InvalidType;
             };
 
             return .{ .float = float };
         }
 
-        fn serialize_array(self: *Self, reader: GenericReader) !types.ZType {
-            const bytes = try self.read_line_alloc(reader);
+        fn serializeArray(self: *Self, reader: GenericReader) SerializerError!types.ZType {
+            const bytes = try self.readLineAlloc(reader);
 
-            if (bytes.len == 0) return error.BadRequest;
+            if (bytes.len == 0) return error.Unprocessable;
 
             const array_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
                 return error.InvalidLength;
             };
 
-            var result = std.ArrayList(types.ZType).initCapacity(
+            var result = try std.ArrayList(types.ZType).initCapacity(
                 self.arena.allocator(),
                 array_len,
-            ) catch {
-                return error.AllocatorError;
-            };
+            );
 
             for (0..array_len) |_| {
                 const item = try self.process(reader);
@@ -134,7 +136,7 @@ pub fn SerializerT(comptime GenericReader: type) type {
             return .{ .array = result };
         }
 
-        fn serialize_null(self: *Self, reader: GenericReader) !types.ZType {
+        fn serializeNull(self: *Self, reader: GenericReader) SerializerError!types.ZType {
             _ = self;
             var buff: [2]u8 = undefined;
             _ = try reader.readAtLeast(&buff, 2); // to remove \r\n from buffer
@@ -142,10 +144,10 @@ pub fn SerializerT(comptime GenericReader: type) type {
         }
 
         // Only for client side, server should never receive an error
-        fn serialize_error(self: *Self, reader: GenericReader) !types.ZType {
-            const error_message = try self.read_line_alloc(reader);
+        fn serializeError(self: *Self, reader: GenericReader) SerializerError!types.ZType {
+            const error_message = try self.readLineAlloc(reader);
 
-            if (error_message.len < 1) return error.BadRequest;
+            if (error_message.len < 1) return error.Unprocessable;
 
             return .{
                 .err = .{
@@ -154,14 +156,16 @@ pub fn SerializerT(comptime GenericReader: type) type {
             };
         }
 
-        fn serialize_map(self: *Self, reader: GenericReader) !types.ZType {
-            const bytes = try self.read_line_alloc(reader);
+        fn serializeMap(self: *Self, reader: GenericReader) SerializerError!types.ZType {
+            const bytes = try self.readLineAlloc(reader);
 
-            if (bytes.len == 0) return error.BadRequest;
+            if (bytes.len == 0) return error.Unprocessable;
 
             const entries = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
-                return error.InvalidHashLength;
+                return error.InvalidLength;
             };
+
+            if (entries == 0) return error.Unprocessable;
 
             var result = std.StringHashMap(types.ZType).init(self.arena.allocator());
 
@@ -169,18 +173,23 @@ pub fn SerializerT(comptime GenericReader: type) type {
                 const key = try self.process(reader);
 
                 const active_tag = std.meta.activeTag(key);
-                if (active_tag != .str and active_tag != .sstr) return error.InvalidHashKey;
+                std.debug.print("key: {any}\n", .{key});
 
                 const value = try self.process(reader);
-                try result.put(key.str, value);
+
+                switch (active_tag) {
+                    .str => try result.put(key.str, value),
+                    .sstr => try result.put(key.sstr, value),
+                    else => return error.InvalidKey,
+                }
             }
             return .{ .map = result };
         }
 
-        fn serialize_set(self: *Self, reader: GenericReader) !types.ZType {
-            const bytes = try self.read_line_alloc(reader);
+        fn serializeSet(self: *Self, reader: GenericReader) SerializerError!types.ZType {
+            const bytes = try self.readLineAlloc(reader);
 
-            if (bytes.len == 0) return error.BadRequest;
+            if (bytes.len == 0) return error.Unprocessable;
 
             const set_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
                 return error.InvalidLength;
@@ -197,10 +206,10 @@ pub fn SerializerT(comptime GenericReader: type) type {
             return .{ .set = set };
         }
 
-        fn serialize_uset(self: *Self, reader: GenericReader) !types.ZType {
-            const bytes = try self.read_line_alloc(reader);
+        fn serializeUnorderedSet(self: *Self, reader: GenericReader) SerializerError!types.ZType {
+            const bytes = try self.readLineAlloc(reader);
 
-            if (bytes.len == 0) return error.BadRequest;
+            if (bytes.len == 0) return error.Unprocessable;
 
             const set_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
                 return error.InvalidLength;
@@ -217,16 +226,14 @@ pub fn SerializerT(comptime GenericReader: type) type {
             return .{ .uset = uset };
         }
 
-        fn read_line_alloc(self: *Self, reader: GenericReader) ![]const u8 {
-            const bytes: []const u8 = reader.readUntilDelimiterAlloc(
+        fn readLineAlloc(self: *Self, reader: GenericReader) SerializerError![]u8 {
+            return reader.readUntilDelimiterAlloc(
                 self.arena.allocator(),
                 '\n',
                 std.math.maxInt(usize),
             ) catch {
-                return error.BadRequest;
+                return error.Unprocessable;
             };
-
-            return bytes;
         }
     };
 }

@@ -6,8 +6,12 @@ const utils = @import("../server/utils.zig");
 
 const TracingAllocator = @import("../server/tracing.zig");
 
+const Context = @import("../server/processing/employer.zig").Context;
+
 const persistance = @import("../server/storage/persistance.zig");
 const Memory = @import("../server/storage/memory.zig");
+
+var quantum_flow: std.atomic.Value(bool) = .init(true);
 
 pub const ContextFixture = struct {
     allocator: std.mem.Allocator,
@@ -53,10 +57,22 @@ pub const ContextFixture = struct {
         );
     }
 
+    pub fn context(self: *ContextFixture) Context {
+        return .{
+            .resources = .{
+                .memory = &self.memory.?,
+                .logger = &self.logger,
+            },
+            .config = &self.config,
+            .quantum_flow = &quantum_flow,
+        };
+    }
+
     pub fn deinit(self: *ContextFixture) void {
         self.config.deinit();
         if (self.persistance != null) self.persistance.?.deinit();
         if (self.memory != null) self.memory.?.deinit();
+        self.logger.deinit();
     }
 };
 
@@ -67,7 +83,7 @@ pub const ConfigFile = struct {
     max_memory: []const u8 = "0",
     max_request_size: []const u8 = "10485760",
     workers: []const u8 = "4",
-    cbuffer: []const u8 = "4096",
+    client_buffer: []const u8 = "4096",
     whitelist: std.ArrayList([]const u8),
 
     path: []const u8 = undefined,
@@ -92,7 +108,7 @@ pub const ConfigFile = struct {
     }
 
     pub fn create(self: *ConfigFile, allocator: std.mem.Allocator, override: ?[]const u8) !void {
-        if (override) |content| return try self.__write(content);
+        if (override) |content| return try self.write(content);
 
         const content: []const u8 =
             \\ .{{
@@ -102,7 +118,7 @@ pub const ConfigFile = struct {
             \\     .max_memory = {s},
             \\     .max_request_size = {s},
             \\     .workers = {s},
-            \\     .cbuffer = {s},
+            \\     .client_buffer = {s},
             \\     .whitelist = .{{
             \\         "{s}",
             \\         "{s}",
@@ -119,7 +135,7 @@ pub const ConfigFile = struct {
             self.max_memory,
             self.max_request_size,
             self.workers,
-            self.cbuffer,
+            self.client_buffer,
             self.whitelist.items[0],
             self.whitelist.items[1],
             self.whitelist.items[2],
@@ -127,11 +143,11 @@ pub const ConfigFile = struct {
         });
         defer allocator.free(result);
 
-        try self.__write(result);
+        try self.write(result);
     }
 
-    fn __write(self: *ConfigFile, content: []const u8) !void {
-        utils.create_path(self.path);
+    fn write(self: *ConfigFile, content: []const u8) !void {
+        utils.createPath(self.path);
 
         const file = try std.fs.cwd().createFile(self.path, .{});
         defer file.close();

@@ -75,7 +75,7 @@ pub fn save(self: *Handler, memory: *Memory) !usize {
     );
     defer self.allocator.free(filename);
 
-    utils.create_path(filename);
+    utils.createPath(filename);
 
     const file = std.fs.cwd().createFile(
         filename,
@@ -92,7 +92,7 @@ pub fn save(self: *Handler, memory: *Memory) !usize {
 
     var iterator = memory.internal.iterator();
     while (iterator.next()) |item| {
-        const key = try serializer.process(.{ .str = @constCast(item.key_ptr.*) });
+        const key = try serializer.process(.{ .str = item.key_ptr.* });
         try bytes.appendSlice(key);
 
         const value = try serializer.process(item.value_ptr.*);
@@ -173,6 +173,8 @@ pub fn load(self: *Handler, memory: *Memory) !void {
     );
     defer self.allocator.free(bytes);
 
+    // read commands
+
     const map_len = std.fmt.parseInt(usize, bytes[1 .. bytes.len - 1], 10) catch {
         return error.InvalidLength;
     };
@@ -217,6 +219,7 @@ fn get_latest_file(self: *Handler, dir: std.fs.Dir) !?FileEntry {
 
         if (stat.ctime < latest.?.ctime) continue;
 
+        if (latest) |f| self.allocator.free(f.name);
         latest = .{
             .name = filename,
             .ctime = stat.ctime,

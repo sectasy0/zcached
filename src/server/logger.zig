@@ -21,7 +21,7 @@ pub const EType = enum {
 };
 
 file: std.fs.File = undefined,
-stdout: std.fs.File = undefined,
+stdout: ?std.fs.File = undefined,
 log_path: []const u8 = DEFAULT_PATH,
 
 buffer: std.ArrayList(u8),
@@ -53,7 +53,9 @@ pub fn init(allocator: std.mem.Allocator, file_path: ?[]const u8, sout: bool) !L
         .{ timestamp[0..t_size], logger.log_path },
     );
 
-    try logger.file.seekFromEnd(0);
+    if (builtin.is_test or !logger.sout) {
+        logger.stdout = null;
+    }
 
     return logger;
 }
@@ -85,8 +87,8 @@ pub fn log(self: *Logger, level: LogLevel, comptime format: []const u8, args: an
         return;
     };
 
-    if (self.sout or level == .Error or builtin.is_test) {
-        self.stdout.writeAll(formatted) catch |err| {
+    if (self.stdout) |stdout| {
+        stdout.writeAll(formatted) catch |err| {
             std.log.err("# failed to write log message to stdout: {?}", .{err});
         };
     }
@@ -141,5 +143,4 @@ pub fn deinit(self: *Logger) void {
     self.flush();
     self.buffer.deinit();
     self.file.close();
-    self.stdout.close();
 }

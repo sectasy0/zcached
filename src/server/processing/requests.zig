@@ -27,8 +27,7 @@ pub fn init(allocator: std.mem.Allocator, context: Context) Processor {
     return .{
         .cmd_handler = commands.Handler.init(
             allocator,
-            context.memory,
-            context.logger,
+            context,
         ),
         .context = context,
         .allocator = allocator,
@@ -43,7 +42,7 @@ pub fn process(self: *Processor, connection: *Connection) void {
     var protocol = ProtocolHandler.init(self.allocator) catch return;
     defer protocol.deinit();
 
-    const out_writer = connection.out();
+    const out_writer = connection.out().any();
     connection.signalWritable();
 
     const result: ZType = protocol.serialize(&reader) catch |err| {
@@ -51,9 +50,9 @@ pub fn process(self: *Processor, connection: *Connection) void {
             out_writer,
             err,
             .{},
-            self.context.logger,
+            self.context.resources.logger,
         ) catch {
-            self.context.logger.log(
+            self.context.resources.logger.log(
                 .Error,
                 "* failed to send error: {any}",
                 .{err},
@@ -68,9 +67,9 @@ pub fn process(self: *Processor, connection: *Connection) void {
             out_writer,
             error.UnknownCommand,
             .{},
-            self.context.logger,
+            self.context.resources.logger,
         ) catch |err| {
-            self.context.logger.log(
+            self.context.resources.logger.log(
                 .Error,
                 "* failed to send error: {any}",
                 .{err},
@@ -84,22 +83,22 @@ pub fn process(self: *Processor, connection: *Connection) void {
 
     var cmd_result = self.cmd_handler.process(command_set);
     if (cmd_result != .ok) {
-        const args = errors.build_args(command_set);
+        const args = errors.buildArgs(command_set);
 
         errors.handle(
             out_writer,
             cmd_result.err,
             args,
-            self.context.logger,
+            self.context.resources.logger,
         ) catch |err| {
-            self.context.logger.log(
+            self.context.resources.logger.log(
                 .Error,
                 "* failed to send error: {any}",
                 .{err},
             );
         };
 
-        self.context.logger.log(
+        self.context.resources.logger.log(
             .Error,
             "* failed to process command: {s}",
             .{command_set.items[0].str},
@@ -114,9 +113,9 @@ pub fn process(self: *Processor, connection: *Connection) void {
             out_writer,
             err,
             .{},
-            self.context.logger,
+            self.context.resources.logger,
         ) catch |er| {
-            self.context.logger.log(
+            self.context.resources.logger.log(
                 .Error,
                 "* failed to send error: {any}",
                 .{er},
@@ -129,9 +128,9 @@ pub fn process(self: *Processor, connection: *Connection) void {
             out_writer,
             err,
             .{},
-            self.context.logger,
+            self.context.resources.logger,
         ) catch |er| {
-            self.context.logger.log(
+            self.context.resources.logger.log(
                 .Error,
                 "* failed to send error: {any}",
                 .{er},
@@ -139,5 +138,5 @@ pub fn process(self: *Processor, connection: *Connection) void {
         };
     };
 
-    self.context.logger.log_event(.Response, response);
+    self.context.resources.logger.log_event(.Response, response);
 }
