@@ -38,17 +38,17 @@ pub fn init(
 ) !Self {
     assert(consts.CLIENT_BUFFER > 0);
 
-    return Self{
+    return .{
         .id = id,
         .buffer = undefined,
         .pollfd = pollfd,
         .stream = incoming.stream,
         .address = incoming.address,
-        .accumulator = try std.ArrayList(u8).initCapacity(
+        .accumulator = try .initCapacity(
             allocator,
             consts.CLIENT_BUFFER,
         ),
-        .tx_accumulator = try std.ArrayList(u8).initCapacity(
+        .tx_accumulator = try .initCapacity(
             allocator,
             consts.CLIENT_BUFFER,
         ),
@@ -58,12 +58,14 @@ pub fn init(
 
 pub fn deinit(self: *Self) void {
     assert(self.buffer.len != 0);
+
     self.accumulator.deinit();
     self.tx_accumulator.deinit();
 }
 
 pub fn close(self: *Self) void {
     assert(self.stream.handle > -1);
+
     self.stream.close();
 }
 

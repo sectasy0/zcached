@@ -77,7 +77,11 @@ pub fn main() void {
         // .retain_metadata = true,
     }){};
     defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+
+    var thread_safe_allocator: std.heap.ThreadSafeAllocator = .{
+        .child_allocator = gpa.allocator(),
+    };
+    const allocator = thread_safe_allocator.allocator();
 
     const result = cli.Parser.parse(allocator) catch {
         cli.Parser.showHelp() catch |err| {
@@ -135,6 +139,7 @@ pub fn main() void {
     defer persister.deinit();
 
     // allocator for database inner database data purposes.
+    // we don't need to wrap it in a thread-safe allocator because Memory struct is secured by mutex
     var dbgpa = std.heap.GeneralPurposeAllocator(.{
         .safety = true,
         // .verbose_log = true,

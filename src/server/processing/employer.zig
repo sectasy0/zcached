@@ -18,12 +18,16 @@ const Worker = @import("../processing/worker.zig");
 
 const Employer = @This();
 
+const AllocT = std.heap.GeneralPurposeAllocator(.{});
+
 server: StreamServer,
 
 context: Context,
 
 workers: []Worker,
 threads: []std.Thread,
+
+allocators: []AllocT,
 
 allocator: std.mem.Allocator,
 
@@ -62,6 +66,7 @@ pub fn init(allocator: Allocator, context: Context) !Employer {
         .context = context,
         .workers = try allocator.alloc(Worker, context.config.workers),
         .threads = try allocator.alloc(std.Thread, context.config.workers),
+        .allocators = try allocator.alloc(AllocT, context.config.workers),
         .allocator = allocator,
     };
 }
@@ -100,12 +105,8 @@ pub fn supervise(self: *Employer) void {
 
     for (0..self.context.config.workers) |i| {
         // every thread have own allocator.
-        var gpa = std.heap.GeneralPurposeAllocator(.{
-            .safety = true,
-            // .verbose_log = true,
-            // .retain_metadata = true,
-        }){};
-        const allocator = gpa.allocator();
+        self.allocators[i] = .init;
+        const allocator = self.allocators[i].allocator();
 
         // + 1 becouse first index is always listener fd
         self.workers[i] = Worker.init(allocator, fds_size + 1) catch |err| {
@@ -145,6 +146,10 @@ fn delegate(worker: *Worker, listener: *Listener) void {
 }
 
 pub fn deinit(self: *Employer) void {
+    for (self.workers) |*worker| worker.deinit();
+    for (self.allocators) |*gpa| _ = gpa.deinit();
+
     self.allocator.free(self.workers);
     self.allocator.free(self.threads);
+    self.allocator.free(self.allocators);
 }
