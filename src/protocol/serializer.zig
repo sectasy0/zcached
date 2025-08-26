@@ -173,7 +173,6 @@ pub fn SerializerT(comptime GenericReader: type) type {
                 const key = try self.process(reader);
 
                 const active_tag = std.meta.activeTag(key);
-                std.debug.print("key: {any}\n", .{key});
 
                 const value = try self.process(reader);
 

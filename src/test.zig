@@ -22,6 +22,7 @@ comptime {
     // // server - processing
     _ = @import("tests/server/commands.zig");
     _ = @import("tests/server/errors.zig");
+    _ = @import("tests/server/requests.zig");
     // // _ = @import("tests/server/agent.zig");
 
     // // // server - middleware

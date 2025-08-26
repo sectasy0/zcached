@@ -17,6 +17,8 @@ const Context = @import("employer.zig").Context;
 const commands = @import("commands.zig");
 const errors = @import("errors.zig");
 
+const consts = @import("../network/consts.zig");
+
 pub const Processor = @This();
 
 cmd_handler: commands.Handler,
@@ -34,8 +36,43 @@ pub fn init(allocator: std.mem.Allocator, context: Context) Processor {
     };
 }
 
-pub fn process(self: *Processor, connection: *Connection) void {
-    var stream = std.io.fixedBufferStream(connection.accumulator.items);
+pub fn deframe(self: *Processor, connection: *Connection) void {
+    var start: usize = 0;
+    var idx: usize = 0;
+
+    while (true) {
+        const request_end = std.mem.indexOfScalarPos(
+            u8,
+            connection.accumulator.items,
+            start,
+            consts.EXT_CHAR,
+        ) orelse break;
+
+        const request = connection.accumulator.items[start..request_end];
+
+        self.context.resources.logger.log_event(.Request, request);
+
+        self.process(connection, request);
+
+        start = request_end + 1;
+        idx += 1;
+    }
+
+    if (start > 0) {
+        const remaining = connection.accumulator.items[start..];
+        connection.accumulator.clearRetainingCapacity();
+        connection.accumulator.appendSlice(remaining) catch |err| {
+            self.context.resources.logger.log(
+                .Error,
+                "* failed to append remaining data: {any}",
+                .{err},
+            );
+        };
+    }
+}
+
+pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
+    var stream = std.io.fixedBufferStream(request);
     var reader = stream.reader();
 
     const ProtocolHandler = proto.ProtocolHandlerT(@TypeOf(&reader));
@@ -44,6 +81,8 @@ pub fn process(self: *Processor, connection: *Connection) void {
 
     const out_writer = connection.out().any();
     connection.signalWritable();
+
+    std.debug.print("Processing reques123t: {s}\n", .{request});
 
     const result: ZType = protocol.serialize(&reader) catch |err| {
         errors.handle(
@@ -59,8 +98,12 @@ pub fn process(self: *Processor, connection: *Connection) void {
             );
         };
 
+        std.debug.print("Failed to serialize request: {any}\n", .{err});
+
         return;
     };
+
+    std.debug.print("Processing request: {any}\n", .{result});
 
     if (result != .array) {
         errors.handle(

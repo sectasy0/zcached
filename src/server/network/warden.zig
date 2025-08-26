@@ -252,10 +252,5 @@ fn processIncoming(self: *const Warden, worker: *Worker, connection: *Connection
         self.context,
     );
 
-    self.context.resources.logger.log_event(.Request, connection.accumulator.items);
-
-    // for now only 1 command - 1 response
-    processor.process(connection);
-
-    connection.accumulator.clearRetainingCapacity();
+    processor.deframe(connection);
 }

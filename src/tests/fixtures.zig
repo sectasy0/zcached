@@ -4,6 +4,11 @@ const Logger = @import("../server/logger.zig");
 const Config = @import("../server/config.zig");
 const utils = @import("../server/utils.zig");
 
+const server = @import("../server/network/stream_server.zig");
+const Stream = @import("../server/network/stream.zig").Stream;
+
+const Connection = @import("../server/network/connection.zig");
+
 const TracingAllocator = @import("../server/tracing.zig");
 
 const Context = @import("../server/processing/employer.zig").Context;
@@ -153,5 +158,29 @@ pub const ConfigFile = struct {
         defer file.close();
 
         try file.writeAll(content);
+    }
+};
+
+pub const ConnectionFixture = struct {
+    allocator: std.mem.Allocator,
+
+    connection: Connection,
+
+    pub fn init(allocator: std.mem.Allocator) !ConnectionFixture {
+        const incoming = server.Connection{
+            .stream = Stream{ .handle = 1 },
+            .address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234),
+        };
+
+        var pollfd = std.posix.pollfd{
+            .fd = incoming.stream.handle,
+            .events = std.posix.POLL.IN,
+            .revents = 0,
+        };
+
+        return .{
+            .allocator = allocator,
+            .connection = try .init(allocator, incoming, &pollfd, 0),
+        };
     }
 };
