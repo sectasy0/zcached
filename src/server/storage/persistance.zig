@@ -197,29 +197,23 @@ fn get_latest_file(self: *Handler, dir: std.fs.Dir) !?FileEntry {
         var iter = std.mem.splitBackwardsSequence(u8, file.name, ".");
         if (!std.mem.eql(u8, iter.first(), "zcpf")) continue;
 
-        const file_path = try std.fmt.allocPrint(
-            self.allocator,
-            "{s}{s}",
-            .{ self.path.?, file.name },
-        );
+        const file_path = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.path.?, file.name });
         defer self.allocator.free(file_path);
 
         const filename = try self.allocator.dupe(u8, file.name);
 
         const stat = try std.fs.cwd().statFile(file_path);
-        if (latest == null) {
-            latest = .{
-                .name = filename,
-                .ctime = stat.ctime,
-                .size = stat.size,
-            };
 
-            continue;
+        if (latest) |prev| {
+            if (stat.ctime <= prev.ctime) {
+                // This file is older or the same age – we don't need the `filename` we just duplicated
+                self.allocator.free(filename);
+                continue;
+            }
+            // The new file is newer – free the previous `latest.name` before updating
+            self.allocator.free(prev.name);
         }
 
-        if (stat.ctime < latest.?.ctime) continue;
-
-        if (latest) |f| self.allocator.free(f.name);
         latest = .{
             .name = filename,
             .ctime = stat.ctime,
