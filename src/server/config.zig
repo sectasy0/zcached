@@ -203,7 +203,6 @@ fn processField(
 ) !void {
     const allocator = config.allocator;
 
-    // wip kurwy
     if (ast.fullStructInit(buf, field_idx)) |v| {
         var object = std.StringArrayHashMapUnmanaged(Node){};
         defer {

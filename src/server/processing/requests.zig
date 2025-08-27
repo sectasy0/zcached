@@ -82,8 +82,6 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
     const out_writer = connection.out().any();
     connection.signalWritable();
 
-    std.debug.print("Processing reques123t: {s}\n", .{request});
-
     const result: ZType = protocol.serialize(&reader) catch |err| {
         errors.handle(
             out_writer,
@@ -98,12 +96,8 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
             );
         };
 
-        std.debug.print("Failed to serialize request: {any}\n", .{err});
-
         return;
     };
-
-    std.debug.print("Processing request: {any}\n", .{result});
 
     if (result != .array) {
         errors.handle(
