@@ -247,6 +247,7 @@ pub const Handler = struct {
 
         switch (command_type) {
             .KEYS => result.ok.array.deinit(),
+            .MGET => result.ok.map.deinit(),
             else => return,
         }
     }
