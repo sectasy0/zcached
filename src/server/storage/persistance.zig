@@ -118,7 +118,7 @@ pub fn load(self: *Handler, memory: *Memory) !void {
     });
     defer dir.close();
 
-    const latest = self.get_latest_file(dir) catch |err| {
+    const latest = self.getLatestFile(dir) catch |err| {
         self.logger.log(
             .Error,
             "failed to get latest file from {s}: {?}",
@@ -187,7 +187,7 @@ pub fn load(self: *Handler, memory: *Memory) !void {
     }
 }
 
-fn get_latest_file(self: *Handler, dir: std.fs.Dir) !?FileEntry {
+fn getLatestFile(self: *Handler, dir: std.fs.Dir) !?FileEntry {
     var latest: ?FileEntry = null;
 
     var iterator = dir.iterate();
