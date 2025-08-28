@@ -21,7 +21,7 @@ pub fn buildArgs(command_set: *const std.ArrayList(ZType)) Args {
 }
 
 pub fn handle(out: std.io.AnyWriter, err: anyerror, args: Args, logger: *Logger) !void {
-    logger.log(.Debug, "handling error: {}", .{err});
+    logger.debug("handling error: {}", .{err});
 
     _ = switch (err) {
         error.Unprocessable => try out.writeAll("-ERR unprocessable\r\n"),

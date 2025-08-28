@@ -109,8 +109,7 @@ pub const Context = struct {
         // 1 - The operation succeeded.
         return_code = openssl.SSL_set_fd(ctx, stream.handle);
         if (return_code == 0) {
-            const rc: i32 = @intCast(openssl.SSL_get_error(ctx, return_code));
-            std.debug.print("{any}\n", .{rc});
+            // const rc: i32 = @intCast(openssl.SSL_get_error(ctx, return_code));
             openssl.SSL_free(ctx);
             return error.SSLSetFdFailure;
         }

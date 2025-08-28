@@ -141,12 +141,12 @@ pub const Handler = struct {
         if (self.context.resources.memory.size() == 0) return .{ .err = error.SaveFailure };
 
         const size = self.context.resources.memory.save() catch |err| {
-            self.context.resources.logger.log(.Error, "# failed to save data: {?}", .{err});
+            self.context.resources.logger.err("# failed to save data: {?}", .{err});
 
             return .{ .err = error.SaveFailure };
         };
 
-        self.context.resources.logger.log(.Debug, "# saved {d} bytes", .{size});
+        self.context.resources.logger.debug("# saved {d} bytes", .{size});
 
         if (size > 0) return .{ .ok = .{ .sstr = "OK" } };
 

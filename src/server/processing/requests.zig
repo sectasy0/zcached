@@ -50,7 +50,7 @@ pub fn deframe(self: *Processor, connection: *Connection) void {
 
         const request = connection.accumulator.items[start..request_end];
 
-        self.context.resources.logger.log_event(.Request, request);
+        self.context.resources.logger.logEvent(.Request, request);
 
         self.process(connection, request);
 
@@ -58,7 +58,11 @@ pub fn deframe(self: *Processor, connection: *Connection) void {
         idx += 1;
     }
 
-    if (start > 0) {
+    if (start == connection.accumulator.items.len) {
+        // all the data has been processed, clear the buffer
+        connection.accumulator.clearRetainingCapacity();
+    } else if (start > 0) {
+        // some incomplete data remains, move it to the beginning
         const remaining = connection.accumulator.items[start..];
         connection.accumulator.clearRetainingCapacity();
         connection.accumulator.appendSlice(remaining) catch |err| {
@@ -89,8 +93,7 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
             .{},
             self.context.resources.logger,
         ) catch {
-            self.context.resources.logger.log(
-                .Error,
+            self.context.resources.logger.err(
                 "* failed to send error: {any}",
                 .{err},
             );
@@ -106,8 +109,7 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
             .{},
             self.context.resources.logger,
         ) catch |err| {
-            self.context.resources.logger.log(
-                .Error,
+            self.context.resources.logger.err(
                 "* failed to send error: {any}",
                 .{err},
             );
@@ -128,17 +130,16 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
             args,
             self.context.resources.logger,
         ) catch |err| {
-            self.context.resources.logger.log(
-                .Error,
+            self.context.resources.logger.err(
                 "* failed to send error: {any}",
                 .{err},
             );
         };
 
-        self.context.resources.logger.log(
-            .Error,
+        const command_str = command_set.items[0].str;
+        self.context.resources.logger.err(
             "* failed to process command: {s}",
-            .{command_set.items[0].str},
+            .{command_str},
         );
         return;
     }
@@ -152,8 +153,7 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
             .{},
             self.context.resources.logger,
         ) catch |er| {
-            self.context.resources.logger.log(
-                .Error,
+            self.context.resources.logger.err(
                 "* failed to send error: {any}",
                 .{er},
             );
@@ -167,13 +167,12 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
             .{},
             self.context.resources.logger,
         ) catch |er| {
-            self.context.resources.logger.log(
-                .Error,
+            self.context.resources.logger.err(
                 "* failed to send error: {any}",
                 .{er},
             );
         };
     };
 
-    self.context.resources.logger.log_event(.Response, response);
+    self.context.resources.logger.logEvent(.Response, response);
 }

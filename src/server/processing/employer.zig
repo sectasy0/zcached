@@ -14,7 +14,10 @@ const utils = @import("../utils.zig");
 
 // Storage and processing
 const Memory = @import("../storage/memory.zig");
-const Worker = @import("../processing/worker.zig");
+
+// Processing
+const Worker = @import("./worker.zig");
+const Agent = @import("./agent.zig");
 
 const Employer = @This();
 
@@ -40,20 +43,21 @@ pub const Context = struct {
     pub const Resources = struct {
         memory: *Memory,
         logger: *Logger,
+        agent: *Agent,
     };
 
     resources: Resources,
     config: *Config,
 
     // Flag indicating whether the server is runnin'
-    quantum_flow: *std.atomic.Value(bool),
+    running: *std.atomic.Value(bool),
 };
 
 pub fn init(allocator: Allocator, context: Context) !Employer {
     std.debug.assert(context.config.workers > 0);
 
     if (context.config.tls.enabled and build_options.tls_enabled) {
-        context.resources.logger.log(.Info, "# zcached is running with TLS enabled", .{});
+        context.resources.logger.info("# zcached is running with TLS enabled", .{});
     }
 
     return .{
@@ -73,8 +77,7 @@ pub fn init(allocator: Allocator, context: Context) !Employer {
 
 pub fn supervise(self: *Employer) void {
     self.server.listen(self.context.config.getAddress()) catch |err| {
-        self.context.resources.logger.log(
-            .Error,
+        self.context.resources.logger.err(
             "# failed to run server listener: {?}",
             .{err},
         );
@@ -87,8 +90,7 @@ pub fn supervise(self: *Employer) void {
         const prev_sout = self.context.resources.logger.sout;
         self.context.resources.logger.sout = true;
 
-        self.context.resources.logger.log(
-            .Error,
+        self.context.resources.logger.err(
             "# failed to run server listener: {?}",
             .{err},
         );
@@ -110,8 +112,7 @@ pub fn supervise(self: *Employer) void {
 
         // + 1 becouse first index is always listener fd
         self.workers[i] = Worker.init(allocator, fds_size + 1) catch |err| {
-            self.context.resources.logger.log(
-                .Error,
+            self.context.resources.logger.err(
                 "# failed to create worker: {?}",
                 .{err},
             );
@@ -125,9 +126,8 @@ pub fn supervise(self: *Employer) void {
             delegate,
             .{ &self.workers[i], &listener },
         ) catch |err| {
-            self.context.resources.logger.log(
-                .Error,
-                "# failed to swpan std.Thread: {?}",
+            self.context.resources.logger.err(
+                "# failed to spawn std.Thread: {?}",
                 .{err},
             );
             return;

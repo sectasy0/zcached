@@ -81,8 +81,7 @@ pub fn save(self: *Handler, memory: *Memory) !usize {
         filename,
         .{ .truncate = false },
     ) catch |err| {
-        self.logger.log(
-            .Error,
+        self.logger.err(
             "failed to open persistance file: {?}",
             .{err},
         );
@@ -119,8 +118,7 @@ pub fn load(self: *Handler, memory: *Memory) !void {
     defer dir.close();
 
     const latest = self.getLatestFile(dir) catch |err| {
-        self.logger.log(
-            .Error,
+        self.logger.err(
             "failed to get latest file from {s}: {?}",
             .{ self.path.?, err },
         );
@@ -138,8 +136,7 @@ pub fn load(self: *Handler, memory: *Memory) !void {
     defer self.allocator.free(filename);
 
     const file = std.fs.cwd().openFile(filename, .{ .mode = .read_only }) catch |err| {
-        self.logger.log(
-            .Error,
+        self.logger.err(
             "failed to open file {s}: {?}",
             .{ filename, err },
         );

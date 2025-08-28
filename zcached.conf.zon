@@ -1,23 +1,70 @@
 .{
+    // -------------------------
     // Server settings
+    // -------------------------
+    // IP address zcached will bind to
     .address = "127.0.0.1",
-    .port = 7556,
+
+    // Maximum number of concurrent clients
     .max_clients = 1024,
-    .max_memory = 0, // 0 means unlimited
+
+    // Number of worker threads
     .workers = 4,
-    .cbuffer = 4096, // 4 KiB
+
+    // TCP port zcached will listen on
+    .port = 7556,
+
+    // -------------------------
+    // Memory and request limits
+    // -------------------------
+    // Maximum memory in bytes; 0 = unlimited
+    .max_memory = 0,
+
+    // Default per-client buffer size in bytes
+    .client_buffer = 4096,
+
+    // Maximum request size in bytes
     .max_request_size = 10485760, // 10 MB
 
+    // -------------------------
     // TLS configuration
+    // -------------------------
     .tls = .{
         .enabled = true,
+
         .cert_path = "./src/tests/e2e/certificate.pem",
         .key_path = "./src/tests/e2e/private_key.pem",
-        .ca_path = null, // Optional CA path
-        // options: .none, .peer, or .fail_if_no_peer_cert, .client_once, default: .none
+
+        // Optional CA certificate path
+        .ca_path = null,
+
+        // Verification mode for client certificates
+        // Options: .none, .peer, .fail_if_no_peer_cert, .client_once
         .verify_mode = .none,
     },
-    // Whitelist (only these IPs can connect if whitelist is set)
+
+    // -------------------------
+    // AOF (Append Only File) settings
+    // -------------------------
+    .aof = .{
+        // Strategy for flushing AOF to disk
+        // Options: .auto, .always, .everysec, .no
+        .flush_strategy = .everysec,
+
+        // Path to the AOF file
+        .path = "./data/appendonly.aof",
+
+        // Trigger background rewrite when AOF grows by this percentage
+        // relative to the size after the last rewrite
+        .rewrite_percentage = 100,
+
+        // Minimum AOF size before a rewrite can be triggered (64 MB)
+        .rewrite_min_size = 67108864,
+    },
+
+    // -------------------------
+    // Client whitelist
+    // -------------------------
     .whitelist = .{
         "127.0.0.1",
         "127.0.0.2",

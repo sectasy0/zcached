@@ -8,6 +8,7 @@ test "test logger debug" {
     var logger = try Logger.init(
         std.testing.allocator,
         null,
+        null,
         false,
     );
     defer logger.deinit();
@@ -32,7 +33,7 @@ test "test logger debug" {
 
 test "test logger info" {
     std.fs.cwd().deleteTree("log") catch {};
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
 
     logger.log(.Info, "{s}", .{"test"});
@@ -55,7 +56,7 @@ test "test logger info" {
 
 test "test logger warning" {
     std.fs.cwd().deleteTree("log") catch {};
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
 
     logger.log(.Warning, "{s}", .{"test"});
@@ -79,7 +80,7 @@ test "test logger warning" {
 test "test logger error" {
     std.fs.cwd().deleteTree("log") catch {};
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
 
     logger.log(.Error, "{s}", .{"test"});
@@ -103,7 +104,7 @@ test "test logger error" {
 test "auto flush when buffer is full" {
     std.fs.cwd().deleteTree("log") catch {};
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
 
     var output = try std.ArrayList(u8).initCapacity(std.testing.allocator, logger.buffer.items.len);

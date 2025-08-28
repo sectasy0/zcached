@@ -11,12 +11,13 @@ const Connection = @import("../server/network/connection.zig");
 
 const TracingAllocator = @import("../server/tracing.zig");
 
-const Context = @import("../server/processing/employer.zig").Context;
+const Employer = @import("../server/processing/employer.zig");
+const Agent = @import("../server/processing/agent.zig");
 
 const persistance = @import("../server/storage/persistance.zig");
 const Memory = @import("../server/storage/memory.zig");
 
-var quantum_flow: std.atomic.Value(bool) = .init(true);
+var running: std.atomic.Value(bool) = .init(true);
 
 pub const ContextFixture = struct {
     allocator: std.mem.Allocator,
@@ -26,6 +27,8 @@ pub const ContextFixture = struct {
     persistance: ?persistance.Handler,
     memory: ?Memory,
 
+    agent: Agent,
+
     pub fn init() !ContextFixture {
         const allocator: std.mem.Allocator = std.testing.allocator;
         const tracing_allocator: TracingAllocator = TracingAllocator.init(allocator);
@@ -33,10 +36,11 @@ pub const ContextFixture = struct {
         return ContextFixture{
             .allocator = allocator,
             .tracing_allocator = tracing_allocator,
-            .logger = try Logger.init(allocator, null, false),
+            .logger = try Logger.init(allocator, null, null, false),
             .config = try Config.load(allocator, null, null),
             .persistance = null,
             .memory = null,
+            .agent = .init(allocator, &running),
         };
     }
 
@@ -62,14 +66,15 @@ pub const ContextFixture = struct {
         );
     }
 
-    pub fn context(self: *ContextFixture) Context {
+    pub fn context(self: *ContextFixture) Employer.Context {
         return .{
             .resources = .{
                 .memory = &self.memory.?,
                 .logger = &self.logger,
+                .agent = &self.agent,
             },
             .config = &self.config,
-            .quantum_flow = &quantum_flow,
+            .running = &running,
         };
     }
 

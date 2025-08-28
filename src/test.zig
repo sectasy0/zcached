@@ -15,21 +15,21 @@ comptime {
     // _ = @import("src/server/cli.zig");
     _ = @import("tests/server/utils.zig");
 
-    // // server - network
+    // server - network
     _ = @import("tests/server/connection.zig");
-    // // _ = @import("src/server/listener.zig");
+    // _ = @import("src/server/listener.zig");
 
-    // // server - processing
+    // server - processing
     _ = @import("tests/server/commands.zig");
     _ = @import("tests/server/errors.zig");
     _ = @import("tests/server/requests.zig");
-    // // _ = @import("tests/server/agent.zig");
+    _ = @import("tests/server/agent.zig");
 
     // // // server - middleware
     _ = @import("tests/server/access.zig");
 
-    // // server - storage
-    // // _ = @import("tests/server/aof.zig");
+    // // // server - storage
+    // // // _ = @import("tests/server/aof.zig");
     _ = @import("tests/server/memory.zig");
     _ = @import("tests/server/persistance.zig");
 }

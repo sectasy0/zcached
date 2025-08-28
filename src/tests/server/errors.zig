@@ -12,7 +12,7 @@ test "Unprocessable" {
 
     const out_writer = stream.writer().any();
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
     try errors.handle(out_writer, error.Unprocessable, .{}, &logger);
 
@@ -24,7 +24,7 @@ test "UnknownCommand" {
     var stream = std.io.fixedBufferStream(&buffer);
     const out_writer = stream.writer().any();
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
     var array = std.ArrayList(ZType).initCapacity(std.testing.allocator, 0) catch {
         return error.AllocatorError;
@@ -41,7 +41,7 @@ test "UnknownCommand with command name" {
 
     const out_writer = stream.writer().any();
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
     var array = std.ArrayList(ZType).initCapacity(std.testing.allocator, 1) catch {
         return error.AllocatorError;
@@ -64,7 +64,7 @@ test "unexpected error" {
     var stream = std.io.fixedBufferStream(&buffer);
     const out_writer = stream.writer().any();
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
     try errors.handle(out_writer, error.Unexpected, .{}, &logger);
 
@@ -76,7 +76,7 @@ test "max clients reached" {
     var stream = std.io.fixedBufferStream(&buffer);
     const out_writer = stream.writer().any();
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
     try errors.handle(out_writer, error.MaxClientsReached, .{}, &logger);
 
@@ -89,7 +89,7 @@ test "NotFound with key name" {
 
     const out_writer = stream.writer().any();
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
     var array = std.ArrayList(ZType).initCapacity(std.testing.allocator, 2) catch {
         return error.AllocatorError;
@@ -114,7 +114,7 @@ test "BusyKey" {
 
     const out_writer = stream.writer().any();
 
-    var logger = try Logger.init(std.testing.allocator, null, false);
+    var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
     try errors.handle(out_writer, error.BusyKey, .{}, &logger);
 

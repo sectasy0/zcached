@@ -11,6 +11,7 @@ const server = @import("server/network/listener.zig");
 
 // Processing / application logic
 const Employer = @import("server/processing/employer.zig");
+const Agent = @import("server/processing/agent.zig");
 
 // Storage / memory
 const Memory = @import("server/storage/memory.zig");
@@ -21,12 +22,12 @@ const TracingAllocator = @import("server/tracing.zig");
 
 pub const panic = std.debug.FullPanic(panicHandler);
 
-var quantum_flow: std.atomic.Value(bool) = .init(true);
+var running: std.atomic.Value(bool) = .init(true);
 
 fn handleSig(sig: c_int) callconv(.C) void {
     _ = sig; // unused, but required by the signal handler signature
     // we want to stop the server gracefully, and also flush any pending logs
-    quantum_flow.store(false, .seq_cst);
+    running.store(false, .seq_cst);
 }
 
 fn panicHandler(msg: []const u8, first_trace_addr: ?usize) noreturn {
@@ -93,8 +94,16 @@ pub fn main() void {
 
     handleArguments(result.args) orelse return;
 
+    // Background worker
+    var agent: Agent = .init(allocator, &running);
+    defer agent.deinit();
+    agent.kickoff() catch |err| {
+        std.log.err("# failed to initialize background agent: {}", .{err});
+    };
+
     var logger = log.Logger.init(
         allocator,
+        &agent,
         result.args.@"log-path",
         result.args.sout,
     ) catch |err| {
@@ -116,7 +125,7 @@ pub fn main() void {
         result.args.@"config-path",
         result.args.@"log-path",
     ) catch |err| {
-        logger.log(log.LogLevel.Error, "# failed to load config: {?}", .{err});
+        logger.err("# failed to load config: {?}", .{err});
         return;
     };
 
@@ -126,11 +135,7 @@ pub fn main() void {
         logger,
         null,
     ) catch |err| {
-        logger.log(
-            .Error,
-            "# failed to init persistance.Handler: {?}",
-            .{err},
-        );
+        logger.err("# failed to init persistance.Handler: {?}", .{err});
         return;
     };
 
@@ -156,11 +161,7 @@ pub fn main() void {
 
     persister.load(&memory) catch |err| {
         if (err != error.FileNotFound) {
-            logger.log(
-                .Warning,
-                "# failed to restore data from latest .zcpf file: {?}",
-                .{err},
-            );
+            logger.warn("# failed to restore data from latest .zcpf file: {?}", .{err});
         }
     };
 
@@ -169,8 +170,9 @@ pub fn main() void {
         .resources = .{
             .memory = &memory,
             .logger = &logger,
+            .agent = &agent,
         },
-        .quantum_flow = &quantum_flow,
+        .running = &running,
     };
 
     runSupervisor(allocator, context);
@@ -213,13 +215,13 @@ fn handleArguments(args: cli.Args) ?void {
 }
 
 fn runSupervisor(allocator: std.mem.Allocator, context: Employer.Context) void {
-    context.resources.logger.log(.Info, "# starting zcached server on tcp://{?} | Workers {}", .{
+    context.resources.logger.info("# starting zcached server on tcp://{?} | Workers {}", .{
         context.config.address,
         context.config.workers,
     });
 
     var employer = Employer.init(allocator, context) catch |err| {
-        context.resources.logger.log(.Error, "# failed to initialize server: {any}", .{err});
+        context.resources.logger.err("# failed to initialize server: {any}", .{err});
         return;
     };
     defer employer.deinit();

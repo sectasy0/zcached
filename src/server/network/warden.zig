@@ -60,8 +60,7 @@ pub fn setupConnection(self: *Warden, worker: *Worker, incoming: StreamServer.Co
         },
     };
 
-    self.context.resources.logger.log(
-        .Debug,
+    self.context.resources.logger.info(
         "# new connection from: {any}",
         .{incoming.address},
     );
@@ -78,8 +77,7 @@ pub fn setupConnection(self: *Warden, worker: *Worker, incoming: StreamServer.Co
         &worker.poll_fds[worker.connections],
         worker.connections,
     ) catch |err| {
-        self.context.resources.logger.log(
-            .Error,
+        self.context.resources.logger.err(
             "# failed to create client struct: {?}",
             .{err},
         );
@@ -93,8 +91,7 @@ pub fn setupConnection(self: *Warden, worker: *Worker, incoming: StreamServer.Co
     };
 
     worker.states.put(incoming.stream.handle, connection) catch |err| {
-        self.context.resources.logger.log(
-            .Error,
+        self.context.resources.logger.err(
             "# failed to put to states: {?}",
             .{err},
         );
@@ -129,8 +126,7 @@ pub fn dispatch(self: *Warden, worker: *Worker, connection: *Connection) void {
                     return;
                 },
                 else => {
-                    self.context.resources.logger.log(
-                        .Error,
+                    self.context.resources.logger.err(
                         "Unexpected read error: {?}, disconnecting.",
                         .{err},
                     );
@@ -172,8 +168,7 @@ pub fn handleOutgoing(self: *Warden, worker: *Worker, connection: *Connection) v
                 return;
             },
             else => {
-                self.context.resources.logger.log(
-                    .Error,
+                self.context.resources.logger.err(
                     "# failed to write to stream: {?}",
                     .{err},
                 );
@@ -189,8 +184,7 @@ pub fn handleOutgoing(self: *Warden, worker: *Worker, connection: *Connection) v
 }
 
 pub fn teardownConnection(self: *Warden, worker: *Worker, connection: *Connection) void {
-    self.context.resources.logger.log(
-        .Debug,
+    self.context.resources.logger.info(
         "# connection with client closed {any}",
         .{connection.address},
     );
@@ -202,8 +196,7 @@ pub fn teardownConnection(self: *Warden, worker: *Worker, connection: *Connectio
         const last_fd = worker.poll_fds[worker.connections - 1];
         // need to get the last connection from the states and change its id
         var last_connection = worker.states.get(last_fd.fd) orelse {
-            self.context.resources.logger.log(
-                .Error,
+            self.context.resources.logger.err(
                 "# failed to get last connection from states: {any}",
                 .{last_fd.fd},
             );
@@ -219,8 +212,7 @@ pub fn teardownConnection(self: *Warden, worker: *Worker, connection: *Connectio
     connection.deinit();
     const remove_result = worker.states.remove(connection.fd());
     if (!remove_result) {
-        self.context.resources.logger.log(
-            .Error,
+        self.context.resources.logger.err(
             "# failed to remove from states",
             .{},
         );
@@ -235,8 +227,7 @@ fn processIncoming(self: *const Warden, worker: *Worker, connection: *Connection
         switch (err) {
             error.IncompleteMessage => return,
             error.MessageTooLarge => {
-                self.context.resources.logger.log(
-                    .Error,
+                self.context.resources.logger.err(
                     "# message too large, max size is {d} bytes",
                     .{max_size},
                 );

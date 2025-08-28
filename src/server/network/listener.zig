@@ -48,10 +48,9 @@ pub fn listen(self: *Listener, worker: *Worker) void {
 
     var warden = Warden.init(worker.allocator, self.context);
 
-    while (self.context.quantum_flow.*.load(.seq_cst)) {
+    while (self.context.running.*.load(.seq_cst)) {
         _ = std.posix.poll(worker.poll_fds[warden.start..worker.connections], 1000) catch |err| {
-            self.context.resources.logger.log(
-                .Error,
+            self.context.resources.logger.err(
                 "# std.os.poll failure: {?}",
                 .{err},
             );
@@ -71,8 +70,7 @@ pub fn listen(self: *Listener, worker: *Worker) void {
                     // We can safely ignore it and continue listening.
                     if (err == error.WouldBlock) continue;
 
-                    self.context.resources.logger.log(
-                        .Error,
+                    self.context.resources.logger.err(
                         "# accept() failed with: {?}\n",
                         .{err},
                     );

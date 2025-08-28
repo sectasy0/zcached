@@ -28,8 +28,7 @@ fn check_whitelist(
         self.config.whitelist,
         address,
     )) {
-        self.logger.log(
-            .Info,
+        self.logger.info(
             "* connection from {any} is not whitelisted, rejected",
             .{address},
         );
