@@ -147,9 +147,15 @@ fn delegate(worker: *Worker, listener: *Listener) void {
 
 pub fn deinit(self: *Employer) void {
     for (self.workers) |*worker| worker.deinit();
-    for (self.allocators) |*gpa| _ = gpa.deinit();
-
     self.allocator.free(self.workers);
     self.allocator.free(self.threads);
+
+    for (self.allocators) |*gpa| {
+        if (gpa.detectLeaks()) {
+            // Memory leaks detected
+            std.posix.exit(255);
+        }
+        _ = gpa.deinit();
+    }
     self.allocator.free(self.allocators);
 }

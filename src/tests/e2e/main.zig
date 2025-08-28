@@ -69,8 +69,8 @@ pub fn runServer(tls: bool) !std.process.Child {
         argv = [_][]const u8{"./zig-out/bin/zcached_tls"};
     }
     var child = std.process.Child.init(&argv, std.heap.page_allocator);
-    child.stderr_behavior = .Ignore;
-    child.stdout_behavior = .Ignore;
+    // child.stderr_behavior = .Ignore;
+    // child.stdout_behavior = .Ignore;
     try child.spawn();
     std.time.sleep(100000_000); // Give the server some time to start
 
@@ -143,7 +143,10 @@ pub fn main() !u8 {
         std.debug.print("Failed to kill server process: {}\n", .{err});
     };
 
-    // TODO: Add more tests here, like testing server with TLS enabled
+    var term = try server_process.wait();
+
+    // For now it means memory leak or crash
+    if (term.Exited != 0) std.process.exit(1);
 
     var secure_server_process = try runServer(true);
     var secure_stream = try connectSecure();
@@ -160,6 +163,10 @@ pub fn main() !u8 {
     _ = secure_server_process.kill() catch |err| {
         std.debug.print("Failed to kill secure server process: {}\n", .{err});
     };
+
+    term = try secure_server_process.wait();
+    // For now it means memory leak or crash
+    if (term.Exited != 0) std.process.exit(1);
 
     if (failed > 0) {
         std.debug.print("\n[SUMMARY] Test suite completed: {d} passed, {d} failed.\n", .{ passed, failed });

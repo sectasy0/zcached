@@ -90,7 +90,6 @@ pub fn main() void {
         };
         return;
     };
-    defer result.parser.deinit();
 
     handleArguments(result.args) orelse return;
 
@@ -102,7 +101,6 @@ pub fn main() void {
         std.log.err("# failed to initialize logger: {}", .{err});
         return;
     };
-    defer logger.deinit();
 
     var act: std.posix.Sigaction = .{
         .handler = .{ .handler = handleSig },
@@ -121,7 +119,6 @@ pub fn main() void {
         logger.log(log.LogLevel.Error, "# failed to load config: {?}", .{err});
         return;
     };
-    defer config.deinit();
 
     var persister = persistance.Handler.init(
         allocator,
@@ -136,7 +133,6 @@ pub fn main() void {
         );
         return;
     };
-    defer persister.deinit();
 
     // allocator for database inner database data purposes.
     // we don't need to wrap it in a thread-safe allocator because Memory struct is secured by mutex
@@ -153,7 +149,10 @@ pub fn main() void {
         config,
         &persister,
     );
-    defer memory.deinit();
+    defer {
+        memory.deinit();
+        if (dbgpa.detectLeaks()) std.posix.exit(255);
+    }
 
     persister.load(&memory) catch |err| {
         if (err != error.FileNotFound) {
@@ -175,6 +174,13 @@ pub fn main() void {
     };
 
     runSupervisor(allocator, context);
+
+    persister.deinit();
+    logger.deinit();
+    config.deinit();
+    result.parser.deinit();
+
+    if (gpa.detectLeaks()) std.posix.exit(255);
 }
 
 // null indicates that function should return from main

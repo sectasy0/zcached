@@ -173,8 +173,6 @@ pub fn load(self: *Handler, memory: *Memory) !void {
     );
     defer self.allocator.free(bytes);
 
-    // read commands
-
     const map_len = std.fmt.parseInt(usize, bytes[1 .. bytes.len - 1], 10) catch {
         return error.InvalidLength;
     };
