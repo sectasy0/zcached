@@ -11,11 +11,17 @@ pub const Task = struct {
     pub fn executeAndDestroy(self: *Task, allocator: std.mem.Allocator) void {
         if (self.run) |run| {
             run(self.args);
+            self.run = null;
         }
-        if (self.destroy) |destroy| {
-            destroy(allocator, self.args);
-            self.destroy = null;
-            self.args = null;
+
+        const local_destroy = self.destroy;
+        const local_args = self.args;
+
+        self.destroy = null;
+        self.args = null;
+
+        if (local_destroy) |destroy_fn| {
+            destroy_fn(allocator, local_args);
         }
     }
 };
@@ -23,7 +29,7 @@ pub const Task = struct {
 pub const Queue = struct {
     const max_tasks = 100;
 
-    tasks: [max_tasks]Task,
+    tasks: [max_tasks]?Task,
     lock: std.Thread.Mutex,
 
     not_full: std.Thread.Condition = .{},
@@ -36,7 +42,7 @@ pub const Queue = struct {
     count: usize = 0,
 
     pub const empty: Queue = .{
-        .tasks = @splat(undefined),
+        .tasks = @splat(null),
         .lock = .{},
     };
 
@@ -45,7 +51,11 @@ pub const Queue = struct {
         allocator: std.mem.Allocator,
         comptime func: anytype,
         args: anytype,
+        // name: []const u8,
     ) !void {
+        self.lock.lock();
+        defer self.lock.unlock();
+
         const Wrapper = struct {
             const Self = @This();
             args: *const @TypeOf(args),
@@ -65,7 +75,7 @@ pub const Queue = struct {
             }
         };
 
-        const owned_args_ptr = try takeOwnershipByCloning(allocator, args);
+        var owned_args_ptr = try takeOwnershipByCloning(allocator, args);
 
         var retries: usize = 0;
         const max_retries = 10;
@@ -90,12 +100,11 @@ pub const Queue = struct {
                 }
             }
         }
+
+        owned_args_ptr = undefined;
     }
 
     fn enqueueInner(self: *Queue, task: Task) !void {
-        self.lock.lock();
-        defer self.lock.unlock();
-
         while (max_tasks == self.count) {
             try self.not_full.timedWait(&self.lock, self.timeout);
         }
@@ -116,7 +125,8 @@ pub const Queue = struct {
             self.not_empty.wait(&self.lock);
         }
 
-        const task = self.tasks[self.head];
+        const task = self.tasks[self.head].?;
+        self.tasks[self.head] = null;
         self.head = (self.head + 1) % max_tasks;
         self.count -= 1;
 
@@ -133,7 +143,13 @@ pub const Queue = struct {
     /// Returns a pointer to the newly allocated clone.
     fn takeOwnershipByCloning(allocator: std.mem.Allocator, args: anytype) error{OutOfMemory}!*@TypeOf(args) {
         const T = @TypeOf(args);
-        var res = try allocator.create(@TypeOf(args));
+        const res = try allocator.create(@TypeOf(args));
+
+        if (@typeInfo(T) != .@"struct") {
+            res.* = args;
+            return res;
+        }
+
         res.* = args;
 
         switch (@typeInfo(T)) {
@@ -146,14 +162,23 @@ pub const Queue = struct {
                     errdefer {
                         inline for (std.meta.fields(@TypeOf(args_root)), 0..) |field, i| {
                             if (comptime std.mem.eql(u8, field.name, "args")) {
-                                if ((field.type == []const u8 or field.type == []u8) and i <= got_to) {
-                                    const field_ptr = @field(@field(res, "0"), field.name)[0];
-                                    allocator.free(field_ptr);
+                                const args_ptr = @field(args_root, field.name);
+
+                                inline for (std.meta.fields(@TypeOf(args_ptr))) |subfield| {
+                                    if ((subfield.type == []const u8 or subfield.type == []u8) and i <= got_to) {
+                                        const field_ptr = @field(
+                                            @field(
+                                                @field(res, "0"),
+                                                field.name,
+                                            ),
+                                            subfield.name,
+                                        );
+                                        allocator.free(field_ptr);
+                                    }
                                 }
                             }
                         }
 
-                        // destroy the allocated struct itself to avoid leaking `res`
                         allocator.destroy(res);
                     }
 
@@ -166,7 +191,13 @@ pub const Queue = struct {
                                 if (subfield.type == []u8 or subfield.type == []const u8) {
                                     const original = @field(args_ptr, subfield.name);
                                     const duped = try allocator.dupe(u8, original);
-                                    @field(@field(res, "0"), field.name)[0] = duped;
+                                    @field(
+                                        @field(
+                                            @field(res, "0"),
+                                            field.name,
+                                        ),
+                                        subfield.name,
+                                    ) = duped;
                                     got_to = j;
                                 }
                             }
@@ -204,18 +235,18 @@ pub const Queue = struct {
     }
 
     pub fn deinit(self: *Queue, allocator: std.mem.Allocator) void {
-        // Clean up any remaining tasks
-        for (self.tasks[0..self.count]) |*task| {
+        self.lock.lock();
+        defer self.lock.unlock();
+
+        var i: usize = 0;
+        while (i < self.count) : (i += 1) {
+            const idx = (self.head + i) % max_tasks;
+            const task = &self.tasks[idx].?;
             if (task.destroy) |destroy| {
                 destroy(allocator, task.args);
             }
-            // wyzeruj, żeby nie zostawić dangling pointers
-            task.* = .{
-                .run = null,
-                .destroy = null,
-                .args = null,
-            };
         }
+
         self.head = 0;
         self.tail = 0;
         self.count = 0;
@@ -259,35 +290,34 @@ pub fn schedule(self: *Self, comptime func: anytype, args: anytype) !void {
 }
 
 pub fn deinit(self: *Self) void {
-    // poison the queue
-    self.queue.enqueueInner(.{
-        .run = null,
-        .destroy = null,
-        .args = null,
-    }) catch {
-        self.queue.lock.lock();
-        defer self.queue.lock.unlock();
+    // We will try until poison pill is enqueued, but break as soon as it succeeds.
+    self.queue.lock.lock();
 
-        const last_element_index = self.queue.count - 1;
+    while (true) {
+        // Try to insert poison pill. If enqueueInner returns normally -> success -> break.
+        // If it errors (timedWait timeout) -> continue and retry.
+        self.queue.enqueueInner(.{
+            .run = null,
+            .destroy = null,
+            .args = null,
+        }) catch {
+            // enqueueInner did a timedWait internally (which released and reacquired lock),
+            // and returned an error (timeout). We should retry.
+            continue;
+        };
+        // success
+        break;
+    }
 
-        // queue is full, we can't enqueue the poison pill
-        // instead we inject into the last task, destroying args
-        var task = &self.queue.tasks[last_element_index];
-        if (task.destroy) |destroy| {
-            destroy(self.allocator, task.args);
-        }
-
-        task.run = null;
-        task.destroy = null;
-        task.args = null;
-
-        self.queue.tasks[last_element_index] = task.*;
-    };
+    // Wake consumer(s) that something is available.
+    self.queue.not_empty.broadcast();
+    self.queue.lock.unlock();
 
     if (self.drain_thread) |t| {
         t.join();
         self.drain_thread = null;
     }
+
     self.queue.deinit(self.allocator);
 }
 
