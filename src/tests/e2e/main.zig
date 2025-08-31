@@ -72,9 +72,11 @@ pub fn runServer(tls: bool) !std.process.Child {
     // child.stderr_behavior = .Ignore;
     // child.stdout_behavior = .Ignore;
     try child.spawn();
-    std.time.sleep(100000_000); // Give the server some time to start
+    try child.waitForSpawn();
 
     // std.debug.print("Server started with PID: {}, TLS: {}\n", .{ child.id, tls });
+
+    std.time.sleep(1_000_000_000);
 
     return child;
 }
@@ -134,7 +136,12 @@ pub fn connectUnsecure(T: type) !T {
 pub fn main() !u8 {
     var server_process = try runServer(false);
 
-    var unsecure_stream = try connectUnsecure(Stream);
+    var unsecure_stream = connectUnsecure(Stream) catch {
+        _ = server_process.kill() catch |err| {
+            std.debug.print("Failed to kill server process: {}\n", .{err});
+        };
+        return 1;
+    };
     defer unsecure_stream.close();
 
     try runTests(unsecure_stream);
@@ -149,7 +156,12 @@ pub fn main() !u8 {
     if (term.Exited != 0) std.process.exit(1);
 
     var secure_server_process = try runServer(true);
-    var secure_stream = try connectSecure();
+    var secure_stream = connectSecure() catch {
+        _ = secure_server_process.kill() catch |err| {
+            std.debug.print("Failed to kill server process: {}\n", .{err});
+        };
+        return 1;
+    };
     defer secure_stream.close();
 
     errdefer {

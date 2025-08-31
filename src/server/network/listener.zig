@@ -72,7 +72,7 @@ pub fn listen(self: *Listener, worker: *Worker) void {
                     if (err == error.WouldBlock) continue;
 
                     self.context.resources.logger.err(
-                        "# accept() failed with: {?}\n",
+                        "# accept() failed with: {?}",
                         .{err},
                     );
 
