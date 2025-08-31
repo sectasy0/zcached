@@ -184,9 +184,6 @@ pub fn handleOutgoing(self: *Warden, worker: *Worker, connection: *Connection) v
             },
         }
     };
-
-    // remove written data from the tx_accumulator
-    connection.tx_accumulator.clearRetainingCapacity();
 }
 
 pub fn teardownConnection(self: *Warden, worker: *Worker, connection: *Connection) void {

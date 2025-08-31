@@ -27,7 +27,7 @@ fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
 
 fn sendAndExpect(socket: anytype, command: []const u8, label: []const u8, expected: []const u8, reverse: bool) !void {
     _ = try socket.writeAll(@constCast(command));
-    std.time.sleep(100_0000); // Give the server some time to respond
+    // std.time.sleep(100_0000); // Give the server some time to respond
     const response = try socket.reader().readUntilDelimiterAlloc(
         std.heap.page_allocator,
         consts.EXT_CHAR,

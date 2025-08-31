@@ -1,8 +1,8 @@
 const std = @import("std");
 const Logger = @import("../logger.zig");
+const consts = @import("../network/consts.zig");
 
 const ZType = @import("../../protocol/types.zig").ZType;
-// That handler exists because I wanna have control over what is sent to the client
 
 const Args = struct {
     command: ?[]const u8 = null,
@@ -37,6 +37,8 @@ pub fn handle(out: std.io.AnyWriter, err: anyerror, args: Args, logger: *Logger)
         error.BusyKey => try out.writeAll("-BUSYKEY key already exists\r\n"),
         else => try out.writeAll("-ERR unexpected\r\n"),
     };
+
+    try out.writeByte(consts.EXT_CHAR);
 }
 
 fn handleUnknownCommand(out: anytype, args: Args) !void {

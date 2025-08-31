@@ -16,7 +16,7 @@ test "Unprocessable" {
     defer logger.deinit();
     try errors.handle(out_writer, error.Unprocessable, .{}, &logger);
 
-    try std.testing.expectEqualStrings("-ERR unprocessable\r\n", stream.getWritten());
+    try std.testing.expectEqualStrings("-ERR unprocessable\r\n\x03", stream.getWritten());
 }
 
 test "UnknownCommand" {
@@ -32,7 +32,7 @@ test "UnknownCommand" {
     const args = errors.buildArgs(&array);
     try errors.handle(out_writer, error.UnknownCommand, args, &logger);
 
-    try std.testing.expectEqualStrings("-ERR unknown command\r\n", stream.getWritten());
+    try std.testing.expectEqualStrings("-ERR unknown command\r\n\x03", stream.getWritten());
 }
 
 test "UnknownCommand with command name" {
@@ -54,7 +54,7 @@ test "UnknownCommand with command name" {
 
     try std.testing.expectFmt(
         stream.getWritten(),
-        "-ERR unknown command '{s}'\r\n",
+        "-ERR unknown command '{s}'\r\n\x03",
         .{"help"},
     );
 }
@@ -68,7 +68,7 @@ test "unexpected error" {
     defer logger.deinit();
     try errors.handle(out_writer, error.Unexpected, .{}, &logger);
 
-    try std.testing.expectEqualStrings("-ERR unexpected\r\n", stream.getWritten());
+    try std.testing.expectEqualStrings("-ERR unexpected\r\n\x03", stream.getWritten());
 }
 
 test "max clients reached" {
@@ -80,7 +80,7 @@ test "max clients reached" {
     defer logger.deinit();
     try errors.handle(out_writer, error.MaxClientsReached, .{}, &logger);
 
-    try std.testing.expectEqualStrings("-ERR max number of clients reached\r\n", stream.getWritten());
+    try std.testing.expectEqualStrings("-ERR max number of clients reached\r\n\x03", stream.getWritten());
 }
 
 test "NotFound with key name" {
@@ -103,7 +103,7 @@ test "NotFound with key name" {
 
     try std.testing.expectFmt(
         stream.getWritten(),
-        "-ERR '{s}' not found\r\n",
+        "-ERR '{s}' not found\r\n\x03",
         .{"user_cache_12345"},
     );
 }
@@ -118,5 +118,5 @@ test "BusyKey" {
     defer logger.deinit();
     try errors.handle(out_writer, error.BusyKey, .{}, &logger);
 
-    try std.testing.expectEqualStrings("-BUSYKEY key already exists\r\n", stream.getWritten());
+    try std.testing.expectEqualStrings("-BUSYKEY key already exists\r\n\x03", stream.getWritten());
 }

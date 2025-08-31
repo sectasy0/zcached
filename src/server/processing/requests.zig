@@ -76,7 +76,7 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
     const reader = stream.reader();
 
     const out_writer = connection.out().any();
-    connection.signalWritable();
+    defer connection.signalWritable();
 
     // defer self.protocol.serializer.resetPosition();
 
@@ -167,6 +167,22 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
             );
         };
     };
+    // Write the end character to the outgoing data
+    out_writer.writeByte(consts.EXT_CHAR) catch |err| {
+        errors.handle(
+            out_writer,
+            err,
+            .{},
+            self.context.resources.logger,
+        ) catch |er| {
+            self.context.resources.logger.err(
+                "* failed to send error: {any}",
+                .{er},
+            );
+        };
+    };
+
+    std.debug.print("{d}\n", .{connection.tx_accumulator.items});
 
     self.context.resources.logger.logEvent(.Response, response);
 }

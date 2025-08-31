@@ -13,17 +13,18 @@ id: usize = 0,
 /// File descriptor for polling I/O readiness.
 pollfd: *std.posix.pollfd,
 
-/// Static-sized buffer for reading incoming stream data.
-buffer: [consts.CLIENT_BUFFER]u8,
 /// Stream abstraction over the socket handle.
 stream: Stream,
 /// Remote address of the connected client.
 address: std.net.Address,
 
+/// Static-sized buffer for reading incoming stream data.
+buffer: [consts.CLIENT_BUFFER]u8,
 /// Accumulator for incoming data.
 accumulator: std.ArrayList(u8),
 /// Accumulator for outgoing data.
 tx_accumulator: std.ArrayList(u8),
+tx_offset: usize = 0,
 
 /// Allocator for dynamic memory use.
 allocator: std.mem.Allocator,
@@ -104,20 +105,29 @@ pub fn readPending(self: *Self, max_size: usize) !void {
 }
 
 pub fn writePending(self: *Self) !void {
-    const write_size = self.tx_accumulator.items.len;
-    if (write_size == 0) {
+    const total_len = self.tx_accumulator.items.len;
+
+    if (self.tx_offset >= total_len) {
+        // all the data has been sent
+        self.tx_accumulator.clearRetainingCapacity();
+        self.tx_offset = 0;
         self.clearWritable();
         return;
     }
 
-    // Add the end character to the outgoing data
-    self.tx_accumulator.append(consts.EXT_CHAR) catch |err| {
-        return err;
-    };
-    _ = try self.stream.writeAll(self.tx_accumulator.items);
+    const remaining = total_len - self.tx_offset;
+    const chunk_size = if (remaining < 4096) remaining else 4096;
+    const slice_to_write = self.tx_accumulator.items[self.tx_offset .. self.tx_offset + chunk_size];
 
-    self.clearWritable();
-    self.tx_accumulator.clearRetainingCapacity();
+    const written = try self.stream.write(slice_to_write);
+    self.tx_offset += written;
+
+    // all the data has been sent
+    if (self.tx_offset >= total_len) {
+        self.tx_accumulator.clearRetainingCapacity();
+        self.tx_offset = 0;
+        self.clearWritable();
+    }
 }
 
 // --- Polling Helpers ---
