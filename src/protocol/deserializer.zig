@@ -16,6 +16,10 @@ pub const Deserializer = struct {
         self.arena.deinit();
     }
 
+    pub fn reset(self: *Deserializer) void {
+        self.arena.reset(.retain_capacity);
+    }
+
     pub fn process(self: *Deserializer, input: types.ZType) anyerror![]const u8 {
         switch (input) {
             .str => return try self.deserializeString(input),

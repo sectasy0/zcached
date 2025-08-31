@@ -21,6 +21,7 @@ allocator: std.mem.Allocator,
 context: Context,
 
 access_control: AccessMiddleware,
+processor: requests.Processor,
 
 const AcceptError = struct {
     etype: anyerror,
@@ -36,11 +37,16 @@ pub fn init(allocator: std.mem.Allocator, context: Context) Warden {
     return .{
         .allocator = allocator,
         .context = context,
-        .access_control = AccessMiddleware.init(
+        .access_control = .init(
             context.config,
             context.resources.logger,
         ),
+        .processor = .init(allocator, context),
     };
+}
+
+pub fn deinit(self: *Warden) void {
+    self.processor.deinit();
 }
 
 pub fn setupConnection(self: *Warden, worker: *Worker, incoming: StreamServer.Connection) AcceptResult {
@@ -220,7 +226,8 @@ pub fn teardownConnection(self: *Warden, worker: *Worker, connection: *Connectio
     }
 }
 
-fn processIncoming(self: *const Warden, worker: *Worker, connection: *Connection) !void {
+fn processIncoming(self: *Warden, worker: *Worker, connection: *Connection) !void {
+    _ = worker;
     const max_size = self.context.config.max_request_size;
 
     connection.readPending(max_size) catch |err| {
@@ -237,11 +244,5 @@ fn processIncoming(self: *const Warden, worker: *Worker, connection: *Connection
         }
     };
 
-    // here we've got the completed message, let's process it
-    var processor = requests.Processor.init(
-        worker.allocator,
-        self.context,
-    );
-
-    processor.deframe(connection);
+    self.processor.deframe(connection);
 }

@@ -21,9 +21,12 @@ const consts = @import("../network/consts.zig");
 
 pub const Processor = @This();
 
+const Protocol = proto.ProtocolHandlerT(std.io.FixedBufferStream([]u8).Reader);
+
 cmd_handler: commands.Handler,
 context: Context,
 allocator: std.mem.Allocator,
+protocol: Protocol,
 
 pub fn init(allocator: std.mem.Allocator, context: Context) Processor {
     return .{
@@ -33,6 +36,7 @@ pub fn init(allocator: std.mem.Allocator, context: Context) Processor {
         ),
         .context = context,
         .allocator = allocator,
+        .protocol = Protocol.init(allocator) catch return,
     };
 }
 
@@ -62,31 +66,21 @@ pub fn deframe(self: *Processor, connection: *Connection) void {
         // all the data has been processed, clear the buffer
         connection.accumulator.clearRetainingCapacity();
     } else if (start > 0) {
-        // some incomplete data remains, move it to the beginning
         const remaining = connection.accumulator.items[start..];
-        connection.accumulator.clearRetainingCapacity();
-        connection.accumulator.appendSlice(remaining) catch |err| {
-            self.context.resources.logger.log(
-                .Error,
-                "* failed to append remaining data: {any}",
-                .{err},
-            );
-        };
+        connection.accumulator.items = remaining;
     }
 }
 
 pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
     var stream = std.io.fixedBufferStream(request);
-    var reader = stream.reader();
-
-    const ProtocolHandler = proto.ProtocolHandlerT(@TypeOf(&reader));
-    var protocol = ProtocolHandler.init(self.allocator) catch return;
-    defer protocol.deinit();
+    const reader = stream.reader();
 
     const out_writer = connection.out().any();
     connection.signalWritable();
 
-    const result: ZType = protocol.serialize(&reader) catch |err| {
+    // defer self.protocol.serializer.resetPosition();
+
+    const result: ZType = self.protocol.serialize(reader) catch |err| {
         errors.handle(
             out_writer,
             err,
@@ -146,7 +140,7 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
 
     defer self.cmd_handler.free(command_set, &cmd_result);
 
-    const response = protocol.deserialize(cmd_result.ok) catch |err| {
+    const response = self.protocol.deserialize(cmd_result.ok) catch |err| {
         errors.handle(
             out_writer,
             err,
@@ -175,4 +169,8 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
     };
 
     self.context.resources.logger.logEvent(.Response, response);
+}
+
+pub fn deinit(self: *Processor) void {
+    self.protocol.deinit();
 }

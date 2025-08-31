@@ -69,6 +69,19 @@ test "ProtocolHandler handle integer without value" {
     defer handler.deinit();
 
     const result = handler.process(reader);
+    try std.testing.expectEqual(result, error.Unprocessable);
+}
+
+test "ProtocolHandler handle integer with non-integer value" {
+    var stream = std.io.fixedBufferStream(":kk\r\n");
+
+    const reader = stream.reader();
+
+    const HandlerType = serializer.SerializerT(@TypeOf(reader));
+    var handler = try HandlerType.init(std.testing.allocator);
+    defer handler.deinit();
+
+    const result = handler.process(reader);
     try std.testing.expectEqual(result, error.InvalidType);
 }
 

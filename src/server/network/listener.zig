@@ -46,7 +46,8 @@ pub fn listen(self: *Listener, worker: *Worker) void {
         .events = std.posix.POLL.IN,
     };
 
-    var warden = Warden.init(worker.allocator, self.context);
+    var warden: Warden = .init(worker.allocator, self.context);
+    defer warden.deinit();
 
     while (self.context.running.*.load(.seq_cst)) {
         _ = std.posix.poll(worker.poll_fds[warden.start..worker.connections], 1000) catch |err| {

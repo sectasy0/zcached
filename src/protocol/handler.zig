@@ -32,6 +32,11 @@ pub fn ProtocolHandlerT(comptime GenericReader: type) type {
             return self.deserializer.process(value);
         }
 
+        pub fn reset(self: *Self) void {
+            self.serializer.reset();
+            self.deserializer.reset();
+        }
+
         pub fn deinit(self: *Self) void {
             self.serializer.deinit();
             self.deserializer.deinit();

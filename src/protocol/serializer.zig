@@ -29,6 +29,10 @@ pub fn SerializerT(comptime GenericReader: type) type {
             };
         }
 
+        pub fn reset(self: *Self) void {
+            self.arena.reset(.retain_capacity);
+        }
+
         pub fn process(self: *Self, reader: GenericReader) SerializerError!types.ZType {
             const request_type: u8 = try reader.readByte();
             switch (request_type) {
@@ -52,34 +56,32 @@ pub fn SerializerT(comptime GenericReader: type) type {
         }
 
         fn serializeSimpleString(self: *Self, reader: GenericReader) SerializerError!types.ZType {
-            const string = try self.readLineAlloc(reader);
-            if (string.len == 0) return error.Unprocessable;
+            const bytes = try self.takeLineSlice(reader);
+            if (bytes.len == 0) return error.Unprocessable;
 
-            return .{ .sstr = string[0 .. string.len - 1] };
+            return .{ .sstr = bytes };
         }
 
         fn serializeString(self: *Self, reader: GenericReader) SerializerError!types.ZType {
-            const bytes = try self.readLineAlloc(reader);
+            const bytes = try self.takeLineSlice(reader);
 
-            const string_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
+            const string_len = std.fmt.parseInt(usize, bytes, 10) catch {
                 return error.Unprocessable;
             };
 
             if (string_len > MAX_BULK_LEN and MAX_BULK_LEN != 0) return error.PayloadExceeded;
 
-            const string = try self.readLineAlloc(reader);
+            const string = try self.takeLineSlice(reader);
             if (string.len == 0) return error.Unprocessable;
-            // .len - 1 because we don't want to include the \n
-            if (string_len != string.len - 1) return error.Unprocessable;
 
-            return .{ .str = string[0 .. string.len - 1] };
+            return .{ .str = string[0..string.len] };
         }
 
         fn serializeInt(self: *Self, reader: GenericReader) SerializerError!types.ZType {
-            const bytes = try self.readLineAlloc(reader);
+            const bytes = try self.takeLineSlice(reader);
             if (bytes.len == 0) return error.Unprocessable;
 
-            const int = std.fmt.parseInt(i64, bytes[0 .. bytes.len - 1], 10) catch {
+            const int = std.fmt.parseInt(i64, bytes, 10) catch {
                 return error.InvalidType;
             };
 
@@ -87,12 +89,11 @@ pub fn SerializerT(comptime GenericReader: type) type {
         }
 
         fn serializeBool(self: *Self, reader: GenericReader) SerializerError!types.ZType {
-            const bytes = try self.readLineAlloc(reader);
+            const bytes = try self.takeLineSlice(reader);
 
-            // <bool> is either "t" or "f", with \n at the end is 2 bytes
-            if (bytes.len != 2) return error.Unprocessable;
+            if (bytes.len != 1) return error.Unprocessable;
 
-            const value = bytes[0 .. bytes.len - 1];
+            const value = bytes;
             if (std.mem.eql(u8, value, "t") or std.mem.eql(u8, value, "T")) {
                 return .{ .bool = true };
             }
@@ -104,11 +105,11 @@ pub fn SerializerT(comptime GenericReader: type) type {
         }
 
         fn serializeFloat(self: *Self, reader: GenericReader) SerializerError!types.ZType {
-            const bytes = try self.readLineAlloc(reader);
+            const bytes = try self.takeLineSlice(reader);
 
             if (bytes.len == 0) return error.Unprocessable;
 
-            const float = std.fmt.parseFloat(f64, bytes[0 .. bytes.len - 1]) catch {
+            const float = std.fmt.parseFloat(f64, bytes) catch {
                 return error.InvalidType;
             };
 
@@ -116,11 +117,11 @@ pub fn SerializerT(comptime GenericReader: type) type {
         }
 
         fn serializeArray(self: *Self, reader: GenericReader) SerializerError!types.ZType {
-            const bytes = try self.readLineAlloc(reader);
+            const bytes = try self.takeLineSlice(reader);
 
             if (bytes.len == 0) return error.Unprocessable;
 
-            const array_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
+            const array_len = std.fmt.parseInt(usize, bytes, 10) catch {
                 return error.InvalidLength;
             };
 
@@ -138,30 +139,29 @@ pub fn SerializerT(comptime GenericReader: type) type {
 
         fn serializeNull(self: *Self, reader: GenericReader) SerializerError!types.ZType {
             _ = self;
-            var buff: [2]u8 = undefined;
-            _ = try reader.readAtLeast(&buff, 2); // to remove \r\n from buffer
+            reader.context.pos += 2; // we skip it, only one possible value
             return .{ .null = void{} };
         }
 
         // Only for client side, server should never receive an error
         fn serializeError(self: *Self, reader: GenericReader) SerializerError!types.ZType {
-            const error_message = try self.readLineAlloc(reader);
+            const error_message = try self.takeLineSlice(reader);
 
             if (error_message.len < 1) return error.Unprocessable;
 
             return .{
                 .err = .{
-                    .message = error_message[0 .. error_message.len - 1],
+                    .message = error_message,
                 },
             };
         }
 
         fn serializeMap(self: *Self, reader: GenericReader) SerializerError!types.ZType {
-            const bytes = try self.readLineAlloc(reader);
+            const bytes = try self.takeLineSlice(reader);
 
             if (bytes.len == 0) return error.Unprocessable;
 
-            const entries = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
+            const entries = std.fmt.parseInt(usize, bytes, 10) catch {
                 return error.InvalidLength;
             };
 
@@ -172,11 +172,9 @@ pub fn SerializerT(comptime GenericReader: type) type {
             for (0..entries) |_| {
                 const key = try self.process(reader);
 
-                const active_tag = std.meta.activeTag(key);
-
                 const value = try self.process(reader);
 
-                switch (active_tag) {
+                switch (std.meta.activeTag(key)) {
                     .str => try result.put(key.str, value),
                     .sstr => try result.put(key.sstr, value),
                     else => return error.InvalidKey,
@@ -186,11 +184,11 @@ pub fn SerializerT(comptime GenericReader: type) type {
         }
 
         fn serializeSet(self: *Self, reader: GenericReader) SerializerError!types.ZType {
-            const bytes = try self.readLineAlloc(reader);
+            const bytes = try self.takeLineSlice(reader);
 
             if (bytes.len == 0) return error.Unprocessable;
 
-            const set_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
+            const set_len = std.fmt.parseInt(usize, bytes, 10) catch {
                 return error.InvalidLength;
             };
 
@@ -206,11 +204,11 @@ pub fn SerializerT(comptime GenericReader: type) type {
         }
 
         fn serializeUnorderedSet(self: *Self, reader: GenericReader) SerializerError!types.ZType {
-            const bytes = try self.readLineAlloc(reader);
+            const bytes = try self.takeLineSlice(reader);
 
             if (bytes.len == 0) return error.Unprocessable;
 
-            const set_len = std.fmt.parseInt(usize, bytes[0 .. bytes.len - 1], 10) catch {
+            const set_len = std.fmt.parseInt(usize, bytes, 10) catch {
                 return error.InvalidLength;
             };
 
@@ -225,14 +223,33 @@ pub fn SerializerT(comptime GenericReader: type) type {
             return .{ .uset = uset };
         }
 
-        fn readLineAlloc(self: *Self, reader: GenericReader) SerializerError![]u8 {
-            return reader.readUntilDelimiterAlloc(
-                self.arena.allocator(),
-                '\n',
-                std.math.maxInt(usize),
-            ) catch {
+        fn takeLineSlice(self: *Self, reader: GenericReader) SerializerError![]const u8 {
+            _ = self;
+            const buf = reader.context.buffer;
+            const start_pos = reader.context.pos;
+
+            // Find the position of the newline character '\n' starting from current position
+            const end_pos = std.mem.indexOfScalarPos(u8, buf, start_pos, '\n') orelse {
+                // Return error if no newline is found
+                // This would happen only when malformed input is received
                 return error.Unprocessable;
             };
+            if (end_pos < start_pos) return error.Unprocessable; // sanity check
+
+            // Adjust the end position to skip a carriage return '\r' if it exists before '\n'
+            var line_end = end_pos;
+            if (line_end > start_pos and buf[line_end - 1] == '\r') {
+                line_end -= 1;
+            }
+
+            // Take a slice of the line (without '\r\n' or '\n') from the buffer
+            const line = buf[start_pos..line_end];
+
+            // Move the position past the newline character for the next read
+            reader.context.pos = line_end + 2;
+
+            // Return the slice pointing to the current line (zero-copy)
+            return line;
         }
     };
 }
