@@ -72,14 +72,18 @@ pub fn init(
 pub fn err(self: *Logger, comptime format: []const u8, args: anytype) void {
     const level = .Error;
     if (null != self.agent) {
-        self.agent.?.schedule(logUnpack, .{
+        self.agent.?.schedule(
+            logUnpack,
             .{
-                .logger = self,
-                .level = level,
-                .format = format,
-                .args = args,
+                .{
+                    .logger = self,
+                    .level = level,
+                    .format = format,
+                    .args = args,
+                },
             },
-        }) catch |e| {
+            .{},
+        ) catch |e| {
             std.log.err("# failed to schedule log message: {?}", .{e});
         };
     } else {
@@ -90,14 +94,18 @@ pub fn err(self: *Logger, comptime format: []const u8, args: anytype) void {
 pub fn warn(self: *Logger, comptime format: []const u8, args: anytype) void {
     const level = .Warning;
     if (null != self.agent) {
-        self.agent.?.schedule(logUnpack, .{
+        self.agent.?.schedule(
+            logUnpack,
             .{
-                .logger = self,
-                .level = level,
-                .format = format,
-                .args = args,
+                .{
+                    .logger = self,
+                    .level = level,
+                    .format = format,
+                    .args = args,
+                },
             },
-        }) catch |e| {
+            .{},
+        ) catch |e| {
             std.log.err("# failed to schedule log message: {?}", .{e});
         };
     } else {
@@ -108,14 +116,18 @@ pub fn warn(self: *Logger, comptime format: []const u8, args: anytype) void {
 pub fn info(self: *Logger, comptime format: []const u8, args: anytype) void {
     const level = .Info;
     if (null != self.agent) {
-        self.agent.?.schedule(logUnpack, .{
+        self.agent.?.schedule(
+            logUnpack,
             .{
-                .logger = self,
-                .level = level,
-                .format = format,
-                .args = args,
+                .{
+                    .logger = self,
+                    .level = level,
+                    .format = format,
+                    .args = args,
+                },
             },
-        }) catch |e| {
+            .{},
+        ) catch |e| {
             std.log.err("# failed to schedule log message: {?}", .{e});
         };
     } else {
@@ -126,14 +138,18 @@ pub fn info(self: *Logger, comptime format: []const u8, args: anytype) void {
 pub fn debug(self: *Logger, comptime format: []const u8, args: anytype) void {
     const level = .Debug;
     if (null != self.agent) {
-        self.agent.?.schedule(logUnpack, .{
+        self.agent.?.schedule(
+            logUnpack,
             .{
-                .logger = self,
-                .level = level,
-                .format = format,
-                .args = args,
+                .{
+                    .logger = self,
+                    .level = level,
+                    .format = format,
+                    .args = args,
+                },
             },
-        }) catch |e| {
+            .{},
+        ) catch |e| {
             std.log.err("# failed to schedule log message: {?}", .{e});
         };
     } else {
@@ -202,14 +218,18 @@ pub fn logEvent(self: *Logger, etype: EType, payload: []const u8) void {
         .Request => {
             const format = comptime "> request: {s}";
             if (null != self.agent) {
-                self.agent.?.schedule(logEventUnpack, .{
+                self.agent.?.schedule(
+                    logEventUnpack,
                     .{
-                        .logger = self,
-                        .level = .Info,
-                        .format = format,
-                        .args = .{repr},
+                        .{
+                            .logger = self,
+                            .level = .Info,
+                            .format = format,
+                            .args = .{repr},
+                        },
                     },
-                }) catch |e| {
+                    .{},
+                ) catch |e| {
                     std.log.err("# failed to schedule log message: {?}", .{e});
                 };
             } else {
@@ -223,12 +243,16 @@ pub fn logEvent(self: *Logger, etype: EType, payload: []const u8) void {
         .Response => {
             const format = comptime "< response: {s}";
             if (null != self.agent) {
-                self.agent.?.schedule(logEventUnpack, .{.{
-                    .logger = self,
-                    .level = .Info,
-                    .format = format,
-                    .args = .{repr},
-                }}) catch |e| {
+                self.agent.?.schedule(
+                    logEventUnpack,
+                    .{.{
+                        .logger = self,
+                        .level = .Info,
+                        .format = format,
+                        .args = .{repr},
+                    }},
+                    .{},
+                ) catch |e| {
                     std.log.err("# failed to schedule log message: {?}", .{e});
                 };
             } else {

@@ -40,7 +40,7 @@ pub const ContextFixture = struct {
             .config = try Config.load(allocator, null, null),
             .persistance = null,
             .memory = null,
-            .agent = .init(allocator, &running),
+            .agent = try .init(allocator, &running),
         };
     }
 

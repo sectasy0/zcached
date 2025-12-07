@@ -182,8 +182,6 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
         };
     };
 
-    std.debug.print("{d}\n", .{connection.tx_accumulator.items});
-
     self.context.resources.logger.logEvent(.Response, response);
 }
 

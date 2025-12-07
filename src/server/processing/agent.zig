@@ -6,6 +6,9 @@ pub const Task = struct {
     run: ?*const fn (args: ?*const anyopaque) void,
     destroy: ?*const fn (allocator: std.mem.Allocator, args: ?*const anyopaque) void,
 
+    execute_at: i64 = 0,
+    interval: i64 = 0,
+
     args: ?*const anyopaque,
 
     pub fn executeAndDestroy(self: *Task, allocator: std.mem.Allocator) void {
@@ -24,26 +27,44 @@ pub const Task = struct {
             destroy_fn(allocator, local_args);
         }
     }
+
+    pub fn execute(self: *Task) void {
+        if (self.run) |run| {
+            run(self.args);
+        }
+    }
+
+    pub fn compare(context: void, a: Task, b: Task) std.math.Order {
+        _ = context;
+        return std.math.order(a.execute_at, b.execute_at);
+    }
 };
 
 pub const Queue = struct {
-    const max_tasks = 100;
+    // FIFO for ready to execute tasks
+    ready: std.fifo.LinearFifo(Task, .Dynamic),
+    // Priority queue for delayed tasks, ordered by execute_at,
+    // when the time comes, tasks are moved from delayed to ready.
+    delayed: std.PriorityQueue(Task, void, Task.compare),
 
-    tasks: [max_tasks]?Task,
+    // optional capacity limit for testing reschedule failures; ignored in normal operation
+    capacity: ?usize = null,
+
     lock: std.Thread.Mutex,
 
     not_full: std.Thread.Condition = .{},
     not_empty: std.Thread.Condition = .{},
-    timeout: u64 = std.time.ms_per_s * 100_000,
 
-    // pointers for managing the queue
-    head: usize = 0,
-    tail: usize = 0,
-    count: usize = 0,
+    pub fn init(allocator: std.mem.Allocator) !Queue {
+        return .{
+            .ready = .init(allocator),
+            .delayed = .init(allocator, void{}),
+            .lock = .{},
+        };
+    }
 
-    pub const empty: Queue = .{
-        .tasks = @splat(null),
-        .lock = .{},
+    pub const EnqueueOptions = struct {
+        interval: i64 = 0,
     };
 
     pub fn enqueue(
@@ -51,7 +72,7 @@ pub const Queue = struct {
         allocator: std.mem.Allocator,
         comptime func: anytype,
         args: anytype,
-        // name: []const u8,
+        options: ?EnqueueOptions,
     ) !void {
         self.lock.lock();
         defer self.lock.unlock();
@@ -77,41 +98,34 @@ pub const Queue = struct {
 
         var owned_args_ptr = try takeOwnershipByCloning(allocator, args);
 
-        var retries: usize = 0;
-        const max_retries = 10;
-
-        while (true) {
-            if (self.enqueueInner(.{
-                .run = Wrapper.run,
-                .destroy = Wrapper.destroy,
-                .args = @ptrCast(@alignCast(owned_args_ptr)),
-            })) {
-                break; // Task enqueued successfully
-            } else |err| {
-                switch (err) {
-                    error.Timeout => {
-                        if (retries >= max_retries) {
-                            releaseOwnership(allocator, owned_args_ptr);
-                            return err;
-                        }
-                        retries += 1;
-                        continue; // we need to retry
-                    },
-                }
-            }
+        if (self.enqueueInner(.{
+            .run = Wrapper.run,
+            .destroy = Wrapper.destroy,
+            .execute_at = if (options) |opts| std.time.timestamp() + opts.interval else 0,
+            .interval = if (options) |opts| opts.interval else 0,
+            .args = @ptrCast(@alignCast(owned_args_ptr)),
+        })) {
+            return; // Task enqueued successfully
+        } else |err| {
+            releaseOwnership(allocator, owned_args_ptr);
+            return err;
         }
 
         owned_args_ptr = undefined;
     }
 
     fn enqueueInner(self: *Queue, task: Task) !void {
-        while (max_tasks == self.count) {
-            try self.not_full.timedWait(&self.lock, self.timeout);
+        std.debug.print("# Capacity check: {any}\n", .{self.capacity});
+        if (self.capacity) |cap| {
+            const queue_len = self.ready.count + self.delayed.capacity();
+            if (queue_len >= cap and task.run != null) return error.QueueFull;
         }
 
-        self.tasks[self.tail] = task;
-        self.tail = (self.tail + 1) % max_tasks;
-        self.count += 1;
+        if (task.execute_at > std.time.timestamp()) {
+            try self.delayed.add(task);
+        } else {
+            try self.ready.writeItem(task);
+        }
 
         // Wakeup threads waiting for dequeue
         self.not_empty.broadcast();
@@ -121,19 +135,47 @@ pub const Queue = struct {
         self.lock.lock();
         defer self.lock.unlock();
 
-        while (0 == self.count) {
+        while (true) {
+            if (self.ready.readItem()) |task| {
+                // Wake up threads waiting to enqueue
+                self.not_full.broadcast();
+                return task;
+            }
+
+            if (self.delayed.peek()) |task| {
+                const now = std.time.timestamp();
+                // std.debug.print("# Next delayed task at {d}, now {d}\n", .{ task.execute_at, now });
+
+                if (task.execute_at <= now) {
+                    std.debug.print("# Moving delayed task scheduled at {d} to ready queue\n", .{task.execute_at});
+                    // move to ready queue
+                    // (this might fail if the ready queue is full,
+                    // but that's okay — space will free up soon)
+                    _ = self.ready.writeItem(task) catch {
+                        // if adding to the ready queue failed,
+                        // try returning the task back to the heap
+                        _ = self.delayed.add(task) catch {
+                            // if adding back to the heap failed,
+                            // the task is lost, but there's nothing we can do
+                        };
+                        // wait until space becomes available in the ready queue
+                        self.not_full.wait(&self.lock);
+                        continue;
+                    };
+
+                    _ = self.delayed.remove(); // remove from heap
+
+                    continue;
+                } else {
+                    const wait_ns: u64 = @intCast(task.execute_at - now);
+                    self.not_empty.timedWait(&self.lock, wait_ns) catch {};
+                    continue;
+                }
+            }
+
+            // nothing to do, wait for something to be enqueued
             self.not_empty.wait(&self.lock);
         }
-
-        const task = self.tasks[self.head].?;
-        self.tasks[self.head] = null;
-        self.head = (self.head + 1) % max_tasks;
-        self.count -= 1;
-
-        // Wakeup threads waiting for enqueue
-        self.not_full.broadcast();
-
-        return task;
     }
 
     /// Clones ownership of a struct with string fields using the provided allocator.
@@ -238,18 +280,21 @@ pub const Queue = struct {
         self.lock.lock();
         defer self.lock.unlock();
 
-        var i: usize = 0;
-        while (i < self.count) : (i += 1) {
-            const idx = (self.head + i) % max_tasks;
-            const task = &self.tasks[idx].?;
+        var iter = self.delayed.iterator();
+        while (iter.next()) |task| {
+            if (task.destroy) |destroy| {
+                destroy(allocator, task.args);
+            }
+        }
+        self.delayed.deinit();
+
+        while (self.ready.readItem()) |task| {
             if (task.destroy) |destroy| {
                 destroy(allocator, task.args);
             }
         }
 
-        self.head = 0;
-        self.tail = 0;
-        self.count = 0;
+        self.ready.deinit();
     }
 };
 
@@ -258,6 +303,9 @@ const Self = @This();
 queue: Queue,
 drain_thread: ?std.Thread = null,
 
+reschedule_retries: usize = 5,
+reschedule_retry_delay_ms: u64 = 100,
+
 allocator: std.mem.Allocator,
 running: *std.atomic.Value(bool),
 
@@ -265,9 +313,9 @@ started: std.atomic.Value(bool) = .init(false),
 mutex: std.Thread.Mutex = .{},
 cond: std.Thread.Condition = .{},
 
-pub fn init(allocator: std.mem.Allocator, running: *std.atomic.Value(bool)) Self {
+pub fn init(allocator: std.mem.Allocator, running: *std.atomic.Value(bool)) !Self {
     return .{
-        .queue = .empty,
+        .queue = try .init(allocator),
         .allocator = allocator,
         .running = running,
     };
@@ -285,8 +333,8 @@ pub fn kickoff(self: *Self) !void {
     self.mutex.unlock();
 }
 
-pub fn schedule(self: *Self, comptime func: anytype, args: anytype) !void {
-    try self.queue.enqueue(self.allocator, func, args);
+pub fn schedule(self: *Self, comptime func: anytype, args: anytype, options: ?Queue.EnqueueOptions) !void {
+    try self.queue.enqueue(self.allocator, func, args, options);
 }
 
 pub fn deinit(self: *Self) void {
@@ -333,6 +381,75 @@ fn drain(self: *Self) void {
             return;
         }
 
+        // remember the previous scheduled time (we'll use it to compute the next one
+        // so that we get a "fixed-rate" schedule (less drift) instead of "fixed-delay")
+        const prev_sched = task.execute_at;
+        const interval = task.interval;
+
+        if (interval > 0) {
+            // if enqueue fails, we retry a few times with delay
+            // here: if we cannot reschedule, we assume the task will not be cyclic anymore
+            // and destroy its resources so they don't leak.
+            self.rescheduleCyclic(&task, prev_sched, interval) catch {
+                task.executeAndDestroy(self.allocator);
+                continue;
+            };
+
+            // execute the task (without clearing run)
+            task.execute();
+
+            continue;
+        }
+
+        // if non-cyclic -> execute and destroy resources
         task.executeAndDestroy(self.allocator);
     }
+}
+
+fn rescheduleCyclic(self: *Self, task: *Task, prev_sched: i64, interval: i64) !void {
+    const now = std.time.timestamp();
+
+    // compute next based on the previous schedule -> avoids drift
+    var next = prev_sched + interval;
+
+    std.debug.print(
+        "# Rescheduling cyclic task, next: {d}\n",
+        .{next},
+    );
+
+    // if the system slept and "next" is already in the past, catch up
+    // (compute the smallest next > now)
+    if (next <= now) {
+        // how many intervals have passed?
+        const missed: i64 = @divFloor(now - prev_sched, interval) + 1;
+        next = prev_sched + missed * interval;
+    }
+
+    var rescheduled = task.*;
+    rescheduled.execute_at = next;
+
+    for (0..self.reschedule_retries) |i| {
+        self.queue.lock.lock();
+        const result = self.queue.enqueueInner(rescheduled);
+        self.queue.lock.unlock();
+
+        _ = result catch |err| {
+            std.debug.print(
+                "# Failed to reschedule cyclic task (attempt {d}/{d}): {?}\n",
+                .{ i + 1, self.reschedule_retries, err },
+            );
+
+            // sleep outside of lock
+            std.time.sleep(self.reschedule_retry_delay_ms * std.time.ns_per_ms);
+
+            // recompute next execution to avoid burst execution
+            rescheduled.execute_at = std.time.timestamp() + interval;
+
+            continue;
+        };
+
+        return; // success
+    }
+
+    return error.RescheduleFailed;
 }

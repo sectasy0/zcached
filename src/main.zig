@@ -95,8 +95,7 @@ pub fn main() void {
     handleArguments(result.args) orelse return;
 
     // Background worker
-    var agent: Agent = .init(allocator, &running);
-    defer agent.deinit();
+    var agent: Agent = try .init(allocator, &running);
     agent.kickoff() catch |err| {
         std.log.err("# failed to initialize background agent: {}", .{err});
     };
@@ -181,6 +180,7 @@ pub fn main() void {
     logger.deinit();
     config.deinit();
     result.parser.deinit();
+    agent.deinit();
 
     if (gpa.detectLeaks()) std.posix.exit(255);
 }
