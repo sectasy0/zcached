@@ -9,7 +9,7 @@ test "should not return errors" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
 
-    const whitelist = std.ArrayList(std.net.Address).init(fixture.allocator);
+    const whitelist = std.array_list.Managed(std.net.Address).init(fixture.allocator);
     const previous_whitelist = fixture.config.whitelist;
     defer previous_whitelist.deinit();
 
@@ -27,7 +27,7 @@ test "should return error.NotPermitted" {
     const previous_whitelist = fixture.config.whitelist;
 
     const whitelisted = std.net.Address.initIp4(.{ 192, 168, 0, 2 }, 1234);
-    var whitelist = std.ArrayList(std.net.Address).init(fixture.allocator);
+    var whitelist = std.array_list.Managed(std.net.Address).init(fixture.allocator);
     try whitelist.append(whitelisted);
     defer previous_whitelist.deinit();
 

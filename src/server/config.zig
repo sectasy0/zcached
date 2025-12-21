@@ -1,6 +1,6 @@
 const std = @import("std");
 const utils = @import("utils.zig");
-const NodeIndex = utils.NodeIndex;
+const NodeIndex = std.zig.Ast.Node.Index;
 
 pub const DEFAULT_PATH: []const u8 = "./zcached.conf.zon";
 
@@ -30,6 +30,22 @@ pub const AOFConfig = struct {
         path,
         rewrite_percentage,
         rewrite_min_size,
+    };
+};
+
+pub const AgentConfig = struct {
+    // Default capacity of the background worker queues
+    // Queues size are dynamic, this is just the initial capacity
+    default_capacity: usize = 64,
+    // Number of times to retry rescheduling a task if rescheduling fails
+    reschedule_retries: usize = 5,
+    // Delay between reschedule retries in milliseconds
+    reschedule_retry_delay_ms: u64 = 100,
+
+    const Fields = enum {
+        default_capacity,
+        reschedule_retries,
+        reschedule_retry_delay_ms,
     };
 };
 
@@ -74,8 +90,9 @@ workers: usize = 4,
 
 aof: AOFConfig = .{},
 tls: TLSConfig = .{},
+agent: AgentConfig = .{},
 
-whitelist: std.ArrayList(std.net.Address) = undefined,
+whitelist: std.array_list.Managed(std.net.Address) = undefined,
 max_request_size: usize = 10 * 1024 * 1024, // 0 means unlimited, value in bytes
 
 allocator: std.mem.Allocator,
@@ -98,7 +115,7 @@ pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]c
 
     var config = Config{
         .allocator = allocator,
-        .whitelist = std.ArrayList(std.net.Address).init(allocator),
+        .whitelist = std.array_list.Managed(std.net.Address).init(allocator),
     };
     if (log_path != null) config.loger_path = log_path.?;
 
@@ -124,7 +141,7 @@ pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]c
         allocator,
         file_size,
         null,
-        1,
+        .@"1",
         0,
     );
     defer allocator.free(config_bytes);
@@ -154,7 +171,7 @@ fn processAst(config: *Config, ast: std.zig.Ast) !void {
     var buf: [2]NodeIndex = undefined;
     const root = ast.fullStructInit(
         &buf,
-        ast.nodes.items(.data)[0].lhs,
+        ast.nodes.items(.data)[0].node,
     ) orelse {
         var timestamp: [40]u8 = undefined;
         const t_size = utils.timestampf(&timestamp);
@@ -199,9 +216,11 @@ fn processField(
     ast: std.zig.Ast,
     root: std.zig.Ast.full.StructInit,
     field_name: []const u8,
-    field_idx: u32,
+    field_idx: NodeIndex,
 ) !void {
     const allocator = config.allocator;
+
+    const field_index = @intFromEnum(field_idx);
 
     if (ast.fullStructInit(buf, field_idx)) |v| {
         var object = std.StringArrayHashMapUnmanaged(Node){};
@@ -214,29 +233,31 @@ fn processField(
             const token_index = ast.firstToken(i) - 2;
             const token_name = ast.tokenSlice(token_index);
 
-            const node = ast.nodes.get(i);
+            const index = @intFromEnum(i);
+
+            const node = ast.nodes.get(index);
 
             var timestamp: [40]u8 = undefined;
             const t_size = utils.timestampf(&timestamp);
 
             switch (node.tag) {
                 .number_literal => {
-                    const value = utils.parseNumber(ast, i);
+                    const value = utils.parseNumber(ast, index);
 
                     object.put(allocator, token_name, .{ .int = value.int }) catch |err| {
                         std.debug.print(
-                            "ERROR [{d}] * Failed to put number literal into object: {?}\n",
+                            "ERROR [{s}] * Failed to put number literal into object: {any}\n",
                             .{ timestamp[0..t_size], err },
                         );
                         continue;
                     };
                 },
                 .string_literal => {
-                    const value = try utils.parseString(allocator, ast, i);
+                    const value = try utils.parseString(allocator, ast, index);
 
                     object.put(allocator, token_name, .{ .string = value }) catch |err| {
                         std.debug.print(
-                            "ERROR [{d}] * Failed to put string literal into object: {?}\n",
+                            "ERROR [{s}] * Failed to put string literal into object: {any}\n",
                             .{ timestamp[0..t_size], err },
                         );
                         continue;
@@ -247,7 +268,7 @@ fn processField(
 
                     object.put(allocator, token_name, .{ .@"enum" = value }) catch |err| {
                         std.debug.print(
-                            "ERROR [{d}] * Failed to put enum literal into object: {?}\n",
+                            "ERROR [{s}] * Failed to put enum literal into object: {any}\n",
                             .{ timestamp[0..t_size], err },
                         );
                         continue;
@@ -259,7 +280,7 @@ fn processField(
                     if (std.mem.eql(u8, value, "true")) {
                         object.put(allocator, token_name, .{ .bool = true }) catch |err| {
                             std.debug.print(
-                                "ERROR [{d}] * Failed to put identifier into object: {?}\n",
+                                "ERROR [{s}] * Failed to put identifier into object: {any}\n",
                                 .{ timestamp[0..t_size], err },
                             );
                             continue;
@@ -267,7 +288,7 @@ fn processField(
                     } else {
                         object.put(allocator, token_name, .{ .bool = false }) catch |err| {
                             std.debug.print(
-                                "ERROR [{d}] * Failed to put identifier into object: {?}\n",
+                                "ERROR [{s}] * Failed to put identifier into object: {any}\n",
                                 .{ timestamp[0..t_size], err },
                             );
                             continue;
@@ -276,7 +297,7 @@ fn processField(
                 },
                 else => {
                     std.debug.print(
-                        "WARN [{d}] * Unsupported node tag: {s}, skipping\n",
+                        "WARN [{s}] * Unsupported node tag: {s}, skipping\n",
                         .{ timestamp[0..t_size], @tagName(node.tag) },
                     );
                     continue;
@@ -290,14 +311,15 @@ fn processField(
     }
 
     if (ast.fullArrayInit(buf, field_idx)) |v| {
-        var result: std.ArrayList(std.net.Address) = .init(allocator);
+        var result: std.array_list.Managed(std.net.Address) = .init(allocator);
         errdefer result.deinit();
 
         for (v.ast.elements) |v_idx| {
+            const index = @intFromEnum(v_idx);
             const value = utils.parseString(
                 allocator,
                 ast,
-                v_idx,
+                index,
             ) catch return;
             defer allocator.free(value);
 
@@ -308,7 +330,7 @@ fn processField(
                 var timestamp: [40]u8 = undefined;
                 const t_size = utils.timestampf(&timestamp);
                 std.debug.print(
-                    "ERROR [{d}] * parsing {s} as std.net.Address, {?}\n",
+                    "ERROR [{s}] * parsing {s} as std.net.Address, {any}\n",
                     .{ timestamp[0..t_size], value, err },
                 );
                 return;
@@ -322,8 +344,8 @@ fn processField(
         return;
     }
 
-    const node: u32 = root.ast.fields[field_idx - 1];
-    const info: std.zig.Ast.Node = ast.nodes.get(node);
+    const node: NodeIndex = root.ast.fields[field_index - 1];
+    const info: std.zig.Ast.Node = ast.nodes.get(@intFromEnum(node));
 
     try parseByNodeTag(
         config,
@@ -331,7 +353,7 @@ fn processField(
         field_name,
         ast,
         info,
-        field_idx,
+        field_index,
     );
 }
 
@@ -351,7 +373,7 @@ fn parseByNodeTag(
                     var timestamp: [40]u8 = undefined;
                     const t_size = utils.timestampf(&timestamp);
                     std.debug.print(
-                        "ERROR [{d}] * Failed to parse number literal: {}\n",
+                        "ERROR [{s}] * Failed to parse number literal: {}\n",
                         .{ timestamp[0..t_size], value.failure },
                     );
                     return;
@@ -396,7 +418,7 @@ fn assignFieldValue(config: *Config, field_name: []const u8, value: anytype) !vo
                 var timestamp: [40]u8 = undefined;
                 const t_size = utils.timestampf(&timestamp);
                 std.debug.print(
-                    "ERROR [{s}] * parsing {s} as std.net.Address, {?}\n",
+                    "ERROR [{s}] * parsing {s} as std.net.Address, {any}\n",
                     .{ timestamp[0..t_size], value, err },
                 );
                 return;
@@ -500,14 +522,14 @@ fn assignFieldValue(config: *Config, field_name: []const u8, value: anytype) !vo
                 const t_size = utils.timestampf(&timestamp);
 
                 const field = std.meta.stringToEnum(TLSConfig.Fields, k) orelse {
-                    std.debug.print("[ERROR {d}] Unknown field: {s}\n", .{ timestamp[0..t_size], k });
+                    std.debug.print("[ERROR {s}] Unknown field: {s}\n", .{ timestamp[0..t_size], k });
                     continue;
                 };
 
                 switch (field) {
                     .enabled => {
                         if (std.meta.activeTag(v) != .bool) {
-                            std.debug.print("ERROR [{d}] Unknown enabled type: {any}\n", .{
+                            std.debug.print("ERROR [{s}] Unknown enabled type: {any}\n", .{
                                 timestamp[0..t_size],
                                 v,
                             });
@@ -518,7 +540,7 @@ fn assignFieldValue(config: *Config, field_name: []const u8, value: anytype) !vo
                     },
                     .cert_path => {
                         if (std.meta.activeTag(v) != .string) {
-                            std.debug.print("ERROR [{d}] Unknown cert_path type: {any}\n", .{
+                            std.debug.print("ERROR [{s}] Unknown cert_path type: {any}\n", .{
                                 timestamp[0..t_size],
                                 v,
                             });
@@ -529,7 +551,7 @@ fn assignFieldValue(config: *Config, field_name: []const u8, value: anytype) !vo
                     },
                     .key_path => {
                         if (std.meta.activeTag(v) != .string) {
-                            std.debug.print("ERROR [{d}] Unknown key_path type: {any}\n", .{
+                            std.debug.print("ERROR [{s}] Unknown key_path type: {any}\n", .{
                                 timestamp[0..t_size],
                                 v,
                             });
@@ -543,7 +565,7 @@ fn assignFieldValue(config: *Config, field_name: []const u8, value: anytype) !vo
                             .null, .bool => tls_config.ca_path = null,
                             .string => tls_config.ca_path = v.string,
                             else => {
-                                std.debug.print("ERROR [{d}] Unknown ca_path type: {any}\n", .{
+                                std.debug.print("ERROR [{s}] Unknown ca_path type: {any}\n", .{
                                     timestamp[0..t_size],
                                     v,
                                 });
@@ -553,7 +575,7 @@ fn assignFieldValue(config: *Config, field_name: []const u8, value: anytype) !vo
                     },
                     .verify_mode => {
                         if (std.meta.activeTag(v) != .@"enum") {
-                            std.debug.print("ERROR [{d}] Unknown verify_mode type: {any}\n", .{
+                            std.debug.print("ERROR [{s}] Unknown verify_mode type: {any}\n", .{
                                 timestamp[0..t_size],
                                 v,
                             });
@@ -561,7 +583,7 @@ fn assignFieldValue(config: *Config, field_name: []const u8, value: anytype) !vo
                         }
 
                         const verify_mode = std.meta.stringToEnum(TLSConfig.VerifyMode, v.@"enum") orelse {
-                            std.debug.print("ERROR [{d}] Unknown verify_mode: {s}\n", .{
+                            std.debug.print("ERROR [{s}] Unknown verify_mode: {s}\n", .{
                                 timestamp[0..t_size],
                                 v.string,
                             });
@@ -576,7 +598,7 @@ fn assignFieldValue(config: *Config, field_name: []const u8, value: anytype) !vo
             config.tls = tls_config;
         },
         .whitelist => {
-            if (@TypeOf(value) != std.ArrayList(std.net.Address)) return;
+            if (@TypeOf(value) != std.array_list.Managed(std.net.Address)) return;
 
             const old_whitelist = config.whitelist;
             defer old_whitelist.deinit();

@@ -229,7 +229,7 @@ test "serialize map with various types" {
 
     try hash.put("pimpek", .{ .null = void{} });
 
-    var array = std.ArrayList(types.ZType).init(std.testing.allocator);
+    var array = try std.array_list.Managed(types.ZType).initCapacity(std.testing.allocator, 3);
     defer array.deinit();
 
     try array.append(.{ .bool = true });
@@ -258,7 +258,7 @@ test "serialize array with various types" {
     var handler = try HandlerType.init(std.testing.allocator);
     defer handler.deinit();
 
-    var array = std.ArrayList(types.ZType).init(std.testing.allocator);
+    var array = try std.array_list.Managed(types.ZType).initCapacity(std.testing.allocator, 7);
     defer array.deinit();
 
     const int: types.ZType = .{ .int = 124 };
@@ -277,7 +277,7 @@ test "serialize array with various types" {
     try array.append(fbool);
     try array.append(vnull);
 
-    var second_array = std.ArrayList(types.ZType).init(std.testing.allocator);
+    var second_array = try std.array_list.Managed(types.ZType).initCapacity(std.testing.allocator, 7);
     defer second_array.deinit();
 
     try second_array.append(int);

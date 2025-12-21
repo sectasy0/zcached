@@ -21,9 +21,9 @@ address: std.net.Address,
 /// Static-sized buffer for reading incoming stream data.
 buffer: [consts.CLIENT_BUFFER]u8,
 /// Accumulator for incoming data.
-accumulator: std.ArrayList(u8),
+accumulator: std.array_list.Managed(u8),
 /// Accumulator for outgoing data.
-tx_accumulator: std.ArrayList(u8),
+tx_accumulator: std.array_list.Managed(u8),
 tx_offset: usize = 0,
 
 /// Allocator for dynamic memory use.

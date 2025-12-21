@@ -26,7 +26,7 @@ test "UnknownCommand" {
 
     var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
-    var array = std.ArrayList(ZType).initCapacity(std.testing.allocator, 0) catch {
+    var array = std.array_list.Managed(ZType).initCapacity(std.testing.allocator, 0) catch {
         return error.AllocatorError;
     };
     const args = errors.buildArgs(&array);
@@ -43,7 +43,7 @@ test "UnknownCommand with command name" {
 
     var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
-    var array = std.ArrayList(ZType).initCapacity(std.testing.allocator, 1) catch {
+    var array = std.array_list.Managed(ZType).initCapacity(std.testing.allocator, 1) catch {
         return error.AllocatorError;
     };
     try array.append(.{ .str = "help" });
@@ -91,7 +91,7 @@ test "NotFound with key name" {
 
     var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
-    var array = std.ArrayList(ZType).initCapacity(std.testing.allocator, 2) catch {
+    var array = std.array_list.Managed(ZType).initCapacity(std.testing.allocator, 2) catch {
         return error.AllocatorError;
     };
     try array.append(.{ .str = "help" });

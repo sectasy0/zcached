@@ -107,7 +107,7 @@ test "auto flush when buffer is full" {
     var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
 
-    var output = try std.ArrayList(u8).initCapacity(std.testing.allocator, logger.buffer.items.len);
+    var output = try std.array_list.Managed(u8).initCapacity(std.testing.allocator, logger.buffer.items.len);
     for (0..logger.buffer.items.len) |i| {
         logger.log(.Debug, "{d}", .{i});
 

@@ -128,11 +128,11 @@ pub fn save(self: *Memory) !usize {
     return try self.persister.save(self);
 }
 
-pub fn keys(self: *Memory) !std.ArrayList(types.ZType) {
+pub fn keys(self: *Memory) !std.array_list.Managed(types.ZType) {
     self.lock.lockShared();
     defer self.lock.unlock();
 
-    var result = std.ArrayList(types.ZType).init(self.allocator);
+    var result = std.array_list.Managed(types.ZType).init(self.allocator);
 
     var iter = self.internal.keyIterator();
     while (iter.next()) |key| {

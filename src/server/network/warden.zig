@@ -84,7 +84,7 @@ pub fn setupConnection(self: *Warden, worker: *Worker, incoming: StreamServer.Co
         worker.connections,
     ) catch |err| {
         self.context.resources.logger.err(
-            "# failed to create client struct: {?}",
+            "# failed to create client struct: {any}",
             .{err},
         );
 
@@ -98,7 +98,7 @@ pub fn setupConnection(self: *Warden, worker: *Worker, incoming: StreamServer.Co
 
     worker.states.put(incoming.stream.handle, connection) catch |err| {
         self.context.resources.logger.err(
-            "# failed to put to states: {?}",
+            "# failed to put to states: {any}",
             .{err},
         );
         connection.deinit();
@@ -133,7 +133,7 @@ pub fn dispatch(self: *Warden, worker: *Worker, connection: *Connection) void {
                 },
                 else => {
                     self.context.resources.logger.err(
-                        "Unexpected read error: {?}, disconnecting.",
+                        "Unexpected read error: {any}, disconnecting.",
                         .{err},
                     );
 
@@ -175,7 +175,7 @@ pub fn handleOutgoing(self: *Warden, worker: *Worker, connection: *Connection) v
             },
             else => {
                 self.context.resources.logger.err(
-                    "# failed to write to stream: {?}",
+                    "# failed to write to stream: {any}",
                     .{err},
                 );
                 // if we can't write, close the connection

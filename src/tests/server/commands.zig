@@ -15,7 +15,7 @@ test "should handle SET command" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "SET" });
@@ -35,7 +35,7 @@ test "should SET return error.InvalidCommand when passed 2 args" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "SET" });
@@ -53,7 +53,7 @@ test "should SET return error.InvalidCommand when passed 1 args" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "SET" });
@@ -70,7 +70,7 @@ test "should handle GET command" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try fixture.memory.?.put("key", .{ .str = "value" });
@@ -91,7 +91,7 @@ test "should SET return error.InvalidCommand when missing key" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "GET" });
@@ -109,7 +109,7 @@ test "should handle DELETE command" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "DELETE" });
@@ -127,7 +127,7 @@ test "should return error.NotFound for non existing during DELETE command" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "DELETE" });
@@ -146,7 +146,7 @@ test "should DELETE return error.InvalidCommand when missing key" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "DELETE" });
@@ -164,7 +164,7 @@ test "should handle FLUSH command" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "FLUSH" });
@@ -183,7 +183,7 @@ test "should handle PING command" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "PING" });
@@ -201,7 +201,7 @@ test "should handle DBSIZE command" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "DBSIZE" });
@@ -220,7 +220,7 @@ test "should handle MGET command" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "MGET" });
@@ -244,7 +244,7 @@ test "should handle MSET command" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "MSET" });
@@ -264,7 +264,7 @@ test "should handle MSET return InvalidArgs when empty" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "MSET" });
@@ -281,7 +281,7 @@ test "should handle MSET and return InvalidArgs when not even" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "MSET" });
@@ -299,7 +299,7 @@ test "should handle MSET and return KeyNotString" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "MSET" });
@@ -321,12 +321,12 @@ test "should handle KEYS command" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "KEYS" });
 
-    var expected = std.ArrayList(ZType).init(fixture.allocator);
+    var expected = std.array_list.Managed(ZType).init(fixture.allocator);
     defer expected.deinit();
 
     try expected.append(.{ .str = "key2" });
@@ -345,12 +345,12 @@ test "should handle KEYS command no data in storage" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "KEYS" });
 
-    var expected = std.ArrayList(ZType).init(fixture.allocator);
+    var expected = std.array_list.Managed(ZType).init(fixture.allocator);
     defer expected.deinit();
 
     var result = cmd_handler.process(&command_set);
@@ -369,7 +369,7 @@ test "should handle LASTSAVE command" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "LASTSAVE" });
@@ -385,7 +385,7 @@ test "should SAVE return error.SaveFailure when there is no data" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
     try command_set.append(.{ .str = "SAVE" });
 
@@ -411,7 +411,7 @@ test "should handle SIZEOF command" {
     try my_uset.insert(.{ .int = 50 });
     defer my_uset.deinit();
 
-    var my_array = std.ArrayList(ZType).init(fixture.allocator);
+    var my_array = std.array_list.Managed(ZType).init(fixture.allocator);
     try my_array.append(.{ .bool = false });
     try my_array.append(.{ .bool = true });
     defer my_array.deinit();
@@ -432,7 +432,7 @@ test "should handle SIZEOF command" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     // Strings
@@ -493,7 +493,7 @@ test "should return error.NotFound for non existing during SIZEOF command" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "SIZEOF" });
@@ -510,7 +510,7 @@ test "should handle ECHO command" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "ECHO" });
@@ -532,7 +532,7 @@ test "should ECHO return error.KeyNotString" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "ECHO" });
@@ -550,7 +550,7 @@ test "should handle RENAME command" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "RENAME" });
@@ -570,7 +570,7 @@ test "should RENAME return error.NotFound" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "RENAME" });
@@ -588,7 +588,7 @@ test "should RENAME return error.InvalidCommand" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "RENAME" });
@@ -605,7 +605,7 @@ test "should RENAME return error.KeyNotString" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "RENAME" });
@@ -629,7 +629,7 @@ test "should handle COPY command" {
     try fixture.memory.?.put("test", .{ .int = 10 });
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "COPY" });
@@ -650,7 +650,7 @@ test "should handle COPY command with REPLACE param" {
     try fixture.memory.?.put("test2", .{ .int = 2 });
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "COPY" });
@@ -670,7 +670,7 @@ test "should COPY return error.InvalidCommand" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "COPY" });
@@ -687,7 +687,7 @@ test "should COPY return error.KeyNotString" {
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "COPY" });
@@ -712,7 +712,7 @@ test "should COPY return error.BusyKey" {
     try fixture.memory.?.put("test2", .{ .int = 2 });
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
-    var command_set = std.ArrayList(ZType).init(fixture.allocator);
+    var command_set = std.array_list.Managed(ZType).init(fixture.allocator);
     defer command_set.deinit();
 
     try command_set.append(.{ .str = "COPY" });

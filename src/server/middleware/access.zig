@@ -38,7 +38,7 @@ fn check_whitelist(
 }
 
 // Checks if the provided network address is present in the given whitelist.
-fn is_whitelisted(whitelist: std.ArrayList(std.net.Address), addr: std.net.Address) bool {
+fn is_whitelisted(whitelist: std.array_list.Managed(std.net.Address), addr: std.net.Address) bool {
     for (whitelist.items) |whitelisted| {
         if (std.meta.eql(whitelisted.any.data[2..].*, addr.any.data[2..].*)) return true;
     }

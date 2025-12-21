@@ -125,7 +125,7 @@ pub fn SerializerT(comptime GenericReader: type) type {
                 return error.InvalidLength;
             };
 
-            var result = try std.ArrayList(types.ZType).initCapacity(
+            var result = try std.array_list.Managed(types.ZType).initCapacity(
                 self.arena.allocator(),
                 array_len,
             );

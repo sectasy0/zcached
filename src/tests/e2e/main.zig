@@ -27,7 +27,7 @@ fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
 
 fn sendAndExpect(socket: anytype, command: []const u8, label: []const u8, expected: []const u8, reverse: bool) !void {
     _ = try socket.writeAll(@constCast(command));
-    // std.time.sleep(100_0000); // Give the server some time to respond
+    // std.Thread.sleep(100_0000); // Give the server some time to respond
     const response = try socket.reader().readUntilDelimiterAlloc(
         std.heap.page_allocator,
         consts.EXT_CHAR,
@@ -76,7 +76,7 @@ pub fn runServer(tls: bool) !std.process.Child {
 
     // std.debug.print("Server started with PID: {}, TLS: {}\n", .{ child.id, tls });
 
-    std.time.sleep(1_000_000_000);
+    std.Thread.sleep(1_000_000_000);
 
     return child;
 }
@@ -352,7 +352,7 @@ fn save(socket: anytype) !void {
         false,
     );
 
-    std.time.sleep(1000000000); // Wait for a second to ensure LASTSAVE changes
+    std.Thread.sleep(1000000000); // Wait for a second to ensure LASTSAVE changes
 
     // SAVE command
     try sendAndExpect(
@@ -629,7 +629,7 @@ fn testAdditionalTypes(socket: anytype) !void {
     );
 }
 
-export fn ssl_info_callback(ssl: ?*const openssl.SSL, t: c_int, v: c_int) callconv(.C) void {
+export fn ssl_info_callback(ssl: ?*const openssl.SSL, t: c_int, v: c_int) callconv(.c) void {
     const t_str = switch (t) {
         openssl.SSL_CB_LOOP => "LOOP",
         openssl.SSL_CB_EXIT => "EXIT",
@@ -646,7 +646,7 @@ export fn ssl_info_callback(ssl: ?*const openssl.SSL, t: c_int, v: c_int) callco
     const v_str = if (v == 0) "0" else if (v == 1) "1" else "OTHER";
 
     if (ssl) |ssl_ptr| {
-        std.debug.print("INFO [SSL {x}] SSL_info callback: type={s}, val={s}\n", .{ ssl_ptr, t_str, v_str });
+        std.debug.print("INFO [SSL {any}] SSL_info callback: type={s}, val={s}\n", .{ ssl_ptr, t_str, v_str });
     } else {
         std.debug.print("INFO [SSL NULL] SSL_info callback: type={s}, val={s}\n", .{ t_str, v_str });
     }

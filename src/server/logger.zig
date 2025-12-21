@@ -29,7 +29,7 @@ file: std.fs.File = undefined,
 stdout: ?std.fs.File = undefined,
 log_path: []const u8 = DEFAULT_PATH,
 
-buffer: std.ArrayList(u8),
+buffer: std.array_list.Managed(u8),
 
 sout: bool = undefined,
 
@@ -44,7 +44,7 @@ pub fn init(
         .agent = agent,
         .sout = sout,
         .buffer = try .initCapacity(allocator, buffer_size),
-        .stdout = std.io.getStdErr(),
+        .stdout = std.fs.File.stderr(),
     };
     if (file_path != null) logger.log_path = file_path.?;
     utils.createPath(logger.log_path);
@@ -84,7 +84,7 @@ pub fn err(self: *Logger, comptime format: []const u8, args: anytype) void {
             },
             .{},
         ) catch |e| {
-            std.log.err("# failed to schedule log message: {?}", .{e});
+            std.log.err("# failed to schedule log message: {any}", .{e});
         };
     } else {
         self.log(level, format, args);
@@ -106,7 +106,7 @@ pub fn warn(self: *Logger, comptime format: []const u8, args: anytype) void {
             },
             .{},
         ) catch |e| {
-            std.log.err("# failed to schedule log message: {?}", .{e});
+            std.log.err("# failed to schedule log message: {any}", .{e});
         };
     } else {
         self.log(level, format, args);
@@ -128,7 +128,7 @@ pub fn info(self: *Logger, comptime format: []const u8, args: anytype) void {
             },
             .{},
         ) catch |e| {
-            std.log.err("# failed to schedule log message: {?}", .{e});
+            std.log.err("# failed to schedule log message: {any}", .{e});
         };
     } else {
         self.log(level, format, args);
@@ -150,7 +150,7 @@ pub fn debug(self: *Logger, comptime format: []const u8, args: anytype) void {
             },
             .{},
         ) catch |e| {
-            std.log.err("# failed to schedule log message: {?}", .{e});
+            std.log.err("# failed to schedule log message: {any}", .{e});
         };
     } else {
         self.log(level, format, args);
@@ -174,7 +174,7 @@ pub fn log(self: *Logger, level: LogLevel, comptime format: []const u8, args: an
 
     var buf: [buffer_size]u8 = undefined;
     const message = std.fmt.bufPrint(&buf, format, args) catch |e| {
-        std.log.err("# failed to format log message: {?}", .{e});
+        std.log.err("# failed to format log message: {any}", .{e});
         return;
     };
 
@@ -184,18 +184,18 @@ pub fn log(self: *Logger, level: LogLevel, comptime format: []const u8, args: an
         timestamp[0..t_size],
         message,
     }) catch |e| {
-        std.log.err("# failed to format log message: {?}", .{e});
+        std.log.err("# failed to format log message: {any}", .{e});
         return;
     };
 
-    // if (self.stdout) |stdout| {
-    //     stdout.writeAll(formatted) catch |e| {
-    //         std.log.err("# failed to write log message to stdout: {?}", .{e});
-    //     };
-    // }
+    if (self.stdout) |stdout| {
+        stdout.writeAll(formatted) catch |e| {
+            std.log.err("# failed to write log message to stdout: {any}", .{e});
+        };
+    }
 
     self.buffer.appendSlice(formatted) catch |e| {
-        std.log.err("# failed to buffer log message: {?}", .{e});
+        std.log.err("# failed to buffer log message: {any}", .{e});
         return;
     };
 
@@ -230,7 +230,7 @@ pub fn logEvent(self: *Logger, etype: EType, payload: []const u8) void {
                     },
                     .{},
                 ) catch |e| {
-                    std.log.err("# failed to schedule log message: {?}", .{e});
+                    std.log.err("# failed to schedule log message: {any}", .{e});
                 };
             } else {
                 self.log(
@@ -253,7 +253,7 @@ pub fn logEvent(self: *Logger, etype: EType, payload: []const u8) void {
                     }},
                     .{},
                 ) catch |e| {
-                    std.log.err("# failed to schedule log message: {?}", .{e});
+                    std.log.err("# failed to schedule log message: {any}", .{e});
                 };
             } else {
                 self.log(
@@ -274,12 +274,12 @@ pub fn flush(self: *Logger) void {
     if (self.buffer.items.len == 0) return;
 
     self.file.seekFromEnd(0) catch |e| {
-        std.log.err("# failed to seek log file: {?}", .{e});
+        std.log.err("# failed to seek log file: {any}", .{e});
         return;
     };
 
     _ = self.file.writeAll(self.buffer.items) catch |e| {
-        std.log.err("# failed to write log message: {?}", .{e});
+        std.log.err("# failed to write log message: {any}", .{e});
         return;
     };
 

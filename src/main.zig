@@ -24,7 +24,7 @@ pub const panic = std.debug.FullPanic(panicHandler);
 
 var running: std.atomic.Value(bool) = .init(true);
 
-fn handleSig(sig: c_int) callconv(.C) void {
+fn handleSig(sig: c_int) callconv(.c) void {
     _ = sig; // unused, but required by the signal handler signature
     // we want to stop the server gracefully, and also flush any pending logs
     running.store(false, .seq_cst);
@@ -39,12 +39,12 @@ fn panicHandler(msg: []const u8, first_trace_addr: ?usize) noreturn {
             log.DEFAULT_PATH,
             .{ .truncate = false },
         ) catch |err| {
-            std.log.err("# failed to open log file: {?}", .{err});
+            std.log.err("# failed to open log file: {any}", .{err});
             break :log;
         };
 
         file.seekFromEnd(0) catch |err| {
-            std.log.err("# unable to seek log file eof: {?}", .{err});
+            std.log.err("# unable to seek log file eof: {any}", .{err});
             break :log;
         };
 
@@ -54,8 +54,10 @@ fn panicHandler(msg: []const u8, first_trace_addr: ?usize) noreturn {
         const debug_info = std.debug.getSelfDebugInfo() catch break :log;
         const addr = @returnAddress();
 
+        var buffer: [4096]u8 = undefined;
+        var writer = file.writer(&buffer).interface;
         std.debug.writeCurrentStackTrace(
-            file.writer(),
+            &writer,
             debug_info,
             .no_color,
             addr,
@@ -86,7 +88,7 @@ pub fn main() void {
 
     const result = cli.Parser.parse(allocator) catch {
         cli.Parser.showHelp() catch |err| {
-            std.log.err("# failed to show help: {}", .{err});
+            std.log.err("# failed to show help: {any}", .{err});
             return;
         };
         return;
@@ -97,7 +99,7 @@ pub fn main() void {
     // Background worker
     var agent: Agent = try .init(allocator, &running);
     agent.kickoff() catch |err| {
-        std.log.err("# failed to initialize background agent: {}", .{err});
+        std.log.err("# failed to initialize background agent: {any}", .{err});
     };
 
     var logger = log.Logger.init(
@@ -106,13 +108,13 @@ pub fn main() void {
         result.args.@"log-path",
         result.args.sout,
     ) catch |err| {
-        std.log.err("# failed to initialize logger: {}", .{err});
+        std.log.err("# failed to initialize logger: {any}", .{err});
         return;
     };
 
     var act: std.posix.Sigaction = .{
         .handler = .{ .handler = handleSig },
-        .mask = std.posix.empty_sigset,
+        .mask = 0,
         .flags = 0,
     };
 
@@ -124,7 +126,7 @@ pub fn main() void {
         result.args.@"config-path",
         result.args.@"log-path",
     ) catch |err| {
-        logger.err("# failed to load config: {?}", .{err});
+        logger.err("# failed to load config: {any}", .{err});
         return;
     };
 
@@ -134,7 +136,7 @@ pub fn main() void {
         logger,
         null,
     ) catch |err| {
-        logger.err("# failed to init persistance.Handler: {?}", .{err});
+        logger.err("# failed to init persistance.Handler: {any}", .{err});
         return;
     };
 
@@ -160,7 +162,7 @@ pub fn main() void {
 
     persister.load(&memory) catch |err| {
         if (err != error.FileNotFound) {
-            logger.warn("# failed to restore data from latest .zcpf file: {?}", .{err});
+            logger.warn("# failed to restore data from latest .zcpf file: {any}", .{err});
         }
     };
 
@@ -189,7 +191,7 @@ pub fn main() void {
 fn handleArguments(args: cli.Args) ?void {
     if (args.help) {
         cli.Parser.showHelp() catch |err| {
-            std.log.err("# failed to show help: {}", .{err});
+            std.log.err("# failed to show help: {any}", .{err});
             return null;
         };
         return null;
@@ -197,7 +199,7 @@ fn handleArguments(args: cli.Args) ?void {
 
     if (args.version) {
         cli.Parser.showVersion() catch |err| {
-            std.log.err("# failed to show version: {}", .{err});
+            std.log.err("# failed to show version: {any}", .{err});
             return null;
         };
         return null;
@@ -215,7 +217,7 @@ fn handleArguments(args: cli.Args) ?void {
 }
 
 fn runSupervisor(allocator: std.mem.Allocator, context: Employer.Context) void {
-    context.resources.logger.info("# starting zcached server on tcp://{?} | Workers {}", .{
+    context.resources.logger.info("# starting zcached server on tcp://{any} | Workers {}", .{
         context.config.address,
         context.config.workers,
     });

@@ -178,7 +178,7 @@ test "Set with ZType array" {
     var set = sets.Set(ZType).init(allocator);
     defer set.deinit();
 
-    var arr = ZType.Array.init(allocator);
+    var arr = try ZType.Array.initCapacity(allocator, 2);
     defer arr.deinit();
     try arr.append(ZType{ .int = 1 });
     try arr.append(ZType{ .int = 2 });
@@ -431,7 +431,7 @@ test "SetUnordered with ZType array" {
     var set = sets.SetUnordered(ZType).init(allocator);
     defer set.deinit();
 
-    var arr = ZType.Array.init(allocator);
+    var arr = try ZType.Array.initCapacity(allocator, 2);
     defer arr.deinit();
     try arr.append(ZType{ .int = 1 });
     try arr.append(ZType{ .int = 2 });

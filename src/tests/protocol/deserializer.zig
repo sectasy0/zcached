@@ -92,7 +92,7 @@ test "deserialize simple string" {
 }
 
 test "deserialize array" {
-    var array = std.ArrayList(types.ZType).init(std.testing.allocator);
+    var array = try std.array_list.Managed(types.ZType).initCapacity(std.testing.allocator, 3);
     defer array.deinit();
 
     try array.append(.{ .str = "first" });

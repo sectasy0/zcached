@@ -24,11 +24,13 @@ pub fn build(b: *std.Build) void {
         .name = "zcached",
         // In this case the main source file is merely a path, however, in more
         // complicated build scripts, this could be a generated file.
-        .root_source_file = .{
-            .src_path = .{ .owner = b, .sub_path = "src/main.zig" },
-        },
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = .{
+                .src_path = .{ .owner = b, .sub_path = "src/main.zig" },
+            },
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     exe.root_module.addOptions("build_options", options);
@@ -44,11 +46,13 @@ pub fn build(b: *std.Build) void {
         .name = "zcached_e2e",
         // In this case the main source file is merely a path, however, in more
         // complicated build scripts, this could be a generated file.
-        .root_source_file = .{
-            .src_path = .{ .owner = b, .sub_path = "src/tests/e2e/main.zig" },
-        },
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = .{
+                .src_path = .{ .owner = b, .sub_path = "src/tests/e2e/main.zig" },
+            },
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     e2e.root_module.addOptions("build_options", options);
@@ -84,11 +88,13 @@ pub fn build(b: *std.Build) void {
         .name = "zcached_tls",
         // In this case the main source file is merely a path, however, in more
         // complicated build scripts, this could be a generated file.
-        .root_source_file = .{
-            .src_path = .{ .owner = b, .sub_path = "src/main.zig" },
-        },
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = .{
+                .src_path = .{ .owner = b, .sub_path = "src/main.zig" },
+            },
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     exe_tls.root_module.addOptions("build_options", tls_options);
@@ -156,11 +162,13 @@ pub fn build(b: *std.Build) void {
     // but does not run it.
     const unit_tests = b.addTest(.{
         .name = "zcached-tests",
-        .root_source_file = .{
-            .src_path = .{ .owner = b, .sub_path = "src/test.zig" },
-        },
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = .{
+                .src_path = .{ .owner = b, .sub_path = "src/test.zig" },
+            },
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     unit_tests.root_module.addOptions("build_options", options);

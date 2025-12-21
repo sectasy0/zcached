@@ -37,7 +37,7 @@ pub fn createPath(file_path: []const u8) void {
 
     std.fs.cwd().makePath(path) catch |err| {
         if (err == error.PathAlreadyExists) return;
-        std.log.err("failed to create path: {s} ({?})", .{ path, err });
+        std.log.err("failed to create path: {s} ({any})", .{ path, err });
         return;
     };
 }
@@ -68,17 +68,15 @@ pub fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
     return output;
 }
 
-pub const NodeIndex = std.zig.Ast.Node.Index;
-
 // Parses a string literal from the AST and returns it as a byte slice.
-pub fn parseString(alloc: std.mem.Allocator, ast: std.zig.Ast, idx: NodeIndex) ![]const u8 {
+pub fn parseString(alloc: std.mem.Allocator, ast: std.zig.Ast, idx: u32) ![]const u8 {
     return std.zig.string_literal.parseAlloc(alloc, ast.tokenSlice(
         ast.nodes.items(.main_token)[idx],
     ));
 }
 
 // Parses a numeric literal from the AST and returns it as a Result.
-pub fn parseNumber(ast: std.zig.Ast, idx: NodeIndex) std.zig.number_literal.Result {
+pub fn parseNumber(ast: std.zig.Ast, idx: u32) std.zig.number_literal.Result {
     return std.zig.number_literal.parseNumberLiteral(ast.tokenSlice(
         ast.nodes.items(.main_token)[idx],
     ));

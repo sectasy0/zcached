@@ -161,7 +161,7 @@ test "config load custom values whitelist" {
     try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
     try std.testing.expectEqual(config.max_memory, 0);
 
-    var whitelist = std.ArrayList(std.net.Address).init(std.testing.allocator);
+    var whitelist = std.array_list.Managed(std.net.Address).init(std.testing.allocator);
     defer whitelist.deinit();
 
     try whitelist.append(std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556));

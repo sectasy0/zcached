@@ -9,7 +9,7 @@ const Args = struct {
     key: ?[]const u8 = null,
 };
 
-pub fn buildArgs(command_set: *const std.ArrayList(ZType)) Args {
+pub fn buildArgs(command_set: *const std.array_list.Managed(ZType)) Args {
     var args: Args = Args{};
 
     if (command_set.items.len < 1) return args;

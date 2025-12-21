@@ -78,7 +78,7 @@ pub fn init(allocator: Allocator, context: Context) !Employer {
 pub fn supervise(self: *Employer) void {
     self.server.listen(self.context.config.getAddress()) catch |err| {
         self.context.resources.logger.err(
-            "# failed to run server listener: {?}",
+            "# failed to run server listener: {any}",
             .{err},
         );
     };
@@ -91,7 +91,7 @@ pub fn supervise(self: *Employer) void {
         self.context.resources.logger.sout = true;
 
         self.context.resources.logger.err(
-            "# failed to run server listener: {?}",
+            "# failed to run server listener: {any}",
             .{err},
         );
         self.context.resources.logger.sout = prev_sout;
@@ -113,7 +113,7 @@ pub fn supervise(self: *Employer) void {
         // + 1 becouse first index is always listener fd
         self.workers[i] = Worker.init(allocator, fds_size + 1) catch |err| {
             self.context.resources.logger.err(
-                "# failed to create worker: {?}",
+                "# failed to create worker: {any}",
                 .{err},
             );
             return;
@@ -127,7 +127,7 @@ pub fn supervise(self: *Employer) void {
             .{ &self.workers[i], &listener },
         ) catch |err| {
             self.context.resources.logger.err(
-                "# failed to spawn std.Thread: {?}",
+                "# failed to spawn std.Thread: {any}",
                 .{err},
             );
             return;

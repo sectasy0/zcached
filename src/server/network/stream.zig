@@ -66,6 +66,8 @@ pub const WriteError = error{
 
     NoDevice,
     ProcessNotFound,
+    PermissionDenied,
+    MessageTooBig
 } || std.posix.UnexpectedError;
 
 pub fn StreamT(comptime T: type) type {
@@ -75,7 +77,7 @@ pub fn StreamT(comptime T: type) type {
 
         pub const transport = T;
 
-        pub fn close(self: *StreamT(T)) void {
+        pub fn close(self: *Self) void {
             if (@hasDecl(T, "deinit")) {
                 self.ctx.deinit();
             }
@@ -86,34 +88,35 @@ pub fn StreamT(comptime T: type) type {
             }
         }
 
-        pub const Reader = std.io.Reader(StreamT(T), ReadError, read);
-        pub const Writer = std.io.Writer(StreamT(T), WriteError, write);
+        const Self = @This();
+        pub const Reader = std.io.GenericReader(Self, ReadError, read);
+        pub const Writer = std.io.GenericWriter(Self, WriteError, write);
 
-        pub fn reader(self: StreamT(T)) Reader {
+        pub fn reader(self: Self) Reader {
             return .{ .context = self };
         }
 
-        pub fn writer(self: StreamT(T)) Writer {
+        pub fn writer(self: Self) Writer {
             return .{ .context = self };
         }
 
-        pub fn read(self: StreamT(T), buffer: []u8) ReadError!usize {
+        pub fn read(self: Self, buffer: []u8) ReadError!usize {
             if (buffer.len == 0) return 0;
 
             const ctx_ptr: ?*anyopaque = if (self.ctx) |ctx| blk: {
                 break :blk ctx.ctx;
             } else blk: {
-                break :blk @constCast(@ptrCast(&self.handle));
+                break :blk @ptrCast(@constCast(&self.handle));
             };
 
-            return StreamT(T).transport.read(ctx_ptr, buffer);
+            return Self.transport.read(ctx_ptr, buffer);
         }
 
-        pub fn readAll(s: StreamT(T), buffer: []u8) ReadError!usize {
+        pub fn readAll(s: Self, buffer: []u8) ReadError!usize {
             return readAtLeast(s, buffer, buffer.len);
         }
 
-        pub fn readAtLeast(s: StreamT(T), buffer: []u8, len: usize) ReadError!usize {
+        pub fn readAtLeast(s: Self, buffer: []u8, len: usize) ReadError!usize {
             std.assert(len <= buffer.len);
 
             var index: usize = 0;
@@ -125,19 +128,19 @@ pub fn StreamT(comptime T: type) type {
             return index;
         }
 
-        pub fn write(self: StreamT(T), buffer: []const u8) WriteError!usize {
+        pub fn write(self: Self, buffer: []const u8) WriteError!usize {
             if (buffer.len == 0) return 0;
 
             const ctx_ptr: ?*anyopaque = if (self.ctx) |ctx| blk: {
                 break :blk ctx.ctx;
             } else blk: {
-                break :blk @constCast(@ptrCast(&self.handle));
+                break :blk @ptrCast(@constCast(&self.handle));
             };
 
-            return StreamT(T).transport.write(ctx_ptr, buffer);
+            return Self.transport.write(ctx_ptr, buffer);
         }
 
-        pub fn writeAll(self: StreamT(T), bytes: []const u8) WriteError!void {
+        pub fn writeAll(self: Self, bytes: []const u8) WriteError!void {
             var index: usize = 0;
             while (index < bytes.len) {
                 index += try self.write(bytes[index..]);

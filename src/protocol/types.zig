@@ -17,7 +17,7 @@ pub const ZType = union(enum) {
     // and it will not be stored in Memory but will be returned
     err: ClientError,
 
-    pub const Array = std.ArrayList(ZType);
+    pub const Array = std.array_list.Managed(ZType);
     pub const Map = std.StringHashMap(ZType);
 
     pub const Set = sets.Set(ZType);
@@ -36,7 +36,7 @@ pub fn ztype_copy(value: ZType, allocator: std.mem.Allocator) anyerror!ZType {
         // because we already have it content unless strings and others
         .int, .float, .bool, .null => return value,
         .array => |array| {
-            var result = std.ArrayList(ZType).init(allocator);
+            var result = try std.array_list.Managed(ZType).initCapacity(allocator, array.items.len);
 
             for (array.items) |item| {
                 const copied = try ztype_copy(item, allocator);

@@ -14,8 +14,8 @@ const activeTag = std.meta.activeTag;
 pub const STRING: []const u8 = "Was wir wissen, ist ein Tropfen, was wir nicht wissen, ein Ozean.";
 pub const SIMPLE_STRING: []const u8 = "simple string";
 
-pub fn setup_array(allocator: std.mem.Allocator) !std.ArrayList(types.ZType) {
-    var array = std.ArrayList(types.ZType).init(allocator);
+pub fn setup_array(allocator: std.mem.Allocator) !std.array_list.Managed(types.ZType) {
+    var array = std.array_list.Managed(types.ZType).init(allocator);
     try array.append(.{ .str = STRING });
     try array.append(.{ .sstr = SIMPLE_STRING });
     try array.append(.{ .int = 47 });

@@ -19,7 +19,7 @@ test "test ztype_copy with string" {
 }
 
 test "test ztype_copy with array" {
-    var array = types.ZType.Array.init(std.testing.allocator);
+    var array = try types.ZType.Array.initCapacity(std.testing.allocator, 2);
     defer array.deinit();
 
     try array.append(types.ZType{ .int = 1 });
@@ -85,7 +85,7 @@ test "test ztype_copy with nested structures" {
     defer map.deinit();
     try map.put("nested_key", types.ZType{ .int = 99 });
 
-    var array = types.ZType.Array.init(std.testing.allocator);
+    var array = try types.ZType.Array.initCapacity(std.testing.allocator, 1);
     defer array.deinit();
     try array.append(types.ZType{ .map = map });
 

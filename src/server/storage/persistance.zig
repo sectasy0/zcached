@@ -55,7 +55,7 @@ pub fn save(self: *Handler, memory: *Memory) !usize {
     var serializer = Serializer.init(self.allocator);
     defer serializer.deinit();
 
-    var bytes = std.ArrayList(u8).init(self.allocator);
+    var bytes = std.array_list.Managed(u8).init(self.allocator);
     defer bytes.deinit();
 
     const header = try std.fmt.allocPrint(
@@ -81,10 +81,7 @@ pub fn save(self: *Handler, memory: *Memory) !usize {
         filename,
         .{ .truncate = false },
     ) catch |err| {
-        self.logger.err(
-            "failed to open persistance file: {?}",
-            .{err},
-        );
+        self.logger.err("failed to open persistance file: {any}", .{err});
         return 0;
     };
     defer file.close();
@@ -119,7 +116,7 @@ pub fn load(self: *Handler, memory: *Memory) !void {
 
     const latest = self.getLatestFile(dir) catch |err| {
         self.logger.err(
-            "failed to get latest file from {s}: {?}",
+            "failed to get latest file from {s}: {any}",
             .{ self.path.?, err },
         );
         return;
@@ -137,7 +134,7 @@ pub fn load(self: *Handler, memory: *Memory) !void {
 
     const file = std.fs.cwd().openFile(filename, .{ .mode = .read_only }) catch |err| {
         self.logger.err(
-            "failed to open file {s}: {?}",
+            "failed to open file {s}: {any}",
             .{ filename, err },
         );
         return;

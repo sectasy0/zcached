@@ -52,7 +52,7 @@ pub fn listen(self: *Listener, worker: *Worker) void {
     while (self.context.running.*.load(.seq_cst)) {
         _ = std.posix.poll(worker.poll_fds[warden.start..worker.connections], 1000) catch |err| {
             self.context.resources.logger.err(
-                "# std.os.poll failure: {?}",
+                "# std.os.poll failure: {any}",
                 .{err},
             );
             return;
@@ -72,7 +72,7 @@ pub fn listen(self: *Listener, worker: *Worker) void {
                     if (err == error.WouldBlock) continue;
 
                     self.context.resources.logger.err(
-                        "# accept() failed with: {?}",
+                        "# accept() failed with: {any}",
                         .{err},
                     );
 

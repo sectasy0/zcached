@@ -45,7 +45,7 @@ pub const Handler = struct {
         return Handler{ .allocator = allocator, .context = context };
     }
 
-    pub fn process(self: *Handler, command_set: *const std.ArrayList(ZType)) Result {
+    pub fn process(self: *Handler, command_set: *const std.array_list.Managed(ZType)) Result {
         // first element in command_set is command name and should be always str
         if (command_set.capacity == 0 or command_set.items[0] != .str) {
             return .{ .err = error.UnknownCommand };
@@ -141,7 +141,7 @@ pub const Handler = struct {
         if (self.context.resources.memory.size() == 0) return .{ .err = error.SaveFailure };
 
         const size = self.context.resources.memory.save() catch |err| {
-            self.context.resources.logger.err("# failed to save data: {?}", .{err});
+            self.context.resources.logger.err("# failed to save data: {any}", .{err});
 
             return .{ .err = error.SaveFailure };
         };
@@ -240,8 +240,8 @@ pub const Handler = struct {
     }
 
     // method to free data needs to be freeded, for example keys command
-    // is creating std.ArrayList so it have to be freed after
-    pub fn free(self: *Handler, command_set: *const std.ArrayList(ZType), result: *Result) void {
+    // is creating std.array_list.Managed so it have to be freed after
+    pub fn free(self: *Handler, command_set: *const std.array_list.Managed(ZType), result: *Result) void {
         _ = self;
         const command_type = utils.enumTypeFromStr(CommandType, command_set.items[0].str) orelse return;
 

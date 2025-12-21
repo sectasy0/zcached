@@ -159,7 +159,7 @@ test "enqueue tasks with interval" {
     var counter: usize = 0;
     const Wrapper = struct {
         pub fn foo(args: anytype) void {
-            std.debug.print("Task executed with aaaaaa {d}\n", .{args.value});
+            std.debug.print("Task executed with {d}\n", .{args.value});
             args.counter.* += args.value;
         }
     };
@@ -173,7 +173,7 @@ test "enqueue tasks with interval" {
 
     try agent.kickoff();
 
-    std.time.sleep(3 * std.time.ns_per_s);
+    std.Thread.sleep(3 * std.time.ns_per_s);
     agent.deinit();
     try std.testing.expect(counter >= 2);
 }
@@ -206,7 +206,7 @@ test "cyclic reschedule fails when enqueueInner times out" {
     try agent.kickoff();
 
     // Give some time for the worker to attempt reschedule
-    std.time.sleep(3 * std.time.ns_per_s);
+    std.Thread.sleep(3 * std.time.ns_per_s);
 
     agent.deinit();
 
@@ -242,11 +242,11 @@ test "cyclic reschedule succeeds after retries" {
     try agent.kickoff();
 
     // Give some time for the worker to attempt reschedule
-    std.time.sleep(100 * std.time.ns_per_ms);
+    std.Thread.sleep(100 * std.time.ns_per_ms);
 
     q.capacity = null;
 
-    std.time.sleep(2 * std.time.ns_per_s);
+    std.Thread.sleep(2 * std.time.ns_per_s);
 
     agent.deinit();
 

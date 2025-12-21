@@ -176,7 +176,7 @@ pub const StreamContext = struct {
     }
 };
 
-fn ssl_info_callback(ssl: ?*const openssl.SSL, t: c_int, v: c_int) callconv(.C) void {
+fn ssl_info_callback(ssl: ?*const openssl.SSL, t: c_int, v: c_int) callconv(.c) void {
     _ = ssl;
 
     var timestamp: [40]u8 = undefined;

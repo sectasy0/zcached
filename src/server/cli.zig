@@ -32,7 +32,7 @@ pub const Parser = struct {
     args: Args,
 
     pub fn showHelp() !void {
-        const stdout = std.io.getStdOut().writer();
+        const stdout = std.fs.File.stdout().deprecatedWriter();
         const help_text: []const u8 =
             \\Usage: zcached [OPTIONS]
             \\
@@ -55,7 +55,7 @@ pub const Parser = struct {
     }
 
     pub fn showVersion() !void {
-        const stdout = std.io.getStdOut().writer();
+        const stdout = std.fs.File.stdout().deprecatedWriter();
         const version_text: []const u8 =
             \\zcached 0.0.1
             \\

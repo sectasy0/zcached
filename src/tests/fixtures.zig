@@ -94,13 +94,13 @@ pub const ConfigFile = struct {
     max_request_size: []const u8 = "10485760",
     workers: []const u8 = "4",
     client_buffer: []const u8 = "4096",
-    whitelist: std.ArrayList([]const u8),
+    whitelist: std.array_list.Managed([]const u8),
 
     path: []const u8 = undefined,
 
     pub fn init(path: []const u8) !ConfigFile {
         var config_file = ConfigFile{
-            .whitelist = std.ArrayList([]const u8).init(std.testing.allocator),
+            .whitelist = try std.array_list.Managed([]const u8).initCapacity(std.testing.allocator, 4),
             .path = path,
         };
 

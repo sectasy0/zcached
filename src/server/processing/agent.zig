@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const fifo = @import("fifo.zig");
 const utils = @import("../utils.zig");
 
 pub const Task = struct {
@@ -42,7 +43,7 @@ pub const Task = struct {
 
 pub const Queue = struct {
     // FIFO for ready to execute tasks
-    ready: std.fifo.LinearFifo(Task, .Dynamic),
+    ready: fifo.LinearFifo(Task, .Dynamic),
     // Priority queue for delayed tasks, ordered by execute_at,
     // when the time comes, tasks are moved from delayed to ready.
     delayed: std.PriorityQueue(Task, void, Task.compare),
@@ -115,7 +116,6 @@ pub const Queue = struct {
     }
 
     fn enqueueInner(self: *Queue, task: Task) !void {
-        std.debug.print("# Capacity check: {any}\n", .{self.capacity});
         if (self.capacity) |cap| {
             const queue_len = self.ready.count + self.delayed.capacity();
             if (queue_len >= cap and task.run != null) return error.QueueFull;
@@ -435,12 +435,12 @@ fn rescheduleCyclic(self: *Self, task: *Task, prev_sched: i64, interval: i64) !v
 
         _ = result catch |err| {
             std.debug.print(
-                "# Failed to reschedule cyclic task (attempt {d}/{d}): {?}\n",
+                "# Failed to reschedule cyclic task (attempt {d}/{d}): {any}\n",
                 .{ i + 1, self.reschedule_retries, err },
             );
 
             // sleep outside of lock
-            std.time.sleep(self.reschedule_retry_delay_ms * std.time.ns_per_ms);
+            std.Thread.sleep(self.reschedule_retry_delay_ms * std.time.ns_per_ms);
 
             // recompute next execution to avoid burst execution
             rescheduled.execute_at = std.time.timestamp() + interval;
