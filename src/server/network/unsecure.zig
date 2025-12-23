@@ -11,7 +11,7 @@ pub const StreamContext = struct {
 pub fn read(ctx_ptr: ?*anyopaque, buffer: []u8) Stream.ReadError!usize {
     if (buffer.len == 0 or ctx_ptr == null) return 0;
 
-    const fd: *std.posix.socket_t = @alignCast(@ptrCast(ctx_ptr));
+    const fd: *std.posix.socket_t = @ptrCast(@alignCast(ctx_ptr));
 
     return std.posix.read(fd.*, buffer);
 }
@@ -19,7 +19,7 @@ pub fn read(ctx_ptr: ?*anyopaque, buffer: []u8) Stream.ReadError!usize {
 pub fn write(ctx_ptr: ?*anyopaque, buffer: []const u8) Stream.WriteError!usize {
     if (buffer.len == 0 or ctx_ptr == null) return 0;
 
-    const fd: *std.posix.socket_t = @alignCast(@ptrCast(ctx_ptr));
+    const fd: *std.posix.socket_t = @ptrCast(@alignCast(ctx_ptr));
 
     return std.posix.write(fd.*, buffer);
 }

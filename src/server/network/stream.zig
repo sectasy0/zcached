@@ -67,7 +67,7 @@ pub const WriteError = error{
     NoDevice,
     ProcessNotFound,
     PermissionDenied,
-    MessageTooBig
+    MessageTooBig,
 } || std.posix.UnexpectedError;
 
 pub fn StreamT(comptime T: type) type {
