@@ -114,7 +114,7 @@ pub fn main() void {
 
     var act: std.posix.Sigaction = .{
         .handler = .{ .handler = handleSig },
-        .mask = 0,
+        .mask = std.mem.zeroes(std.posix.sigset_t),
         .flags = 0,
     };
 
