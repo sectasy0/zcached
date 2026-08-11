@@ -169,9 +169,32 @@ const ConfigField = enum {
 
 fn processAst(config: *Config, ast: std.zig.Ast) !void {
     var buf: [2]NodeIndex = undefined;
+    if (ast.errors.len > 0) {
+        var timestamp: [40]u8 = undefined;
+        const t_size = utils.timestampf(&timestamp);
+        std.debug.print(
+            "WARN [{s}] * Failed to parse config, invalid `.zon` file, default values will be used\n",
+            .{timestamp[0..t_size]},
+        );
+
+        return;
+    }
+
+    const root_decls = ast.rootDecls();
+    if (root_decls.len == 0) {
+        var timestamp: [40]u8 = undefined;
+        const t_size = utils.timestampf(&timestamp);
+        std.debug.print(
+            "WARN [{s}] * Failed to parse config, empty `.zon` root, default values will be used\n",
+            .{timestamp[0..t_size]},
+        );
+
+        return;
+    }
+
     const root = ast.fullStructInit(
         &buf,
-        ast.nodes.items(.data)[0].node,
+        root_decls[0],
     ) orelse {
         var timestamp: [40]u8 = undefined;
         const t_size = utils.timestampf(&timestamp);

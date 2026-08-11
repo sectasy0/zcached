@@ -1,17 +1,20 @@
 const std = @import("std");
 
 const Config = @import("../../server/config.zig");
-const DEFAULT_PATH = "./tmp/zcached.conf.zon";
+
+fn testPath(comptime line: u32) []const u8 {
+    return std.fmt.comptimePrint("./tmp/zcached.{d}.conf.zon", .{line});
+}
 
 const fixtures = @import("../fixtures.zig");
 const ConfigFile = fixtures.ConfigFile;
 
 test "config default values ipv4" {
-    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    var config_file = try ConfigFile.init(testPath(@src().line));
     // try config_file.create(std.testing.allocator);
     defer config_file.deinit();
 
-    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
+    var config = try Config.load(std.testing.allocator, config_file.path, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
@@ -24,7 +27,7 @@ test "config default values ipv4" {
 }
 
 test "config load custom values ipv4" {
-    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    var config_file = try ConfigFile.init(testPath(@src().line));
     config_file.address = "192.168.0.1";
     config_file.port = "1234";
     config_file.max_clients = "1024";
@@ -34,7 +37,7 @@ test "config load custom values ipv4" {
     try config_file.create(std.testing.allocator, null);
     defer config_file.deinit();
 
-    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
+    var config = try Config.load(std.testing.allocator, config_file.path, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234);
@@ -47,7 +50,7 @@ test "config load custom values ipv4" {
 }
 
 test "config load custom values ipv6" {
-    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    var config_file = try ConfigFile.init(testPath(@src().line));
     config_file.address = "1fa7:68c4:a912:a3a7:f882:706d:15eb:1fd1";
     config_file.port = "1234";
     config_file.max_clients = "1024";
@@ -57,7 +60,7 @@ test "config load custom values ipv6" {
     try config_file.create(std.testing.allocator, null);
     defer config_file.deinit();
 
-    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
+    var config = try Config.load(std.testing.allocator, config_file.path, null);
     defer config.deinit();
 
     const addr: [16]u8 = .{
@@ -77,7 +80,7 @@ test "config load custom values ipv6" {
 }
 
 test "config load custom values empty port" {
-    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    var config_file = try ConfigFile.init(testPath(@src().line));
     config_file.address = "1fa7:68c4:a912:a3a7:f882:706d:15eb:1fd1";
     // in case there is empty port or another integer value
     // parsing will fail and default values will be loaded.
@@ -86,7 +89,7 @@ test "config load custom values empty port" {
     try config_file.create(std.testing.allocator, null);
     defer config_file.deinit();
 
-    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
+    var config = try Config.load(std.testing.allocator, config_file.path, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
@@ -100,7 +103,7 @@ test "config load custom values empty port" {
 }
 
 test "config load custom values empty address" {
-    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    var config_file = try ConfigFile.init(testPath(@src().line));
     // address will be ignored and port will be loaded
     config_file.address = "";
     config_file.port = "1234";
@@ -108,7 +111,7 @@ test "config load custom values empty address" {
     try config_file.create(std.testing.allocator, null);
     defer config_file.deinit();
 
-    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
+    var config = try Config.load(std.testing.allocator, config_file.path, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 1234);
@@ -122,7 +125,7 @@ test "config load custom values empty address" {
 }
 
 test "config load custom values empty workers" {
-    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    var config_file = try ConfigFile.init(testPath(@src().line));
     config_file.address = "1fa7:68c4:a912:a3a7:f882:706d:15eb:1fd1";
     // in case there is empty port or another integer value
     // parsing will fail and default values will be loaded.
@@ -131,7 +134,7 @@ test "config load custom values empty workers" {
     try config_file.create(std.testing.allocator, null);
     defer config_file.deinit();
 
-    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
+    var config = try Config.load(std.testing.allocator, config_file.path, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
@@ -146,11 +149,11 @@ test "config load custom values empty workers" {
 
 test "config load custom values whitelist" {
     // we alerady have set whitelist in ConfigFile
-    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    var config_file = try ConfigFile.init(testPath(@src().line));
     try config_file.create(std.testing.allocator, null);
     defer config_file.deinit();
 
-    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
+    var config = try Config.load(std.testing.allocator, config_file.path, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
@@ -174,7 +177,7 @@ test "config load custom values whitelist" {
 
 test "config load custom values empty whitelist" {
     // we alerady have set whitelist in ConfigFile
-    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    var config_file = try ConfigFile.init(testPath(@src().line));
 
     const override: []const u8 =
         \\ .{
@@ -192,7 +195,7 @@ test "config load custom values empty whitelist" {
     try config_file.create(std.testing.allocator, override);
     defer config_file.deinit();
 
-    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
+    var config = try Config.load(std.testing.allocator, config_file.path, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 8 }, 7556);
@@ -207,7 +210,7 @@ test "config load custom values empty whitelist" {
 }
 
 test "config load custom values empty whitelist string in zon" {
-    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    var config_file = try ConfigFile.init(testPath(@src().line));
 
     const override: []const u8 =
         \\ .{
@@ -225,7 +228,7 @@ test "config load custom values empty whitelist string in zon" {
     try config_file.create(std.testing.allocator, override);
     defer config_file.deinit();
 
-    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
+    var config = try Config.load(std.testing.allocator, config_file.path, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 8 }, 7556);
@@ -241,7 +244,7 @@ test "config load custom values empty whitelist string in zon" {
 
 test "config load custom values empty whitelist int in zon" {
     // we alerady have set whitelist in ConfigFile
-    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    var config_file = try ConfigFile.init(testPath(@src().line));
 
     const override: []const u8 =
         \\ .{
@@ -259,7 +262,7 @@ test "config load custom values empty whitelist int in zon" {
     try config_file.create(std.testing.allocator, override);
     defer config_file.deinit();
 
-    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
+    var config = try Config.load(std.testing.allocator, config_file.path, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 8 }, 7556);
@@ -274,14 +277,14 @@ test "config load custom values empty whitelist int in zon" {
 }
 
 test "config load custom values only root" {
-    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    var config_file = try ConfigFile.init(testPath(@src().line));
 
     const override: []const u8 = ".{}";
 
     try config_file.create(std.testing.allocator, override);
     defer config_file.deinit();
 
-    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
+    var config = try Config.load(std.testing.allocator, config_file.path, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
@@ -296,14 +299,14 @@ test "config load custom values only root" {
 }
 
 test "config load custom values empty file" {
-    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    var config_file = try ConfigFile.init(testPath(@src().line));
 
     const override: []const u8 = "";
 
     try config_file.create(std.testing.allocator, override);
     defer config_file.deinit();
 
-    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
+    var config = try Config.load(std.testing.allocator, config_file.path, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
@@ -319,7 +322,7 @@ test "config load custom values empty file" {
 
 test "config load custom values missing some fields" {
     // we alerady have set whitelist in ConfigFile
-    var config_file = try ConfigFile.init(DEFAULT_PATH);
+    var config_file = try ConfigFile.init(testPath(@src().line));
 
     const override: []const u8 =
         \\ .{{
@@ -332,7 +335,7 @@ test "config load custom values missing some fields" {
     try config_file.create(std.testing.allocator, override);
     defer config_file.deinit();
 
-    var config = try Config.load(std.testing.allocator, DEFAULT_PATH, null);
+    var config = try Config.load(std.testing.allocator, config_file.path, null);
     defer config.deinit();
 
     const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
