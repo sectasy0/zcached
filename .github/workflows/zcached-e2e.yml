@@ -26,7 +26,7 @@ jobs:
       run: zig build e2e
 
   e2e-macos:
-    runs-on: macos-latest
+    runs-on: macos-15
 
     steps:
       - name: Checkout repository

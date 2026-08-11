@@ -29,7 +29,7 @@ jobs:
         run: zig build -Dtls-enabled=true
 
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-15
 
     steps:
       - name: Checkout repository
@@ -53,6 +53,4 @@ jobs:
         run: zig build
 
       - name: Build (macOS TLS)
-        env:
-          OPENSSL_DIR: $(brew --prefix openssl)
-        run: zig build -Dtls-enabled=true
+        run: OPENSSL_DIR="$(brew --prefix openssl)" zig build -Dtls-enabled=true
