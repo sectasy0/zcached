@@ -4,26 +4,31 @@ description: "Downloads and extracts zig compiler"
 runs:
   using: "composite"
   steps:
-    # Linux
-    - name: Install zig 0.15.2 (Linux)
-      if: runner.os == 'Linux'
+    - name: Install zig 0.15.2
       run: |
-        curl -sSfL https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz | tar -xJ
-      shell: bash
+        set -euo pipefail
+        ZIG_VERSION="0.15.2"
 
-    - name: Add zig to PATH (Linux)
-      if: runner.os == 'Linux'
-      run: echo "${{ github.workspace }}/zig-x86_64-linux-0.15.2" >> $GITHUB_PATH
-      shell: bash
+        case "${RUNNER_OS}-${RUNNER_ARCH}" in
+          Linux-X64)
+            ZIG_TRIPLE="x86_64-linux"
+            ;;
+          Linux-ARM64)
+            ZIG_TRIPLE="aarch64-linux"
+            ;;
+          macOS-X64)
+            ZIG_TRIPLE="x86_64-macos"
+            ;;
+          macOS-ARM64)
+            ZIG_TRIPLE="aarch64-macos"
+            ;;
+          *)
+            echo "Unsupported runner: ${RUNNER_OS}-${RUNNER_ARCH}" >&2
+            exit 1
+            ;;
+        esac
 
-    # macOS
-    - name: Install zig 0.15.2 (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        curl -sSfL https://ziglang.org/download/0.15.2/zig-aarch64-macos-0.15.2.tar.xz | tar -xJ
-      shell: bash
-
-    - name: Add zig to PATH (macOS)
-      if: runner.os == 'macOS'
-      run: echo "${{ github.workspace }}/zig-aarch64-macos-0.15.2" >> $GITHUB_PATH
+        ARCHIVE="zig-${ZIG_TRIPLE}-${ZIG_VERSION}.tar.xz"
+        curl -sSfL "https://ziglang.org/download/${ZIG_VERSION}/${ARCHIVE}" | tar -xJ
+        echo "${GITHUB_WORKSPACE}/zig-${ZIG_TRIPLE}-${ZIG_VERSION}" >> "$GITHUB_PATH"
       shell: bash

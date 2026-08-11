@@ -43,6 +43,9 @@ jobs:
       - name: Install zig
         uses: ./.github/actions/install
 
+      - name: Configure macOS SDK
+        run: echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> $GITHUB_ENV
+
       - name: Lint code
         uses: ./.github/actions/lint
 
