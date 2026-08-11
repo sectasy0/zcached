@@ -182,11 +182,10 @@ test "cyclic reschedule fails when enqueueInner times out" {
     var agent: Agent = try .init(allocator, &running);
     var q = &agent.queue;
 
-    q.capacity = 1;
-
     agent.reschedule_retry_delay_ms = 5;
 
     var counter: usize = 0;
+    var blocker_counter: usize = 0;
 
     const Wrapper = struct {
         pub fn foo(args: anytype) void {
@@ -201,6 +200,17 @@ test "cyclic reschedule fails when enqueueInner times out" {
         .{.{ .counter = &counter }},
         .{ .interval = 1 },
     );
+
+    // Occupy one queue slot with a far-future delayed task so every
+    // cyclic reschedule attempt hits QueueFull while capacity is 1.
+    try q.enqueue(
+        allocator,
+        Wrapper.foo,
+        .{.{ .counter = &blocker_counter }},
+        .{ .interval = 60 },
+    );
+
+    q.capacity = 1;
 
     // Start the worker
     try agent.kickoff();

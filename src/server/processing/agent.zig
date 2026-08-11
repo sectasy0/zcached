@@ -117,7 +117,7 @@ pub const Queue = struct {
 
     fn enqueueInner(self: *Queue, task: Task) !void {
         if (self.capacity) |cap| {
-            const queue_len = self.ready.count + self.delayed.capacity();
+            const queue_len = self.ready.count + self.delayed.count();
             if (queue_len >= cap and task.run != null) return error.QueueFull;
         }
 
@@ -167,7 +167,7 @@ pub const Queue = struct {
 
                     continue;
                 } else {
-                    const wait_ns: u64 = @intCast(task.execute_at - now);
+                    const wait_ns: u64 = @intCast((task.execute_at - now) * std.time.ns_per_s);
                     self.not_empty.timedWait(&self.lock, wait_ns) catch {};
                     continue;
                 }
