@@ -64,12 +64,16 @@ pub const Parser = struct {
     }
 
     pub fn parse(allocator: std.mem.Allocator) !ParserResult {
-        var args = Args{};
-
-        var parser = Parser{ ._allocator = allocator, .args = args };
+        var parser = Parser{ ._allocator = allocator, .args = .{} };
         parser._process_args = try std.process.argsAlloc(allocator);
+        parser.args = try parseArgs(parser._process_args);
 
-        if (parser._process_args.len == 1) return .{ .parser = parser, .args = args };
+        return .{ .parser = parser, .args = parser.args };
+    }
+
+    pub fn parseArgs(process_args: [][:0]u8) !Args {
+        var args = Args{};
+        if (process_args.len == 1) return args;
 
         inline for (std.meta.fields(Args)) |field| {
             const short = try fieldShorthand(field.name);
@@ -77,7 +81,7 @@ pub const Parser = struct {
             const field_args = try argsForField(
                 field,
                 short,
-                parser._process_args,
+                process_args,
             );
             if (field_args != null) {
                 switch (field.type) {
@@ -94,7 +98,7 @@ pub const Parser = struct {
                 }
             }
         }
-        return .{ .parser = parser, .args = args };
+        return args;
     }
 
     pub fn deinit(self: *const Parser) void {
@@ -112,16 +116,17 @@ pub const Parser = struct {
 
     fn argsForField(field: anytype, short: []const u8, args: [][:0]u8) !?[2][]const u8 {
         for (args, 0..) |arg, index| {
-            if (index & 1 == 0) continue;
-            if (arg.len < 2) return error.InvalidArg;
+            if (index == 0 or arg.len < 2 or arg[0] != '-') continue;
 
-            if (std.mem.eql(u8, arg[2..], field.name) or std.mem.eql(u8, arg[1..], short)) {
-                if (args.len > index + 1) {
-                    return .{ field.name, args[index + 1] };
-                } else {
-                    return .{ field.name, "" };
-                }
-            }
+            const is_long = std.mem.startsWith(u8, arg, "--") and
+                std.mem.eql(u8, arg[2..], field.name);
+            const is_short = !std.mem.startsWith(u8, arg, "--") and
+                std.mem.eql(u8, arg[1..], short);
+            if (!is_long and !is_short) continue;
+
+            if (field.type == bool) return .{ field.name, "" };
+            if (args.len > index + 1) return .{ field.name, args[index + 1] };
+            return .{ field.name, "" };
         }
         return null;
     }

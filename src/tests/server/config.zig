@@ -348,3 +348,29 @@ test "config load custom values missing some fields" {
 
     try std.testing.expectEqual(config.whitelist.items.len, 0);
 }
+
+test "config loads AOF strategy path and rewrite thresholds" {
+    var config_file = try ConfigFile.init(testPath(@src().line));
+
+    const override: []const u8 =
+        \\ .{
+        \\     .aof = .{
+        \\         .flush_strategy = .auto,
+        \\         .path = "./tmp/test-appendonly.aof",
+        \\         .rewrite_percentage = 50,
+        \\         .rewrite_min_size = 1024,
+        \\     },
+        \\ }
+    ;
+
+    try config_file.create(std.testing.allocator, override);
+    defer config_file.deinit();
+
+    var config = try Config.load(std.testing.allocator, config_file.path, null);
+    defer config.deinit();
+
+    try std.testing.expectEqual(Config.AOFConfig.FlushStrategy.auto, config.aof.flush_strategy);
+    try std.testing.expectEqualStrings("./tmp/test-appendonly.aof", config.aof.path.?);
+    try std.testing.expectEqual(@as(u32, 50), config.aof.rewrite_percentage);
+    try std.testing.expectEqual(@as(usize, 1024), config.aof.rewrite_min_size);
+}

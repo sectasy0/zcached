@@ -1,7 +1,6 @@
 const std = @import("std");
 const io = std.io;
 const mem = std.mem;
-const os = std.os;
 const posix = std.posix;
 
 const Config = @import("../config.zig");
@@ -83,7 +82,9 @@ pub fn init(options: Options) !StreamServer {
 
 /// Release all resources. The `StreamServer` memory becomes `undefined`.
 pub fn deinit(self: *StreamServer) void {
-    if (self.tls_ctx) |ctx| ctx.deinit();
+    if (comptime build_options.tls_enabled) {
+        if (self.tls_ctx) |ctx| ctx.deinit();
+    }
     self.close();
     self.* = undefined;
 }
@@ -130,7 +131,7 @@ pub fn listen(self: *StreamServer, address: std.net.Address) !void {
 /// not listening.
 pub fn close(self: *StreamServer) void {
     if (self.sockfd) |fd| {
-        os.closeSocket(fd);
+        posix.close(fd);
         self.sockfd = null;
         self.listen_address = undefined;
     }

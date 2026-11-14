@@ -10,13 +10,15 @@ comptime {
 
     // // server
     _ = @import("tests/server/config.zig");
+    _ = @import("tests/server/cli.zig");
+    _ = @import("tests/server/fifo.zig");
     _ = @import("tests/server/logger.zig");
     _ = @import("server/tracing.zig");
-    // _ = @import("src/server/cli.zig");
     _ = @import("tests/server/utils.zig");
 
     // server - network
     _ = @import("tests/server/connection.zig");
+    _ = @import("tests/server/stream_server.zig");
     // _ = @import("src/server/listener.zig");
 
     // server - processing
