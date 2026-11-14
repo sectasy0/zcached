@@ -38,6 +38,7 @@ pub const Handler = struct {
     allocator: std.mem.Allocator,
 
     context: Context,
+    pending_command: ?[]const ZType = null,
 
     pub const Result = union(enum) { ok: ZType, err: anyerror };
 
@@ -46,6 +47,9 @@ pub const Handler = struct {
     }
 
     pub fn process(self: *Handler, command_set: *const std.array_list.Managed(ZType)) Result {
+        self.pending_command = command_set.items;
+        defer self.pending_command = null;
+
         // first element in command_set is command name and should be always str
         if (command_set.capacity == 0 or command_set.items[0] != .str) {
             return .{ .err = error.UnknownCommand };
@@ -119,6 +123,7 @@ pub const Handler = struct {
             return .{ .err = err };
         };
 
+        self.appendMutation() catch |err| return .{ .err = err };
         return .{ .ok = .{ .sstr = "OK" } };
     }
 
@@ -126,6 +131,7 @@ pub const Handler = struct {
         const result = self.context.resources.memory.delete(key.str);
 
         if (result) {
+            self.appendMutation() catch |err| return .{ .err = err };
             return .{ .ok = .{ .sstr = "OK" } };
         } else {
             return .{ .err = error.NotFound };
@@ -134,6 +140,7 @@ pub const Handler = struct {
 
     fn flush(self: *Handler) Result {
         self.context.resources.memory.flush();
+        self.appendMutation() catch |err| return .{ .err = err };
         return .{ .ok = .{ .sstr = "OK" } };
     }
 
@@ -182,6 +189,9 @@ pub const Handler = struct {
             self.context.resources.memory.put(entry.str, value) catch |err| {
                 return .{ .err = err };
             };
+
+            const set_command = [_]ZType{ .{ .str = "SET" }, entry, value };
+            self.appendCommand(&set_command) catch |err| return .{ .err = err };
         }
         return .{ .ok = .{ .sstr = "OK" } };
     }
@@ -216,6 +226,7 @@ pub const Handler = struct {
             return .{ .err = err };
         };
 
+        self.appendMutation() catch |err| return .{ .err = err };
         return .{ .ok = .{ .sstr = "OK" } };
     }
 
@@ -236,7 +247,18 @@ pub const Handler = struct {
         self.context.resources.memory.copy(entries[0].str, entries[1].str, replace) catch |err| {
             return .{ .err = err };
         };
+        self.appendMutation() catch |err| return .{ .err = err };
         return .{ .ok = .{ .str = "OK" } };
+    }
+
+    fn appendMutation(self: *Handler) !void {
+        const command = self.pending_command orelse return error.InvalidCommand;
+        try self.appendCommand(command);
+    }
+
+    fn appendCommand(self: *Handler, command: []const ZType) !void {
+        const aof = self.context.resources.aof orelse return;
+        try aof.appendCommand(command);
     }
 
     // method to free data needs to be freeded, for example keys command

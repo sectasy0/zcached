@@ -54,6 +54,7 @@
         // Path to the AOF file
         .path = "./data/appendonly.aof",
 
+        // Options below are only relevant for .flush_strategy = .auto
         // Trigger background rewrite when AOF grows by this percentage
         // relative to the size after the last rewrite
         .rewrite_percentage = 100,

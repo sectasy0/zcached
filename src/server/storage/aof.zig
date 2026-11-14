@@ -10,6 +10,7 @@ const types = @import("../../protocol/types.zig");
 const builtin = @import("builtin");
 
 const protocol_handler = @import("../../protocol/handler.zig");
+const Deserializer = @import("../../protocol/deserializer.zig").Deserializer;
 const Commands = @import("../processing/commands.zig");
 const Self = @This();
 
@@ -45,6 +46,10 @@ pub const Strategy = Config.AOFConfig.FlushStrategy;
 const Protocol = protocol_handler.ProtocolHandlerT(std.io.FixedBufferStream([]u8).Reader);
 
 journal: std.fs.File,
+path: []const u8,
+mutex: std.Thread.Mutex = .{},
+flush_thread: ?std.Thread = null,
+flush_running: std.atomic.Value(bool) = .init(false),
 /// Normal buffer for new writes.
 buffer: std.array_list.Managed(u8),
 
@@ -69,13 +74,18 @@ context: Context,
 allocator: std.mem.Allocator,
 
 pub fn init(allocator: std.mem.Allocator, context: Context) !Self {
-    const journal = try std.fs.cwd().createFile(
-        AOF_PATH,
-        .{ .truncate = false },
-    );
+    const path = context.config.aof.path orelse AOF_PATH;
+    @import("../utils.zig").createPath(path);
+    const journal = std.fs.cwd().openFile(path, .{ .mode = .read_write }) catch |err| switch (err) {
+        error.FileNotFound => try std.fs.cwd().createFile(path, .{ .read = true, .truncate = false }),
+        else => return err,
+    };
+    try journal.seekFromEnd(0);
+    const current_size: usize = @intCast((try journal.stat()).size);
 
     var aof: Self = .{
         .journal = journal,
+        .path = path,
         .strategy = context.config.aof.flush_strategy,
         .context = context,
         .buffer = try std.array_list.Managed(u8).initCapacity(
@@ -88,6 +98,7 @@ pub fn init(allocator: std.mem.Allocator, context: Context) !Self {
         ),
         .queue = try Queue.init(allocator),
         .allocator = allocator,
+        .size = .init(current_size),
     };
 
     if (builtin.is_test) {
@@ -100,6 +111,9 @@ pub fn init(allocator: std.mem.Allocator, context: Context) !Self {
 pub fn append(self: *Self, command: []const u8) !void {
     if (command.len == 0 or self.strategy == .no) return;
 
+    self.mutex.lock();
+    defer self.mutex.unlock();
+
     defer {
         if (self.buffer.items.len > BUFFER_MAX_SIZE) {
             self.context.resources.logger.debug(
@@ -111,35 +125,34 @@ pub fn append(self: *Self, command: []const u8) !void {
     }
 
     try self.buffer.appendSlice(command);
-    _ = self.size.fetchAdd(command.len, .seq_cst);
-
+    var appended_size = command.len;
     if (command[command.len - 1] != consts.EXT_CHAR) {
         try self.buffer.append(consts.EXT_CHAR);
+        appended_size += 1;
     }
+    _ = self.size.fetchAdd(appended_size, .seq_cst);
 
     if (self.rewrite_in_progress.load(.seq_cst)) {
+        try self.queue.enqueue(self.buffer.items);
+        self.buffer.clearRetainingCapacity();
         return;
     }
 
     switch (self.strategy) {
-        .always => try self.flush(),
+        .always => try self.flushLocked(),
         .auto => {
             const threshold_reached = self.buffer.items.len >= AUTO_FLUSH_THRESHOLD;
             if (threshold_reached) {
-                try self.flush();
+                try self.flushLocked();
             }
         },
         .everysec => {
-            // 操他妈的，把数据写进他妈的队列
+            // Buffered data is flushed by the periodic background thread.
         },
         .no => return,
     }
 
     if (self.rewriteNeeded()) {
-        self.size.store(0, .seq_cst);
-
-        std.debug.print("AOF buffer stats: {any} / {d}", .{ self.rewriteNeeded(), self.size.load(.seq_cst) });
-
         self.queue.enqueue(self.buffer.items) catch |err| {
             self.context.resources.logger.log(
                 .Error,
@@ -155,18 +168,47 @@ pub fn append(self: *Self, command: []const u8) !void {
             Self.rewrite,
             .{self},
         );
+        self.size.store(0, .seq_cst);
+    }
+}
+
+pub fn appendCommand(self: *Self, command_items: []const types.ZType) !void {
+    if (command_items.len == 0 or self.strategy == .no) return;
+
+    var command = std.array_list.Managed(types.ZType).init(self.allocator);
+    defer command.deinit();
+    try command.appendSlice(command_items);
+
+    var deserializer = Deserializer.init(self.allocator);
+    defer deserializer.deinit();
+
+    const bytes = try deserializer.process(.{ .array = command });
+    try self.append(bytes);
+}
+
+pub fn start(self: *Self) !void {
+    if (self.strategy != .everysec) return;
+    self.flush_running.store(true, .seq_cst);
+    self.flush_thread = std.Thread.spawn(.{}, Self.flushLoop, .{self}) catch |err| {
+        self.flush_running.store(false, .seq_cst);
+        return err;
+    };
+}
+
+fn flushLoop(self: *Self) void {
+    while (self.flush_running.load(.seq_cst)) {
+        std.Thread.sleep(std.time.ns_per_s);
+        if (!self.flush_running.load(.seq_cst)) break;
+        self.flush() catch |err| {
+            self.context.resources.logger.err("# failed to flush AOF file: {any}", .{err});
+        };
     }
 }
 
 pub fn replay(self: *Self) !void {
-    // read file, allocate memory for it, then parse it
-    const journal = try std.fs.cwd().createFile(
-        AOF_PATH,
-        .{
-            .truncate = false,
-            .read = true,
-        },
-    );
+    if (self.strategy == .no) return;
+
+    const journal = try std.fs.cwd().openFile(self.path, .{ .mode = .read_only });
     defer journal.close();
 
     const size = (try journal.stat()).size;
@@ -176,16 +218,22 @@ pub fn replay(self: *Self) !void {
     var buffer = try self.allocator.alloc(u8, size);
     defer self.allocator.free(buffer);
 
-    const readed_size = try journal.read(buffer);
-    if (readed_size != size) return error.InvalidFile;
+    var readed_size: usize = 0;
+    while (readed_size < buffer.len) {
+        const bytes_read = try journal.read(buffer[readed_size..]);
+        if (bytes_read == 0) return error.InvalidFile;
+        readed_size += bytes_read;
+    }
 
     var stream = std.io.fixedBufferStream(buffer[0..buffer.len]);
     const reader = stream.reader();
 
-    var protocol: Protocol = try .init(self.allocator);
+    var protocol: Protocol = try Protocol.init(self.allocator);
     defer protocol.deinit();
 
-    var handler: Commands.Handler = .init(self.allocator, self.context);
+    var replay_context = self.context;
+    replay_context.resources.aof = null;
+    var handler: Commands.Handler = .init(self.allocator, replay_context);
 
     var replayed_commands: usize = 0;
     while (true) {
@@ -229,6 +277,8 @@ pub fn replay(self: *Self) !void {
 
 pub fn rewrite(self: *Self) void {
     self.rewrite_in_progress.store(true, .seq_cst);
+    self.mutex.lock();
+    defer self.mutex.unlock();
     self.rewrite_mutex.lock();
     defer self.rewrite_mutex.unlock();
 
@@ -240,8 +290,6 @@ pub fn rewrite(self: *Self) void {
 
     defer {
         self.rewrite_in_progress.store(false, .seq_cst);
-
-        self.last_rewrite_size.store(self.rewrite_buffer.items.len, .seq_cst);
 
         if (self.rewrite_buffer.capacity > REWRITE_BUFFER_MAX_SIZE) {
             // If rewrite buffer exceeds max size, shrink it to the default size
@@ -260,7 +308,6 @@ pub fn rewrite(self: *Self) void {
         );
 
         self.rewrite_buffer.clearRetainingCapacity();
-        self.buffer.clearRetainingCapacity();
         self.rewrite_thread = null;
     }
 
@@ -269,19 +316,14 @@ pub fn rewrite(self: *Self) void {
         self.test_event.?.wait();
     }
 
-    // Nothing to rewrite, exiting
-    if (self.context.resources.memory.internal.count() == 0) {
-        self.context.resources.logger.log(
-            .Debug,
-            "# No data to rewrite, exiting AOF rewrite",
-            .{},
-        );
+    const rewritten_path = std.fmt.allocPrint(self.allocator, "{s}.rewrite", .{self.path}) catch |err| {
+        self.context.resources.logger.log(.Error, "# Failed to create rewrite path: {}", .{err});
         return;
-    }
-
+    };
+    defer self.allocator.free(rewritten_path);
     const rewritten = std.fs.cwd().createFile(
-        "aof_rewritten.log",
-        .{ .truncate = false },
+        rewritten_path,
+        .{ .truncate = true },
     ) catch |err| {
         self.context.resources.logger.log(
             .Error,
@@ -290,11 +332,16 @@ pub fn rewrite(self: *Self) void {
         );
         return;
     };
+    var rewrite_installed = false;
+    defer if (!rewrite_installed) rewritten.close();
 
     self.context.resources.memory.lock.lock();
     defer self.context.resources.memory.lock.unlock();
 
-    var handler: Protocol = try .init(self.allocator);
+    var handler: Protocol = Protocol.init(self.allocator) catch |err| {
+        self.context.resources.logger.log(.Error, "# Failed to initialize AOF rewrite serializer: {}", .{err});
+        return;
+    };
     defer handler.deinit();
 
     var iterator = self.context.resources.memory.internal.iterator();
@@ -371,10 +418,11 @@ pub fn rewrite(self: *Self) void {
         );
         return;
     };
+    const rewritten_size = self.rewrite_buffer.items.len;
 
     var delete_error = false;
     const old_journal = self.journal;
-    std.fs.cwd().deleteFile(AOF_PATH) catch |err| {
+    std.fs.cwd().deleteFile(self.path) catch |err| {
         self.context.resources.logger.log(
             .Error,
             "# Failed to delete old AOF file: {}",
@@ -385,7 +433,7 @@ pub fn rewrite(self: *Self) void {
 
     if (!delete_error) old_journal.close();
 
-    std.fs.cwd().rename("aof_rewritten.log", AOF_PATH) catch |err| {
+    std.fs.cwd().rename(rewritten_path, self.path) catch |err| {
         self.context.resources.logger.log(
             .Error,
             "# Failed to rename rewritten AOF file: {}",
@@ -395,6 +443,10 @@ pub fn rewrite(self: *Self) void {
     };
 
     self.journal = rewritten;
+    rewrite_installed = true;
+    self.last_rewrite_size.store(rewritten_size, .seq_cst);
+    self.size.store(rewritten_size, .seq_cst);
+    self.buffer.clearRetainingCapacity();
 }
 
 fn writeInChunks(self: *Self, command: []u8, available: usize, start_pos: usize) !usize {
@@ -427,6 +479,13 @@ fn writeInChunks(self: *Self, command: []u8, available: usize, start_pos: usize)
 }
 
 pub fn flush(self: *Self) !void {
+    self.mutex.lock();
+    defer self.mutex.unlock();
+
+    try self.flushLocked();
+}
+
+fn flushLocked(self: *Self) !void {
     if (self.buffer.items.len == 0) return;
 
     if (self.rewrite_in_progress.load(.seq_cst)) {
@@ -487,11 +546,11 @@ fn rewriteNeeded(self: *Self) bool {
     const growth = current_size - last_size;
 
     // Safe growth percentage check without overflow
-    if (growth * 100 >= last_size * rewrite_percentage) {
+    if (@as(u128, growth) * 100 >= @as(u128, last_size) * rewrite_percentage) {
         self.context.resources.logger.log(
             .Info,
             "# AOF rewrite needed, current size: {d}, last rewrite size: {d}, growth: {d} ({d}%)",
-            .{ current_size, last_size, growth, (growth * 100) / last_size },
+            .{ current_size, last_size, growth, (@as(u128, growth) * 100) / @as(u128, last_size) },
         );
         return true;
     }
@@ -500,9 +559,23 @@ fn rewriteNeeded(self: *Self) bool {
 }
 
 pub fn deinit(self: *Self) void {
+    self.flush_running.store(false, .seq_cst);
+    if (self.flush_thread) |thread| {
+        thread.join();
+        self.flush_thread = null;
+    }
+    self.mutex.lock();
+    const rewrite_thread = self.rewrite_thread;
+    self.mutex.unlock();
+    if (rewrite_thread) |thread| thread.join();
+
+    self.flush() catch |err| {
+        self.context.resources.logger.err("# failed to flush AOF during shutdown: {any}", .{err});
+    };
     self.buffer.deinit();
     self.rewrite_buffer.deinit();
-    // self.journal.close();
+    self.queue.deinit();
+    self.journal.close();
 }
 
 const Queue = struct {

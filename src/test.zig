@@ -29,7 +29,7 @@ comptime {
     _ = @import("tests/server/access.zig");
 
     // // // server - storage
-    // // // _ = @import("tests/server/aof.zig");
     _ = @import("tests/server/memory.zig");
     _ = @import("tests/server/persistance.zig");
+    _ = @import("tests/server/aof.zig");
 }

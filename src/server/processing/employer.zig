@@ -14,12 +14,22 @@ const utils = @import("../utils.zig");
 
 // Storage and processing
 const Memory = @import("../storage/memory.zig");
+const ZType = @import("../../protocol/types.zig").ZType;
 
 // Processing
 const Worker = @import("./worker.zig");
 const Agent = @import("./agent.zig");
 
 const Employer = @This();
+
+pub const AOFWriter = struct {
+    ptr: *anyopaque,
+    append_command: *const fn (ptr: *anyopaque, command: []const ZType) anyerror!void,
+
+    pub fn appendCommand(self: AOFWriter, command: []const ZType) anyerror!void {
+        try self.append_command(self.ptr, command);
+    }
+};
 
 const AllocT = std.heap.GeneralPurposeAllocator(.{});
 
@@ -42,6 +52,7 @@ pub const Context = struct {
     /// Runtime resources used by functions.
     pub const Resources = struct {
         memory: *Memory,
+        aof: ?AOFWriter = null,
         logger: *Logger,
         agent: *Agent,
     };

@@ -16,6 +16,7 @@ const Agent = @import("server/processing/agent.zig");
 // Storage / memory
 const Memory = @import("server/storage/memory.zig");
 const persistance = @import("server/storage/persistance.zig");
+const AOF = @import("server/storage/aof.zig");
 
 // Tracing
 const TracingAllocator = @import("server/tracing.zig");
@@ -23,6 +24,11 @@ const TracingAllocator = @import("server/tracing.zig");
 pub const panic = std.debug.FullPanic(panicHandler);
 
 var running: std.atomic.Value(bool) = .init(true);
+
+fn appendAOFCommand(ptr: *anyopaque, command: []const @import("protocol/types.zig").ZType) anyerror!void {
+    const aof: *AOF = @ptrCast(@alignCast(ptr));
+    try aof.appendCommand(command);
+}
 
 fn handleSig(sig: c_int) callconv(.c) void {
     _ = sig; // unused, but required by the signal handler signature
@@ -166,18 +172,39 @@ pub fn main() void {
         }
     };
 
-    const context = Employer.Context{
+    var context = Employer.Context{
         .config = &config,
         .resources = .{
             .memory = &memory,
+            .aof = null,
             .logger = &logger,
             .agent = &agent,
         },
         .running = &running,
     };
 
+    var aof = AOF.init(allocator, context) catch |err| {
+        logger.err("# failed to initialize AOF: {any}", .{err});
+        return;
+    };
+    context.resources.aof = .{
+        .ptr = &aof,
+        .append_command = appendAOFCommand,
+    };
+
+    aof.replay() catch |err| {
+        logger.warn("# failed to replay AOF file: {any}", .{err});
+    };
+
+    aof.start() catch |err| {
+        logger.err("# failed to start AOF flush thread: {any}", .{err});
+        aof.deinit();
+        return;
+    };
+
     runSupervisor(allocator, context);
 
+    aof.deinit();
     persister.deinit();
     logger.deinit();
     config.deinit();
