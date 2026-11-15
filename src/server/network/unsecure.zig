@@ -1,4 +1,5 @@
 const Stream = @import("stream.zig");
+const runtime_io = @import("runtime_io");
 
 const std = @import("std");
 
@@ -21,5 +22,7 @@ pub fn write(ctx_ptr: ?*anyopaque, buffer: []const u8) Stream.WriteError!usize {
 
     const fd: *std.posix.socket_t = @ptrCast(@alignCast(ctx_ptr));
 
-    return std.posix.write(fd.*, buffer);
+    const file: std.Io.File = .{ .handle = fd.*, .flags = .{ .nonblocking = false } };
+    var data: [1][]const u8 = .{buffer};
+    return file.writeStreaming(runtime_io.get(), &.{}, &data, 1);
 }

@@ -4,10 +4,10 @@ description: "Downloads and extracts zig compiler"
 runs:
   using: "composite"
   steps:
-    - name: Install zig 0.15.2
+    - name: Install zig 0.16.0
       run: |
         set -euo pipefail
-        ZIG_VERSION="0.15.2"
+        ZIG_VERSION="0.16.0"
 
         case "${RUNNER_OS}-${RUNNER_ARCH}" in
           Linux-X64)

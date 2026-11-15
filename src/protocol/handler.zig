@@ -4,8 +4,9 @@ const os = std.os;
 const types = @import("types.zig");
 const SerializerT = @import("serializer.zig").SerializerT;
 const Deserializer = @import("deserializer.zig").Deserializer;
+const fixed_buffer_stream = @import("fixed_buffer_stream.zig");
 
-pub const ProtocolHandler = ProtocolHandlerT(*const std.net.Stream.Reader);
+pub const ProtocolHandler = ProtocolHandlerT(fixed_buffer_stream.FixedBufferStream.Reader);
 pub fn ProtocolHandlerT(comptime GenericReader: type) type {
     return struct {
         const Self = @This();

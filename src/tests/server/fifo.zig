@@ -1,4 +1,10 @@
-const std = @import("std");
+const stdlib = @import("std");
+const std = struct {
+    pub const testing = stdlib.testing;
+    pub const io = struct {
+        pub const fixedBufferStream = @import("../../protocol/fixed_buffer_stream.zig").fixedBufferStream;
+    };
+};
 const fifo_module = @import("../../server/processing/fifo.zig");
 
 const LinearFifo = fifo_module.LinearFifo;

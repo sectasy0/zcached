@@ -1,6 +1,6 @@
 FROM alpine:3.20
 
-ARG ZIG_VERSION=0.15.2
+ARG ZIG_VERSION=0.16.0
 ARG ZCACHED_VERSION=0.0.1
 
 RUN addgroup -S zcached && adduser -S zcached -G zcached

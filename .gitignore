@@ -8,8 +8,10 @@ zig-test/
 zig-test-*
 
 tmp/
+data/
 logs/
-log/*
+persist/
+log/
 *.zcpf
 persist/*
 zcached.conf

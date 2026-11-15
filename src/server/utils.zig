@@ -1,4 +1,5 @@
 const std = @import("std");
+const fs = @import("fs");
 const ctime = @cImport(@cInclude("time.h"));
 
 const openssl = @cImport({
@@ -35,7 +36,7 @@ pub fn ptrCast(comptime T: type, ptr: *anyopaque) *T {
 pub fn createPath(file_path: []const u8) void {
     const path = std.fs.path.dirname(file_path) orelse return;
 
-    std.fs.cwd().makePath(path) catch |err| {
+    fs.cwd().makePath(path) catch |err| {
         if (err == error.PathAlreadyExists) return;
         std.log.err("failed to create path: {s} ({any})", .{ path, err });
         return;

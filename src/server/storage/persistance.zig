@@ -1,4 +1,6 @@
 const std = @import("std");
+const fs = @import("fs");
+const runtime_io = @import("runtime_io");
 
 const Config = @import("../config.zig");
 const Memory = @import("memory.zig");
@@ -7,11 +9,11 @@ const Memory = @import("memory.zig");
 const types = @import("../../protocol/types.zig");
 const Serializer = @import("../../protocol/deserializer.zig").Deserializer;
 const DeserializerT = @import("../../protocol/serializer.zig").SerializerT;
-const Deserializer = DeserializerT(std.io.FixedBufferStream([]u8).Reader);
+const fixed_buffer_stream = @import("../../protocol/fixed_buffer_stream.zig");
+const Deserializer = DeserializerT(fixed_buffer_stream.FixedBufferStream.Reader);
 
 const utils = @import("../utils.zig");
 const Logger = @import("../logger.zig");
-const time = @import("std").time;
 
 const DEFAULT_PATH: []const u8 = "./persist/";
 
@@ -67,7 +69,7 @@ pub fn save(self: *Handler, memory: *Memory) !usize {
 
     try bytes.appendSlice(header);
 
-    const timestamp: i64 = time.timestamp();
+    const timestamp = runtime_io.timestamp();
     const filename = try std.fmt.allocPrint(
         self.allocator,
         "{s}dump_{d}.zcpf",
@@ -77,7 +79,7 @@ pub fn save(self: *Handler, memory: *Memory) !usize {
 
     utils.createPath(filename);
 
-    const file = std.fs.cwd().createFile(
+    const file = fs.cwd().createFile(
         filename,
         .{ .truncate = false },
     ) catch |err| {
@@ -107,8 +109,8 @@ pub fn save(self: *Handler, memory: *Memory) !usize {
 
 // have to load latest file from `self.path`
 pub fn load(self: *Handler, memory: *Memory) !void {
-    var dir = try std.fs.cwd().openDir(self.path.?, .{
-        .no_follow = true,
+    var dir = try fs.cwd().openDir(self.path.?, .{
+        .follow_symlinks = false,
         .access_sub_paths = false,
         .iterate = true,
     });
@@ -132,7 +134,7 @@ pub fn load(self: *Handler, memory: *Memory) !void {
     );
     defer self.allocator.free(filename);
 
-    const file = std.fs.cwd().openFile(filename, .{ .mode = .read_only }) catch |err| {
+    const file = fs.cwd().openFile(filename, .{ .mode = .read_only }) catch |err| {
         self.logger.err(
             "failed to open file {s}: {any}",
             .{ filename, err },
@@ -157,7 +159,7 @@ pub fn load(self: *Handler, memory: *Memory) !void {
 
     memory.last_save = try std.fmt.parseInt(i64, str_timestamp, 10);
 
-    var stream = std.io.fixedBufferStream(buffer[4..buffer.len]);
+    var stream = fixed_buffer_stream.fixedBufferStream(buffer[4..buffer.len]);
     var reader = stream.reader();
 
     const bytes = try reader.readUntilDelimiterAlloc(
@@ -179,12 +181,12 @@ pub fn load(self: *Handler, memory: *Memory) !void {
     }
 }
 
-fn getLatestFile(self: *Handler, dir: std.fs.Dir) !?FileEntry {
+fn getLatestFile(self: *Handler, dir: fs.Dir) !?FileEntry {
     var latest: ?FileEntry = null;
 
     var iterator = dir.iterate();
     while (try iterator.next()) |file| {
-        if (file.kind != std.fs.File.Kind.file) continue;
+        if (file.kind != fs.File.Kind.file) continue;
 
         var iter = std.mem.splitBackwardsSequence(u8, file.name, ".");
         if (!std.mem.eql(u8, iter.first(), "zcpf")) continue;
@@ -194,10 +196,10 @@ fn getLatestFile(self: *Handler, dir: std.fs.Dir) !?FileEntry {
 
         const filename = try self.allocator.dupe(u8, file.name);
 
-        const stat = try std.fs.cwd().statFile(file_path);
+        const stat = try fs.cwd().statFile(file_path);
 
         if (latest) |prev| {
-            if (stat.ctime <= prev.ctime) {
+            if (stat.ctime.nanoseconds <= prev.ctime) {
                 // This file is older or the same age – we don't need the `filename` we just duplicated
                 self.allocator.free(filename);
                 continue;
@@ -208,7 +210,7 @@ fn getLatestFile(self: *Handler, dir: std.fs.Dir) !?FileEntry {
 
         latest = .{
             .name = filename,
-            .ctime = stat.ctime,
+            .ctime = stat.ctime.nanoseconds,
             .size = stat.size,
         };
     }

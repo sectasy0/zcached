@@ -1,4 +1,5 @@
 const std = @import("std");
+const sync = @import("sync.zig");
 
 const ptrCast = @import("utils.zig").ptrCast;
 
@@ -19,7 +20,7 @@ count_allocs_success: u64 = 0,
 count_resizes: u64 = 0,
 count_frees: u64 = 0,
 
-mutex: std.Thread.Mutex = .{},
+mutex: sync.Mutex = .{},
 
 pub fn init(child_allocator: std.mem.Allocator) TracingAllocator {
     return TracingAllocator{ .child_allocator = child_allocator };

@@ -1,4 +1,6 @@
 const std = @import("std");
+const runtime_io = @import("runtime_io");
+const sync = @import("../sync.zig");
 
 const types = @import("../../protocol/types.zig");
 const TracingAllocator = @import("../tracing.zig");
@@ -17,7 +19,7 @@ persister: *persistance.Handler,
 
 config: Config,
 
-lock: std.Thread.RwLock,
+lock: sync.RwLock,
 
 last_save: i64,
 
@@ -30,9 +32,9 @@ pub fn init(
         .internal = std.StringHashMap(types.ZType).init(allocator),
         .allocator = allocator,
         .config = config,
-        .lock = std.Thread.RwLock{},
+        .lock = .{},
         .persister = persister,
-        .last_save = std.time.timestamp(),
+        .last_save = runtime_io.timestamp(),
     };
 }
 
@@ -75,7 +77,7 @@ pub fn put(self: *Memory, key: []const u8, value: types.ZType) !void {
 
 pub fn get(self: *Memory, key: []const u8) !types.ZType {
     self.lock.lockShared();
-    defer self.lock.unlock();
+    defer self.lock.unlockShared();
 
     return self.internal.get(key) orelse error.NotFound;
 }
@@ -116,21 +118,21 @@ pub fn flush(self: *Memory) void {
 
 pub fn size(self: *Memory) i64 {
     self.lock.lockShared();
-    defer self.lock.unlock();
+    defer self.lock.unlockShared();
 
     return self.internal.count();
 }
 
 pub fn save(self: *Memory) !usize {
     self.lock.lockShared();
-    defer self.lock.unlock();
+    defer self.lock.unlockShared();
 
     return try self.persister.save(self);
 }
 
 pub fn keys(self: *Memory) !std.array_list.Managed(types.ZType) {
     self.lock.lockShared();
-    defer self.lock.unlock();
+    defer self.lock.unlockShared();
 
     var result = std.array_list.Managed(types.ZType).init(self.allocator);
 

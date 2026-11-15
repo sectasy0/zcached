@@ -1,4 +1,11 @@
-const std = @import("std");
+const stdlib = @import("std");
+const std = struct {
+    pub const testing = stdlib.testing;
+    pub const array_list = stdlib.array_list;
+    pub const io = struct {
+        pub const fixedBufferStream = @import("../../protocol/fixed_buffer_stream.zig").fixedBufferStream;
+    };
+};
 const Logger = @import("../../server/logger.zig");
 const ZType = @import("../../protocol/types.zig").ZType;
 

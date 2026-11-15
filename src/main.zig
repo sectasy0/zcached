@@ -1,5 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const fs = @import("fs");
+const runtime_io = @import("runtime_io");
 
 // Core utilities
 const Config = @import("server/config.zig");
@@ -30,7 +32,7 @@ fn appendAOFCommand(ptr: *anyopaque, command: []const @import("protocol/types.zi
     try aof.appendCommand(command);
 }
 
-fn handleSig(sig: c_int) callconv(.c) void {
+fn handleSig(sig: std.posix.SIG) callconv(.c) void {
     _ = sig; // unused, but required by the signal handler signature
     // we want to stop the server gracefully, and also flush any pending logs
     running.store(false, .seq_cst);
@@ -41,13 +43,15 @@ fn panicHandler(msg: []const u8, first_trace_addr: ?usize) noreturn {
 
     _ = first_trace_addr; // unused, but required by the panic handler signature
     log: {
-        const file = std.fs.cwd().createFile(
+        const io = runtime_io.get();
+        const file = fs.cwd().createFile(
             log.DEFAULT_PATH,
             .{ .truncate = false },
         ) catch |err| {
             std.log.err("# failed to open log file: {any}", .{err});
             break :log;
         };
+        defer file.close();
 
         file.seekFromEnd(0) catch |err| {
             std.log.err("# unable to seek log file eof: {any}", .{err});
@@ -57,16 +61,13 @@ fn panicHandler(msg: []const u8, first_trace_addr: ?usize) noreturn {
         file.writeAll("== PANIC ==\r\n") catch break :log;
         file.writeAll(msg) catch break :log;
 
-        const debug_info = std.debug.getSelfDebugInfo() catch break :log;
         const addr = @returnAddress();
 
         var buffer: [4096]u8 = undefined;
-        var writer = file.writer(&buffer).interface;
+        var writer = file.inner.writerStreaming(io, &buffer).interface;
         std.debug.writeCurrentStackTrace(
-            &writer,
-            debug_info,
-            .no_color,
-            addr,
+            .{ .first_address = addr },
+            .{ .writer = &writer, .mode = .no_color },
         ) catch break :log;
 
         file.writeAll("== END OF ERROR TRACE == \r\n") catch break :log;
@@ -77,28 +78,32 @@ fn panicHandler(msg: []const u8, first_trace_addr: ?usize) noreturn {
     std.process.exit(1);
 }
 
-pub fn main() void {
+pub fn main(init: std.process.Init) void {
     if (builtin.os.tag == .windows) @compileError("windows not supported");
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{
+    var gpa: std.heap.DebugAllocator(.{
         .safety = true,
         // .verbose_log = true,
         // .retain_metadata = true,
-    }){};
-    defer _ = gpa.deinit();
+    }) = .init;
+    defer {
+        if (gpa.deinit() == .leak) std.process.exit(255);
+    }
 
-    var thread_safe_allocator: std.heap.ThreadSafeAllocator = .{
-        .child_allocator = gpa.allocator(),
-    };
-    const allocator = thread_safe_allocator.allocator();
+    const allocator = gpa.allocator();
 
-    const result = cli.Parser.parse(allocator) catch {
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    runtime_io.runtime = threaded_io.io();
+
+    const result = cli.Parser.parse(allocator, init.minimal.args) catch {
         cli.Parser.showHelp() catch |err| {
             std.log.err("# failed to show help: {any}", .{err});
             return;
         };
         return;
     };
+    defer result.parser.deinit();
 
     handleArguments(result.args) orelse return;
 
@@ -148,11 +153,11 @@ pub fn main() void {
 
     // allocator for database inner database data purposes.
     // we don't need to wrap it in a thread-safe allocator because Memory struct is secured by mutex
-    var dbgpa = std.heap.GeneralPurposeAllocator(.{
+    var dbgpa: std.heap.DebugAllocator(.{
         .safety = true,
         // .verbose_log = true,
         // .retain_metadata = true,
-    }){};
+    }) = .init;
     defer _ = dbgpa.deinit();
 
     var tracing = TracingAllocator.init(dbgpa.allocator());
@@ -163,7 +168,7 @@ pub fn main() void {
     );
     defer {
         memory.deinit();
-        if (dbgpa.detectLeaks()) std.posix.exit(255);
+        if (dbgpa.detectLeaks() != 0) std.process.exit(255);
     }
 
     persister.load(&memory) catch |err| {
@@ -208,10 +213,7 @@ pub fn main() void {
     persister.deinit();
     logger.deinit();
     config.deinit();
-    result.parser.deinit();
     agent.deinit();
-
-    if (gpa.detectLeaks()) std.posix.exit(255);
 }
 
 // null indicates that function should return from main

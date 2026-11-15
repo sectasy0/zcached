@@ -31,7 +31,7 @@ pub const AOFWriter = struct {
     }
 };
 
-const AllocT = std.heap.GeneralPurposeAllocator(.{});
+const AllocT = std.heap.DebugAllocator(.{});
 
 server: StreamServer,
 
@@ -162,9 +162,9 @@ pub fn deinit(self: *Employer) void {
     self.allocator.free(self.threads);
 
     for (self.allocators) |*gpa| {
-        if (gpa.detectLeaks()) {
+        if (gpa.detectLeaks() != 0) {
             // Memory leaks detected
-            std.posix.exit(255);
+            std.process.exit(255);
         }
         _ = gpa.deinit();
     }

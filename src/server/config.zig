@@ -1,6 +1,8 @@
 const std = @import("std");
+const fs = @import("fs");
 const utils = @import("utils.zig");
 const NodeIndex = std.zig.Ast.Node.Index;
+const Address = @import("network/address.zig").Address;
 
 pub const DEFAULT_PATH: []const u8 = "./zcached.conf.zon";
 
@@ -77,7 +79,7 @@ pub const TLSConfig = struct {
     };
 };
 
-address: std.net.Address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 7556),
+address: Address = Address.initIp4(.{ 127, 0, 0, 1 }, 7556),
 
 loger_path: []const u8 = DEFAULT_PATH,
 
@@ -92,7 +94,7 @@ aof: AOFConfig = .{},
 tls: TLSConfig = .{},
 agent: AgentConfig = .{},
 
-whitelist: std.array_list.Managed(std.net.Address) = undefined,
+whitelist: std.array_list.Managed(Address) = undefined,
 max_request_size: usize = 10 * 1024 * 1024, // 0 means unlimited, value in bytes
 
 allocator: std.mem.Allocator,
@@ -105,7 +107,7 @@ pub fn deinit(config: *const Config) void {
     if (config.aof.path != null) config.allocator.free(config.aof.path.?);
 }
 
-pub fn getAddress(self: *const Config) std.net.Address {
+pub fn getAddress(self: *const Config) Address {
     return self.address;
 }
 
@@ -115,7 +117,7 @@ pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]c
 
     var config = Config{
         .allocator = allocator,
-        .whitelist = std.array_list.Managed(std.net.Address).init(allocator),
+        .whitelist = std.array_list.Managed(Address).init(allocator),
     };
     if (log_path != null) config.loger_path = log_path.?;
 
@@ -129,7 +131,7 @@ pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]c
 
     utils.createPath(path);
 
-    const file = std.fs.cwd().openFile(path, .{ .mode = .read_only }) catch |err| {
+    const file = fs.cwd().openFile(path, .{ .mode = .read_only }) catch |err| {
         // if the file doesn't exist, just return the default config
         if (err == error.FileNotFound) return config;
         return err;
@@ -140,7 +142,7 @@ pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]c
     const config_bytes = try file.readToEndAllocOptions(
         allocator,
         file_size,
-        null,
+        0,
         .@"1",
         0,
     );
@@ -334,7 +336,7 @@ fn processField(
     }
 
     if (ast.fullArrayInit(buf, field_idx)) |v| {
-        var result: std.array_list.Managed(std.net.Address) = .init(allocator);
+        var result: std.array_list.Managed(Address) = .init(allocator);
         errdefer result.deinit();
 
         for (v.ast.elements) |v_idx| {
@@ -346,14 +348,14 @@ fn processField(
             ) catch return;
             defer allocator.free(value);
 
-            const parsed = std.net.Address.parseIp(
+            const parsed = Address.parseIp(
                 value,
                 config.address.getPort(),
             ) catch |err| {
                 var timestamp: [40]u8 = undefined;
                 const t_size = utils.timestampf(&timestamp);
                 std.debug.print(
-                    "ERROR [{s}] * parsing {s} as std.net.Address, {any}\n",
+                    "ERROR [{s}] * parsing {s} as network Address, {any}\n",
                     .{ timestamp[0..t_size], value, err },
                 );
                 return;
@@ -437,11 +439,11 @@ fn assignFieldValue(config: *Config, field_name: []const u8, value: anytype) !vo
         .address => {
             if (@TypeOf(value) != []const u8) return;
 
-            const parsed = std.net.Address.parseIp(value, config.address.getPort()) catch |err| {
+            const parsed = Address.parseIp(value, config.address.getPort()) catch |err| {
                 var timestamp: [40]u8 = undefined;
                 const t_size = utils.timestampf(&timestamp);
                 std.debug.print(
-                    "ERROR [{s}] * parsing {s} as std.net.Address, {any}\n",
+                    "ERROR [{s}] * parsing {s} as network Address, {any}\n",
                     .{ timestamp[0..t_size], value, err },
                 );
                 return;
@@ -621,7 +623,7 @@ fn assignFieldValue(config: *Config, field_name: []const u8, value: anytype) !vo
             config.tls = tls_config;
         },
         .whitelist => {
-            if (@TypeOf(value) != std.array_list.Managed(std.net.Address)) return;
+            if (@TypeOf(value) != std.array_list.Managed(Address)) return;
 
             const old_whitelist = config.whitelist;
             defer old_whitelist.deinit();

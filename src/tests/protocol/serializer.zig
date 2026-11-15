@@ -1,11 +1,20 @@
-const std = @import("std");
+const stdlib = @import("std");
+const std = struct {
+    pub const testing = stdlib.testing;
+    pub const array_list = stdlib.array_list;
+    pub const StringHashMap = stdlib.StringHashMap;
+    pub const io = struct {
+        pub const fixedBufferStream = @import("../../protocol/fixed_buffer_stream.zig").fixedBufferStream;
+    };
+};
 
 const serializer = @import("../../protocol/serializer.zig");
 const types = @import("../../protocol/types.zig");
 const helpers = @import("../helper.zig");
+const fixed_buffer_stream = @import("../../protocol/fixed_buffer_stream.zig");
 
 test "ProtocolHandler handle simple command" {
-    var stream = std.io.fixedBufferStream("*3\r\n$3\r\nSET\r\n$9\r\nmycounter\r\n:42\r\n");
+    var stream = fixed_buffer_stream.fixedBufferStream("*3\r\n$3\r\nSET\r\n$9\r\nmycounter\r\n:42\r\n");
 
     const reader = stream.reader();
 

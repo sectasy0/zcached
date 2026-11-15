@@ -1,4 +1,6 @@
 const std = @import("std");
+const runtime_io = @import("runtime_io");
+const sync = @import("../sync.zig");
 
 const fifo = @import("fifo.zig");
 const utils = @import("../utils.zig");
@@ -47,19 +49,21 @@ pub const Queue = struct {
     // Priority queue for delayed tasks, ordered by execute_at,
     // when the time comes, tasks are moved from delayed to ready.
     delayed: std.PriorityQueue(Task, void, Task.compare),
+    allocator: std.mem.Allocator,
 
     // optional capacity limit for testing reschedule failures; ignored in normal operation
     capacity: ?usize = null,
 
-    lock: std.Thread.Mutex,
+    lock: sync.Mutex,
 
-    not_full: std.Thread.Condition = .{},
-    not_empty: std.Thread.Condition = .{},
+    not_full: sync.Condition = .{},
+    not_empty: sync.Condition = .{},
 
     pub fn init(allocator: std.mem.Allocator) !Queue {
         return .{
             .ready = .init(allocator),
-            .delayed = .init(allocator, void{}),
+            .delayed = .initContext(void{}),
+            .allocator = allocator,
             .lock = .{},
         };
     }
@@ -102,7 +106,7 @@ pub const Queue = struct {
         if (self.enqueueInner(.{
             .run = Wrapper.run,
             .destroy = Wrapper.destroy,
-            .execute_at = if (options) |opts| std.time.timestamp() + opts.interval else 0,
+            .execute_at = if (options) |opts| runtime_io.timestamp() + opts.interval else 0,
             .interval = if (options) |opts| opts.interval else 0,
             .args = @ptrCast(@alignCast(owned_args_ptr)),
         })) {
@@ -121,8 +125,8 @@ pub const Queue = struct {
             if (queue_len >= cap and task.run != null) return error.QueueFull;
         }
 
-        if (task.execute_at > std.time.timestamp()) {
-            try self.delayed.add(task);
+        if (task.execute_at > runtime_io.timestamp()) {
+            try self.delayed.push(self.allocator, task);
         } else {
             try self.ready.writeItem(task);
         }
@@ -143,7 +147,7 @@ pub const Queue = struct {
             }
 
             if (self.delayed.peek()) |task| {
-                const now = std.time.timestamp();
+                const now = runtime_io.timestamp();
                 // std.debug.print("# Next delayed task at {d}, now {d}\n", .{ task.execute_at, now });
 
                 if (task.execute_at <= now) {
@@ -154,7 +158,7 @@ pub const Queue = struct {
                     _ = self.ready.writeItem(task) catch {
                         // if adding to the ready queue failed,
                         // try returning the task back to the heap
-                        _ = self.delayed.add(task) catch {
+                        self.delayed.push(self.allocator, task) catch {
                             // if adding back to the heap failed,
                             // the task is lost, but there's nothing we can do
                         };
@@ -163,12 +167,14 @@ pub const Queue = struct {
                         continue;
                     };
 
-                    _ = self.delayed.remove(); // remove from heap
+                    _ = self.delayed.pop(); // remove from heap
 
                     continue;
                 } else {
                     const wait_ns: u64 = @intCast((task.execute_at - now) * std.time.ns_per_s);
-                    self.not_empty.timedWait(&self.lock, wait_ns) catch {};
+                    self.lock.unlock();
+                    runtime_io.sleepNanoseconds(wait_ns);
+                    self.lock.lock();
                     continue;
                 }
             }
@@ -286,7 +292,7 @@ pub const Queue = struct {
                 destroy(allocator, task.args);
             }
         }
-        self.delayed.deinit();
+        self.delayed.deinit(self.allocator);
 
         while (self.ready.readItem()) |task| {
             if (task.destroy) |destroy| {
@@ -310,8 +316,8 @@ allocator: std.mem.Allocator,
 running: *std.atomic.Value(bool),
 
 started: std.atomic.Value(bool) = .init(false),
-mutex: std.Thread.Mutex = .{},
-cond: std.Thread.Condition = .{},
+mutex: sync.Mutex = .{},
+cond: sync.Condition = .{},
 
 pub fn init(allocator: std.mem.Allocator, running: *std.atomic.Value(bool)) !Self {
     return .{
@@ -407,7 +413,7 @@ fn drain(self: *Self) void {
 }
 
 fn rescheduleCyclic(self: *Self, task: *Task, prev_sched: i64, interval: i64) !void {
-    const now = std.time.timestamp();
+    const now = runtime_io.timestamp();
 
     // compute next based on the previous schedule -> avoids drift
     var next = prev_sched + interval;
@@ -440,10 +446,10 @@ fn rescheduleCyclic(self: *Self, task: *Task, prev_sched: i64, interval: i64) !v
             );
 
             // sleep outside of lock
-            std.Thread.sleep(self.reschedule_retry_delay_ms * std.time.ns_per_ms);
+            runtime_io.sleepNanoseconds(self.reschedule_retry_delay_ms * std.time.ns_per_ms);
 
             // recompute next execution to avoid burst execution
-            rescheduled.execute_at = std.time.timestamp() + interval;
+            rescheduled.execute_at = runtime_io.timestamp() + interval;
 
             continue;
         };

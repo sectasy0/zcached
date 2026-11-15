@@ -1,4 +1,5 @@
 const std = @import("std");
+const Address = @import("../../server/network/address.zig").Address;
 const Connection = @import("../../server/network/connection.zig");
 const server = @import("../../server/network/stream_server.zig");
 
@@ -8,7 +9,7 @@ test "Connection.init" {
     const allocator = std.testing.allocator;
     const incoming = server.Connection{
         .stream = Stream{ .handle = 1 },
-        .address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234),
+        .address = Address.initIp4(.{ 192, 168, 0, 1 }, 1234),
     };
 
     var pollfd = std.posix.pollfd{
@@ -37,7 +38,7 @@ test "Connection.deinit" {
     const allocator = std.testing.allocator;
     const incoming = server.Connection{
         .stream = Stream{ .handle = 1 },
-        .address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234),
+        .address = Address.initIp4(.{ 192, 168, 0, 1 }, 1234),
     };
 
     var pollfd = std.posix.pollfd{
@@ -62,7 +63,7 @@ test "Connection.fd" {
     const allocator = std.testing.allocator;
     const incoming = server.Connection{
         .stream = Stream{ .handle = 1 },
-        .address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234),
+        .address = Address.initIp4(.{ 192, 168, 0, 1 }, 1234),
     };
 
     var pollfd = std.posix.pollfd{
