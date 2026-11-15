@@ -28,7 +28,11 @@ cd zcached
 ```bash
 # provide -Dtls-enabled=true to build zcached with tls
 zig build
+# Production build: optimized code and the scalable SMP allocator.
+zig build -Doptimize=ReleaseFast
 ```
+Debug and ReleaseSafe builds retain the debug allocator and leak checks.
+
 **4. Run the executable.**
 ```bash
 ./zig-out/bin/zcached

@@ -362,6 +362,7 @@ fn enqueue(self: *Evented, fiber: *Fiber) void {
 }
 
 fn scheduler(self: *Evented) noreturn {
+    var ready_runs: usize = 0;
     while (true) {
         self.mutex.lock();
         if (self.finished) |fiber| {
@@ -419,13 +420,15 @@ fn scheduler(self: *Evented) noreturn {
             }
         }
         if (self.ready_head != null) timeout = 0;
+        const poll = self.ready_head == null or ready_runs >= 32;
         self.mutex.unlock();
 
         var events: [64]Reactor.Key = undefined;
-        const count = self.reactor.wait(&events, timeout) catch |err| {
+        const count = if (poll) self.reactor.wait(&events, timeout) catch |err| {
             std.log.err("reactor wait failed: {s}", .{@errorName(err)});
             @panic("reactor wait failed");
-        };
+        } else 0;
+        if (poll) ready_runs = 0;
         self.mutex.lock();
         for (events[0..count]) |key| {
             if (key.fd == self.wake_pipe[0]) {
@@ -448,6 +451,7 @@ fn scheduler(self: *Evented) noreturn {
             fiber.ready_next = null;
             fiber.queued = false;
             self.current = fiber;
+            ready_runs += 1;
             self.mutex.unlock();
             const message: Io.fiber.Switch = .{ .old = &self.scheduler_context, .new = &fiber.context };
             switchContext(&message);

@@ -56,3 +56,21 @@ test "should deframe" {
 
     try std.testing.expectEqual(0, connection.accumulator.items.len);
 }
+
+test "processing repeated commands bounds protocol arena memory" {
+    var fixture = try ContextFixture.init();
+    try fixture.create_memory();
+    defer fixture.deinit();
+    const incoming = try fixtures.ConnectionFixture.init(std.testing.allocator);
+    var connection = incoming.connection;
+    defer connection.deinit();
+    var processor = try Processor.init(std.testing.allocator, fixture.context());
+    defer processor.deinit();
+    for (0..2000) |_| {
+        processor.process(&connection, @constCast("*1\r\n$4\r\nPING\r\n"));
+        try std.testing.expectEqualStrings("+PONG\r\n\x03", connection.tx_accumulator.items);
+        connection.tx_accumulator.clearRetainingCapacity();
+    }
+    try std.testing.expect(processor.protocol.serializer.arena.queryCapacity() <= 4096);
+    try std.testing.expect(processor.protocol.deserializer.arena.queryCapacity() <= 4096);
+}

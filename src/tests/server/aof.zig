@@ -138,6 +138,40 @@ test "always strategy flushes each append immediately" {
     try std.testing.expectEqual(@as(usize, 0), aof.buffer.items.len);
 }
 
+test "everysec preserves pending bytes beyond the retained buffer threshold" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    const path = try uniquePath(fixture.allocator);
+    defer fixture.allocator.free(path);
+    defer fs.cwd().deleteFile(path) catch |err| std.log.err("Failed to remove AOF test file: {any}", .{err});
+    try configureAOF(&fixture, path, .everysec);
+    var aof = try AOF.init(fixture.allocator, fixture.context());
+    defer aof.deinit();
+
+    const payload = try fixture.allocator.alloc(u8, AOF.BUFFER_MAX_SIZE * 2);
+    defer fixture.allocator.free(payload);
+    @memset(payload, 'x');
+    try aof.append("first");
+    try aof.append(payload);
+    try aof.append("last");
+    const expected_size = "first\x03".len + payload.len + 1 + "last\x03".len;
+    try std.testing.expectEqual(expected_size, aof.buffer.items.len);
+    try std.testing.expectEqual(@as(u64, 0), try fileSize(path));
+    try aof.flush();
+    try std.testing.expectEqual(expected_size, try fileSize(path));
+    try std.testing.expectEqual(@as(usize, 0), aof.buffer.items.len);
+    try std.testing.expect(aof.buffer.capacity <= AOF.BUFFER_MAX_SIZE);
+    const file = try fs.cwd().openFile(path, .{});
+    defer file.close();
+    const bytes = try fixture.allocator.alloc(u8, expected_size);
+    defer fixture.allocator.free(bytes);
+    try std.testing.expectEqual(expected_size, try file.readAll(bytes));
+    try std.testing.expectEqualStrings("first\x03", bytes[0..6]);
+    try std.testing.expectEqualSlices(u8, payload, bytes[6 .. 6 + payload.len]);
+    try std.testing.expectEqualStrings("\x03last\x03", bytes[6 + payload.len ..]);
+}
+
 test "auto strategy flushes when the buffer threshold is reached" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();

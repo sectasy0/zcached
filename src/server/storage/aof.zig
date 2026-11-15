@@ -26,8 +26,8 @@ const AOF_PATH = "aof.log";
 /// Holds new entries before they are flushed to disk.
 /// 8 KiB is a compromise between frequent flushes and memory usage.
 pub const BUFFER_SIZE = 8192; // 8 KiB
-/// Maximum size for the normal AOF buffer.
-/// Prevents excessive memory growth under high load.
+/// Maximum capacity retained after a successful flush.
+/// Pending bytes must remain intact until they have been written.
 pub const BUFFER_MAX_SIZE = 65536; // 64 KiB
 
 /// Buffer used exclusively during rewrite operations.
@@ -117,22 +117,16 @@ pub fn append(self: *Self, command: []const u8) !void {
     self.mutex.lock();
     defer self.mutex.unlock();
 
-    defer {
-        if (self.buffer.items.len > BUFFER_MAX_SIZE) {
-            self.context.resources.logger.debug(
-                "# AOF buffer size exceeded max size ({d}), shrinking from {d} to {d}",
-                .{ BUFFER_MAX_SIZE, self.buffer.items.len, BUFFER_SIZE },
-            );
-            self.buffer.shrinkAndFree(BUFFER_SIZE);
-        }
-    }
-
+    const offset = self.buffer.items.len;
+    try self.buffer.ensureUnusedCapacity(command.len + @intFromBool(command[command.len - 1] != consts.EXT_CHAR));
     try self.buffer.appendSlice(command);
-    var appended_size = command.len;
     if (command[command.len - 1] != consts.EXT_CHAR) {
         try self.buffer.append(consts.EXT_CHAR);
-        appended_size += 1;
     }
+    try self.finishAppendLocked(self.buffer.items.len - offset);
+}
+
+fn finishAppendLocked(self: *Self, appended_size: usize) !void {
     _ = self.size.fetchAdd(appended_size, .seq_cst);
 
     if (self.rewrite_in_progress.load(.seq_cst)) {
@@ -177,16 +171,18 @@ pub fn append(self: *Self, command: []const u8) !void {
 
 pub fn appendCommand(self: *Self, command_items: []const types.ZType) !void {
     if (command_items.len == 0 or self.strategy == .no) return;
-
-    var command = std.array_list.Managed(types.ZType).init(self.allocator);
-    defer command.deinit();
-    try command.appendSlice(command_items);
-
-    var deserializer = Deserializer.init(self.allocator);
-    defer deserializer.deinit();
-
-    const bytes = try deserializer.process(.{ .array = command });
-    try self.append(bytes);
+    self.mutex.lock();
+    defer self.mutex.unlock();
+    const offset = self.buffer.items.len;
+    Deserializer.writeArray(&self.buffer, command_items) catch |err| {
+        self.buffer.shrinkRetainingCapacity(offset);
+        return err;
+    };
+    self.buffer.append(consts.EXT_CHAR) catch |err| {
+        self.buffer.shrinkRetainingCapacity(offset);
+        return err;
+    };
+    try self.finishAppendLocked(self.buffer.items.len - offset);
 }
 
 pub fn start(self: *Self) !void {
@@ -495,8 +491,11 @@ fn flushLocked(self: *Self) !void {
     try self.journal.seekFromEnd(0);
     try self.journal.writeAll(self.buffer.items);
 
-    // 他妈的打扫
-    self.buffer.clearRetainingCapacity();
+    if (self.buffer.capacity > BUFFER_MAX_SIZE) {
+        self.buffer.clearAndFree();
+    } else {
+        self.buffer.clearRetainingCapacity();
+    }
 }
 
 fn rewriteNeeded(self: *Self) bool {

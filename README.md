@@ -90,8 +90,17 @@ TLS setup remain in the reusable `StreamServer` transport, while access checks
 are a stateless function.
 
 AOF's `everysec` flush is a recurring task on the database's background queue,
-not a dedicated flush thread. Its execution can be delayed by other queued work;
+not a dedicated flush thread. Due recurring work runs before the ready FIFO;
 shutdown cancels the recurring task and flushes the remaining buffer.
+Network payload logs remain enabled and are written in batches of approximately
+64 KiB or by a recurring one-second flush on that same queue. Shutdown drains
+ready log tasks before the logger's final flush.
+
+Responses are encoded directly into the transmit buffer, and command arenas
+are reset after each request. Network reads copy storage values under the read
+lock before encoding, so concurrent mutations cannot invalidate their payloads.
+ReleaseFast/ReleaseSmall use Zig's SMP allocator; Debug/ReleaseSafe retain debug
+allocation and leak checks.
 
 ## Documentation
 - For release history, see the [release_history.md](docs/release_history.md)

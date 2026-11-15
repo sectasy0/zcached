@@ -82,6 +82,26 @@ pub fn get(self: *Memory, key: []const u8) !types.ZType {
     return self.internal.get(key) orelse error.NotFound;
 }
 
+pub fn getCopy(self: *Memory, key: []const u8, allocator: std.mem.Allocator) !types.ZType {
+    self.lock.lockShared();
+    defer self.lock.unlockShared();
+    const value = self.internal.get(key) orelse return error.NotFound;
+    return types.ztype_copy(value, allocator);
+}
+
+pub fn valueSize(self: *Memory, key: []const u8) !usize {
+    self.lock.lockShared();
+    defer self.lock.unlockShared();
+    const value = self.internal.get(key) orelse return error.NotFound;
+    return switch (value) {
+        .str, .sstr => |text| text.len,
+        .array => |array| array.items.len,
+        inline .map, .set, .uset => |collection| collection.count(),
+        inline .int, .float, .bool => |scalar| @sizeOf(@TypeOf(scalar)),
+        else => 0,
+    };
+}
+
 pub fn delete(self: *Memory, key: []const u8) bool {
     self.lock.lock();
     defer self.lock.unlock();
@@ -142,6 +162,21 @@ pub fn keys(self: *Memory) !std.array_list.Managed(types.ZType) {
         try result.append(zkey);
     }
 
+    return result;
+}
+
+pub fn keysCopy(self: *Memory, allocator: std.mem.Allocator) !types.ZType.Array {
+    self.lock.lockShared();
+    defer self.lock.unlockShared();
+    var result = try types.ZType.Array.initCapacity(allocator, self.internal.count());
+    errdefer {
+        for (result.items) |*key| types.ztype_free(key, allocator);
+        result.deinit();
+    }
+    var key_iterator = self.internal.keyIterator();
+    while (key_iterator.next()) |key| {
+        result.appendAssumeCapacity(.{ .str = try allocator.dupe(u8, key.*) });
+    }
     return result;
 }
 

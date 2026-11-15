@@ -12,7 +12,7 @@ const TracingAllocator = @This();
 /// Additionally, it tracks the real size (allocated - freed size) and the total size allocated.
 child_allocator: std.mem.Allocator,
 
-real_size: u64 = 0, // total_size - freed size
+real_size: u64 = 0, // live requested bytes
 total_size: u64 = 0, // total size allocated
 
 count_allocs: u64 = 0,
@@ -71,15 +71,7 @@ fn resize(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, new_len: usi
     );
 
     if (stable) {
-        const size_diff = new_len - old_len;
-
-        self.*.real_size += size_diff;
-        self.*.total_size += size_diff;
-
-        if (new_len <= old_len) {
-            self.*.real_size -= 2 * size_diff;
-            self.*.total_size -= 2 * size_diff;
-        }
+        self.recordResize(old_len, new_len);
     }
     return stable;
 }
@@ -96,12 +88,19 @@ fn remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: u
         ret_addr,
     ) orelse return null;
 
-    if (memory_new != memory.ptr) self.real_size -= memory.len;
-    if (memory_new != memory.ptr) self.real_size += new_len;
-    if (memory_new != memory.ptr) self.total_size -= memory.len;
-    if (memory_new != memory.ptr) self.total_size += new_len;
+    self.recordResize(memory.len, new_len);
 
     return memory_new;
+}
+
+fn recordResize(self: *TracingAllocator, old_len: usize, new_len: usize) void {
+    if (new_len >= old_len) {
+        const growth = new_len - old_len;
+        self.real_size += growth;
+        self.total_size += growth;
+    } else {
+        self.real_size -= old_len - new_len;
+    }
 }
 
 fn free(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, ret_addr: usize) void {
@@ -117,4 +116,21 @@ fn free(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, ret_addr: usiz
         buf_align,
         ret_addr,
     );
+}
+
+test "tracing accounts for shrinking and same-address remaps" {
+    var bytes: [64]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&bytes);
+    var tracking = TracingAllocator.init(fixed.allocator());
+    const traced = tracking.allocator();
+    var buffer = try traced.alloc(u8, 8);
+    defer traced.free(buffer);
+    try std.testing.expect(traced.resize(buffer, 4));
+    buffer = buffer[0..4];
+    try std.testing.expectEqual(@as(u64, 4), tracking.real_size);
+    const before = buffer.ptr;
+    buffer = traced.remap(buffer, 12) orelse return error.OutOfMemory;
+    try std.testing.expectEqual(before, buffer.ptr);
+    try std.testing.expectEqual(@as(u64, 12), tracking.real_size);
+    try std.testing.expectEqual(@as(u64, 16), tracking.total_size);
 }

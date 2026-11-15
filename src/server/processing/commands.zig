@@ -1,7 +1,8 @@
 const std = @import("std");
 
 // Protocol types
-const ZType = @import("../../protocol/types.zig").ZType;
+const types = @import("../../protocol/types.zig");
+const ZType = types.ZType;
 
 // Storage
 const Memory = @import("../storage/memory.zig");
@@ -108,7 +109,8 @@ pub const Handler = struct {
     }
 
     fn get(self: *Handler, key: ZType) Result {
-        const value = self.context.resources.memory.get(key.str) catch |err| {
+        if (key != .str) return .{ .err = error.KeyNotString };
+        const value = self.context.resources.memory.getCopy(key.str, self.allocator) catch |err| {
             return .{ .err = err };
         };
 
@@ -161,16 +163,26 @@ pub const Handler = struct {
     }
 
     fn mget(self: *Handler, keys: []ZType) Result {
+        for (keys) |key| {
+            if (key != .str) return .{ .err = error.KeyNotString };
+        }
         var result = std.StringHashMap(ZType).init(self.allocator);
 
         for (keys) |key| {
-            if (key != .str) return .{ .err = error.KeyNotString };
-
-            const value: ZType = self.context.resources.memory.get(key.str) catch .{ .null = {} };
-
-            result.put(key.str, value) catch |err| {
+            var value: ZType = self.context.resources.memory.getCopy(key.str, self.allocator) catch |err| switch (err) {
+                error.NotFound => .{ .null = {} },
+                else => {
+                    self.freeMapValues(&result);
+                    return .{ .err = err };
+                },
+            };
+            const entry = result.getOrPut(key.str) catch |err| {
+                types.ztype_free(&value, self.allocator);
+                self.freeMapValues(&result);
                 return .{ .err = err };
             };
+            if (entry.found_existing) types.ztype_free(entry.value_ptr, self.allocator);
+            entry.value_ptr.* = value;
         }
 
         return .{ .ok = .{ .map = result } };
@@ -197,23 +209,16 @@ pub const Handler = struct {
     }
 
     fn zkeys(self: *Handler) Result {
-        const result = self.context.resources.memory.keys() catch |err| {
+        const result = self.context.resources.memory.keysCopy(self.allocator) catch |err| {
             return .{ .err = err };
         };
         return .{ .ok = .{ .array = result } };
     }
 
     fn sizeof(self: *Handler, key: ZType) Result {
-        const value: ZType = self.context.resources.memory.get(key.str) catch |err| {
+        if (key != .str) return .{ .err = error.KeyNotString };
+        const value_size = self.context.resources.memory.valueSize(key.str) catch |err| {
             return .{ .err = err };
-        };
-
-        const value_size: usize = switch (value) {
-            .str, .sstr => |str| str.len,
-            .array => value.array.items.len,
-            inline .map, .set, .uset => |v| v.count(),
-            inline .int, .float, .bool => |x| @sizeOf(@TypeOf(x)),
-            else => 0,
         };
 
         return .{ .ok = .{ .int = @intCast(value_size) } };
@@ -264,13 +269,18 @@ pub const Handler = struct {
     // method to free data needs to be freeded, for example keys command
     // is creating std.array_list.Managed so it have to be freed after
     pub fn free(self: *Handler, command_set: *const std.array_list.Managed(ZType), result: *Result) void {
-        _ = self;
         const command_type = utils.enumTypeFromStr(CommandType, command_set.items[0].str) orelse return;
 
         switch (command_type) {
-            .KEYS => result.ok.array.deinit(),
-            .MGET => result.ok.map.deinit(),
+            .GET, .KEYS => types.ztype_free(&result.ok, self.allocator),
+            .MGET => self.freeMapValues(&result.ok.map),
             else => return,
         }
+    }
+
+    fn freeMapValues(self: *Handler, map: *ZType.Map) void {
+        var iterator = map.valueIterator();
+        while (iterator.next()) |value| types.ztype_free(value, self.allocator);
+        map.deinit();
     }
 };

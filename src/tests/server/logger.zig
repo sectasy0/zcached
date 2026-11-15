@@ -37,6 +37,7 @@ test "queued logger dispatch preserves levels and owns event payloads" {
         var task = agent.queue.dequeue();
         task.executeAndDestroy(allocator);
     }
+    logger.flush();
 
     var file = try fs.cwd().openFile(path, .{ .mode = .read_only });
     defer file.close();
@@ -67,8 +68,9 @@ test "logger preserves network payloads larger than its initial buffer" {
         logger.deinit();
         fs.cwd().deleteFile(path) catch |err| std.log.err("Failed to remove test log: {any}", .{err});
     }
-    const payload: [16384]u8 = @splat('x');
+    const payload: [300 * 1024]u8 = @splat('x');
     logger.logEvent(.Response, &payload);
+    logger.flush();
 
     var file = try fs.cwd().openFile(path, .{ .mode = .read_only });
     defer file.close();
@@ -77,6 +79,33 @@ test "logger preserves network payloads larger than its initial buffer" {
     try std.testing.expectEqual(bytes.len, try file.readAll(bytes));
     try std.testing.expectStringStartsWith(bytes, "INFO [");
     try std.testing.expectStringEndsWith(bytes, "< response: " ++ payload ++ "\n");
+}
+
+test "queued network events batch writes and discard owned records safely" {
+    const path = "./tmp/batched-network-payload.log";
+    fs.cwd().deleteFile(path) catch |err| switch (err) {
+        error.FileNotFound => {},
+        else => return err,
+    };
+    var running: std.atomic.Value(bool) = .init(true);
+    var agent = try Agent.init(std.testing.allocator, &running);
+    defer agent.deinit();
+    var logger = try Logger.init(std.testing.allocator, &agent, path, false);
+    defer {
+        logger.deinit();
+        fs.cwd().deleteFile(path) catch |err| std.log.err("Failed to remove test log: {any}", .{err});
+    }
+    logger.logEvent(.Request, "first\r\n");
+    logger.logEvent(.Response, "second\r\n");
+    for (0..2) |_| {
+        var task = agent.queue.dequeue();
+        task.executeAndDestroy(std.testing.allocator);
+    }
+    try std.testing.expectEqual(@as(u64, 0), (try logger.file.stat()).size);
+    logger.flush();
+    try std.testing.expect((try logger.file.stat()).size > 0);
+    // The remaining record must be destroyed without accessing a deinitialized logger.
+    logger.logEvent(.Request, "discarded");
 }
 
 test "test logger debug" {

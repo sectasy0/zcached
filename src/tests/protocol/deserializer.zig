@@ -109,6 +109,20 @@ test "deserialize array" {
     try std.testing.expectEqualStrings(expected, result);
 }
 
+test "large array encoding uses linear output storage" {
+    var backing: [128 * 1024]u8 = undefined;
+    var buffer_allocator = std.heap.FixedBufferAllocator.init(&backing);
+    var deserializer = Deserializer.init(buffer_allocator.allocator());
+    defer deserializer.deinit();
+    const items: [512]types.ZType = @splat(.{ .str = "abcdefghijklmnopqrst" });
+    var array = try types.ZType.Array.initCapacity(std.testing.allocator, items.len);
+    defer array.deinit();
+    try array.appendSlice(&items);
+    const bytes = try deserializer.process(.{ .array = array });
+    try std.testing.expectStringStartsWith(bytes, "*512\r\n");
+    try std.testing.expectEqual(@as(usize, 512), std.mem.count(u8, bytes, "$20\r\nabcdefghijklmnopqrst\r\n"));
+    try std.testing.expectEqual(@as(usize, 6 + 512 * 27), bytes.len);
+}
 test "serialize map" {
     var map = std.StringHashMap(types.ZType).init(std.testing.allocator);
     defer map.deinit();

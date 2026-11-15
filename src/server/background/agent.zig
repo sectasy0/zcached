@@ -157,6 +157,13 @@ pub const Queue = struct {
         owned_args_ptr = undefined;
     }
 
+    /// Transfers task ownership only after a successful enqueue.
+    pub fn enqueueTask(self: *Queue, task: Task) !void {
+        self.lock.lock();
+        defer self.lock.unlock();
+        try self.enqueueInner(task);
+    }
+
     fn enqueueInner(self: *Queue, task: Task) !void {
         if (self.stopping) return error.AgentStopped;
         if (self.capacity) |cap| {
@@ -179,19 +186,20 @@ pub const Queue = struct {
         defer self.lock.unlock();
 
         while (true) {
+            const next = self.delayed.peek();
+            const now = runtime_io.timestamp();
+            if (!self.stopping) {
+                if (next) |task| {
+                    if (task.execute_at <= now) {
+                        _ = self.delayed.pop();
+                        return task;
+                    }
+                }
+            }
             if (self.ready.readItem()) |task| {
                 return task;
             }
             if (self.stopping) return .{ .run = null, .destroy = null, .args = null };
-
-            const next = self.delayed.peek();
-            const now = runtime_io.timestamp();
-            if (next) |task| {
-                if (task.execute_at <= now) {
-                    _ = self.delayed.pop();
-                    return task;
-                }
-            }
 
             // Reset under the queue lock so enqueue/stop cannot lose a wakeup.
             self.wakeup.reset();
@@ -363,7 +371,7 @@ fn drain(self: *Self) void {
     self.cond.signal();
     self.mutex.unlock();
 
-    while (self.running.load(.seq_cst)) {
+    while (true) {
         var task = self.queue.dequeue();
         if (task.run == null) { // poison pill
             return;
@@ -427,6 +435,7 @@ fn rescheduleCyclic(self: *Self, task: *Task, prev_sched: i64, interval: i64) !v
         self.queue.lock.unlock();
 
         _ = result catch |err| {
+            if (err == error.AgentStopped) return err;
             std.debug.print(
                 "# Failed to reschedule cyclic task (attempt {d}/{d}): {any}\n",
                 .{ i + 1, self.reschedule_retries, err },
