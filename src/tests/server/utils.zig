@@ -1,6 +1,6 @@
 const std = @import("std");
 const fs = @import("fs");
-const ctime = @cImport(@cInclude("time.h"));
+const ctime = @import("c");
 const utils = @import("../../server/utils.zig");
 
 test "enumTypeFromStr" {

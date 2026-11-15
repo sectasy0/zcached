@@ -98,7 +98,7 @@ pub const Queue = struct {
     pub fn init(allocator: std.mem.Allocator) !Queue {
         return .{
             .ready = .init(allocator),
-            .delayed = .initContext(void{}),
+            .delayed = .initContext({}),
             .allocator = allocator,
             .lock = .{},
         };
@@ -223,71 +223,29 @@ pub const Queue = struct {
     /// Returns a pointer to the newly allocated clone.
     fn takeOwnershipByCloning(allocator: std.mem.Allocator, args: anytype) error{OutOfMemory}!*@TypeOf(args) {
         const T = @TypeOf(args);
-        const res = try allocator.create(@TypeOf(args));
-
-        if (@typeInfo(T) != .@"struct") {
-            res.* = args;
-            return res;
-        }
-
+        const res = try allocator.create(T);
+        errdefer allocator.destroy(res);
         res.* = args;
+        if (@typeInfo(T) != .@"struct") return res;
+        const info = @typeInfo(T).@"struct";
+        if (!info.is_tuple or info.field_names.len == 0) return res;
+        const Root = @TypeOf(@field(res, "0"));
+        if (@typeInfo(Root) != .@"struct" or !@hasField(Root, "args")) return res;
 
-        switch (@typeInfo(T)) {
-            .@"struct" => |s| {
-                if (s.is_tuple) {
-                    if (s.fields.len == 0) return res;
-                    const args_root = @field(res, "0");
-                    if (@typeInfo(@TypeOf(args_root)) != .@"struct") return res;
-
-                    // on failure, free all strings that were allocated
-                    var got_to: usize = 0;
-                    errdefer {
-                        inline for (std.meta.fields(@TypeOf(args_root)), 0..) |field, i| {
-                            if (comptime std.mem.eql(u8, field.name, "args")) {
-                                const args_ptr = @field(args_root, field.name);
-
-                                inline for (std.meta.fields(@TypeOf(args_ptr))) |subfield| {
-                                    if ((subfield.type == []const u8 or subfield.type == []u8) and i <= got_to) {
-                                        const field_ptr = @field(
-                                            @field(
-                                                @field(res, "0"),
-                                                field.name,
-                                            ),
-                                            subfield.name,
-                                        );
-                                        allocator.free(field_ptr);
-                                    }
-                                }
-                            }
-                        }
-
-                        allocator.destroy(res);
-                    }
-
-                    inline for (std.meta.fields(@TypeOf(args_root))) |field| {
-                        // dupe all fields of type `[]const u8` or `[]u8`
-                        if (comptime std.mem.eql(u8, field.name, "args")) {
-                            const args_ptr = @field(args_root, field.name);
-
-                            inline for (std.meta.fields(@TypeOf(args_ptr)), 0..) |subfield, j| {
-                                if (subfield.type == []u8 or subfield.type == []const u8) {
-                                    const original = @field(args_ptr, subfield.name);
-                                    const duped = try allocator.dupe(u8, original);
-                                    @field(
-                                        @field(
-                                            @field(res, "0"),
-                                            field.name,
-                                        ),
-                                        subfield.name,
-                                    ) = duped;
-                                    got_to = j;
-                                }
-                            }
-                        }
-                    }
+        const fields = @typeInfo(@TypeOf(@field(res, "0").args)).@"struct";
+        var initialized: usize = 0;
+        errdefer {
+            inline for (fields.field_names, fields.field_types, 0..) |name, Field, index| {
+                if ((Field == []const u8 or Field == []u8) and index < initialized) {
+                    allocator.free(@field(@field(res, "0").args, name));
                 }
-            },
-            else => return res,
+            }
+        }
+        inline for (fields.field_names, fields.field_types, 0..) |name, Field, index| {
+            if (Field == []const u8 or Field == []u8) {
+                @field(@field(res, "0").args, name) = try allocator.dupe(u8, @field(@field(res, "0").args, name));
+            }
+            initialized = index + 1;
         }
 
         return res;
@@ -300,19 +258,14 @@ pub const Queue = struct {
         const T = @TypeOf(args.*);
         if (@typeInfo(T) == .@"struct") {
             const info = @typeInfo(T).@"struct";
-            if (info.is_tuple and info.fields.len > 0) {
+            if (info.is_tuple and info.field_names.len > 0) {
                 const args_root = @field(args, "0");
-                if (@typeInfo(@TypeOf(args_root)) == .@"struct") {
-                    inline for (std.meta.fields(@TypeOf(args_root))) |field| {
-                        if (comptime std.mem.eql(u8, field.name, "args")) {
-                            const args_ptr = @field(args_root, field.name);
-                            const ArgsT = @TypeOf(args_ptr);
-                            inline for (std.meta.fields(ArgsT)) |subfield| {
-                                const sub_ptr = @field(args_ptr, subfield.name);
-                                if (subfield.type == []const u8 or subfield.type == []u8) {
-                                    allocator.free(sub_ptr);
-                                }
-                            }
+                const Root = @TypeOf(args_root);
+                if (@typeInfo(Root) == .@"struct" and @hasField(Root, "args")) {
+                    const fields = @typeInfo(@TypeOf(args_root.args)).@"struct";
+                    inline for (fields.field_names, fields.field_types) |name, Field| {
+                        if (Field == []const u8 or Field == []u8) {
+                            allocator.free(@field(args_root.args, name));
                         }
                     }
                 }
@@ -456,11 +409,6 @@ fn rescheduleCyclic(self: *Self, task: *Task, prev_sched: i64, interval: i64) !v
 
     // compute next based on the previous schedule -> avoids drift
     var next = prev_sched + interval;
-
-    std.debug.print(
-        "# Rescheduling cyclic task, next: {d}\n",
-        .{next},
-    );
 
     // if the system slept and "next" is already in the past, catch up
     // (compute the smallest next > now)

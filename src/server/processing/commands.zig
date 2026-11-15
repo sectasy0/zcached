@@ -166,7 +166,7 @@ pub const Handler = struct {
         for (keys) |key| {
             if (key != .str) return .{ .err = error.KeyNotString };
 
-            const value: ZType = self.context.resources.memory.get(key.str) catch .{ .null = void{} };
+            const value: ZType = self.context.resources.memory.get(key.str) catch .{ .null = {} };
 
             result.put(key.str, value) catch |err| {
                 return .{ .err = err };

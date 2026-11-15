@@ -234,7 +234,7 @@ test "should handle MGET command" {
     try std.testing.expectEqual(std.meta.activeTag(result.ok), .map);
     try std.testing.expectEqualStrings(result.ok.map.get("key").?.str, "value");
     try std.testing.expectEqualStrings(result.ok.map.get("key2").?.str, "value2");
-    try std.testing.expectEqual(result.ok.map.get("key3").?, ZType{ .null = void{} });
+    try std.testing.expectEqual(result.ok.map.get("key3").?, ZType{ .null = {} });
 }
 
 test "should handle MSET command" {

@@ -19,7 +19,7 @@ test "should not return errors" {
 
     const address = Address.initIp4(.{ 192, 168, 0, 2 }, 1234);
     const result = access.verify(&fixture.config, &fixture.logger, address);
-    try std.testing.expectEqual(result, void{});
+    try std.testing.expectEqual(result, {});
 }
 
 test "should return error.NotPermitted" {

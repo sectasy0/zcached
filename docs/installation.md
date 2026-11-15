@@ -1,7 +1,12 @@
 ## Building from Source
 ### Prerequisites
-- [zig](https://ziglang.org/download/) (0.13.0 or newer)
+- [zig](https://ziglang.org/download/) (0.17.1)
 - Unix-based operating system (Linux, macOS). For Windows users, please refer to the `Docker` section below.
+
+The build generates libc and OpenSSL bindings with Zig's `translate-c` build
+step; no checked-in generated bindings or additional Zig packages are required.
+OpenSSL headers and libraries must be available when building TLS or the E2E
+client.
 
 ### Steps
 **1. Clone the repository.**
@@ -14,7 +19,7 @@ cd zcached
 ```
 **3. Build the project.**
 ```bash
-# provide --tls-enabled=true to build zcached with tls
+# provide -Dtls-enabled=true to build zcached with tls
 zig build
 ```
 **4. Run the executable.**
@@ -45,7 +50,7 @@ docker compose up
 
 ## Installation script
 
-- [zig](https://ziglang.org/download/) (0.13.0 or newer)
+- [zig](https://ziglang.org/download/) (0.17.1)
 - Unix-based operating system (Linux, macOS). For Windows users, please refer to the `Docker` section above.
 
 This process is similar to building from source, but it simplifies the setup by using an installation script to compile and configure `zcached` to run with your system. If you prefer not to use systemd configuration, please refer to the instructions in the `Building from Source` section.

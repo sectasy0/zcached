@@ -2,7 +2,7 @@
 
 Welcome to `zcached`, a nimble and efficient in-memory caching system resembling databases like Redis. This README acts as a comprehensive guide, aiding in comprehension, setup, and optimal utilization.
 
-![zig](https://img.shields.io/badge/Zig-v0.16.0-0074C1?logo=zig&logoColor=white&color=%230074C1)
+![zig](https://img.shields.io/badge/Zig-v0.17.1-0074C1?logo=zig&logoColor=white&color=%230074C1)
 ![tests](https://github.com/sectasy0/zcached/actions/workflows/zcached-tests.yml/badge.svg)
 ![build](https://github.com/sectasy0/zcached/actions/workflows/zcached-build.yml/badge.svg)
 
@@ -61,6 +61,9 @@ zig build test
 ```
 This prints individual test results and a final summary. A failing test makes the
 command exit with a non-zero status.
+Test-runner arguments can be passed after `--`, for example
+`zig build test -- --seed=0x1234`. Zig 0.17's build run steps forward these
+arguments directly.
 
 ## Project Layout
 - `src/runtime/`: shared I/O, filesystem, and synchronization adapters.

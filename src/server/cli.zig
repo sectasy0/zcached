@@ -78,24 +78,26 @@ pub const Parser = struct {
         var args = Args{};
         if (process_args.len == 1) return args;
 
-        inline for (std.meta.fields(Args)) |field| {
-            const short = try fieldShorthand(field.name);
+        const fields = @typeInfo(Args).@"struct";
+        inline for (fields.field_names, fields.field_types) |name, Field| {
+            const short = try fieldShorthand(name);
 
             const field_args = try argsForField(
-                field,
+                name,
+                Field,
                 short,
                 process_args,
             );
             if (field_args != null) {
-                switch (field.type) {
-                    bool => @field(args, field.name) = true,
+                switch (Field) {
+                    bool => @field(args, name) = true,
                     ?[]const u8 => {
                         if (std.mem.eql(u8, field_args.?[1], "")) {
                             try showHelp();
                             return error.MissingValue;
                         }
 
-                        @field(args, field.name) = field_args.?[1];
+                        @field(args, name) = field_args.?[1];
                     },
                     else => return error.InvalidType,
                 }
@@ -109,27 +111,27 @@ pub const Parser = struct {
     }
 
     fn fieldShorthand(field_name: []const u8) ![]const u8 {
-        inline for (std.meta.fields(@TypeOf(Args.shorthands))) |shorthand| {
-            const value = @field(Args.shorthands, shorthand.name);
-            if (std.mem.eql(u8, value, field_name)) return shorthand.name;
+        inline for (@typeInfo(@TypeOf(Args.shorthands)).@"struct".field_names) |name| {
+            const value = @field(Args.shorthands, name);
+            if (std.mem.eql(u8, value, field_name)) return name;
         }
 
         return error.InvalidShorthand;
     }
 
-    fn argsForField(field: anytype, short: []const u8, args: []const [:0]const u8) !?[2][]const u8 {
+    fn argsForField(comptime name: []const u8, comptime Field: type, short: []const u8, args: []const [:0]const u8) !?[2][]const u8 {
         for (args, 0..) |arg, index| {
             if (index == 0 or arg.len < 2 or arg[0] != '-') continue;
 
             const is_long = std.mem.startsWith(u8, arg, "--") and
-                std.mem.eql(u8, arg[2..], field.name);
+                std.mem.eql(u8, arg[2..], name);
             const is_short = !std.mem.startsWith(u8, arg, "--") and
                 std.mem.eql(u8, arg[1..], short);
             if (!is_long and !is_short) continue;
 
-            if (field.type == bool) return .{ field.name, "" };
-            if (args.len > index + 1) return .{ field.name, args[index + 1] };
-            return .{ field.name, "" };
+            if (Field == bool) return .{ name, "" };
+            if (args.len > index + 1) return .{ name, args[index + 1] };
+            return .{ name, "" };
         }
         return null;
     }

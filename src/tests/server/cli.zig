@@ -10,7 +10,7 @@ fn testArgs(allocator: std.mem.Allocator, values: []const []const u8) ![][:0]u8 
     }
 
     for (values, 0..) |value, index| {
-        args[index] = try allocator.dupeZ(u8, value);
+        args[index] = try allocator.dupeSentinel(u8, value, 0);
         initialized += 1;
     }
     return args;

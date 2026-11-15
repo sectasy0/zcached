@@ -21,7 +21,7 @@ pub fn setup_array(allocator: std.mem.Allocator) !std.array_list.Managed(types.Z
     try array.append(.{ .int = 47 });
     try array.append(.{ .float = 47.47 });
     try array.append(.{ .bool = false });
-    try array.append(.{ .null = void{} });
+    try array.append(.{ .null = {} });
     return array;
 }
 
@@ -32,7 +32,7 @@ pub fn setup_map(allocator: std.mem.Allocator) !std.StringHashMap(types.ZType) {
     try map.put("test1", .{ .int = 88 });
     try map.put("test2", .{ .float = 88.45 });
     try map.put("test3", .{ .bool = true });
-    try map.put("test4", .{ .null = void{} });
+    try map.put("test4", .{ .null = {} });
     return map;
 }
 
@@ -40,7 +40,7 @@ pub fn setup_storage(storage: *Memory) !void {
     try storage.put("foo", .{ .int = 42 });
     try storage.put("foo2", .{ .float = 123.45 });
     try storage.put("foo3", .{ .bool = true });
-    try storage.put("foo4", .{ .null = void{} });
+    try storage.put("foo4", .{ .null = {} });
     try storage.put("foo5", .{ .sstr = SIMPLE_STRING });
     try storage.put("bar", .{ .str = STRING });
 }

@@ -148,7 +148,7 @@ pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]c
     );
     defer allocator.free(config_bytes);
 
-    var ast = try std.zig.Ast.parse(allocator, config_bytes, .zon);
+    var ast = try std.zig.Ast.parse(allocator, config_bytes, .{ .mode = .zon });
     defer ast.deinit(allocator);
 
     try processAst(&config, ast);
@@ -245,7 +245,7 @@ fn processField(
 ) !void {
     const allocator = config.allocator;
 
-    const field_index = @intFromEnum(field_idx);
+    const field_index = @backingInt(field_idx);
 
     if (ast.fullStructInit(buf, field_idx)) |v| {
         var object = std.StringArrayHashMapUnmanaged(Node){};
@@ -258,7 +258,7 @@ fn processField(
             const token_index = ast.firstToken(i) - 2;
             const token_name = ast.tokenSlice(token_index);
 
-            const index = @intFromEnum(i);
+            const index = @backingInt(i);
 
             const node = ast.nodes.get(index);
 
@@ -340,7 +340,7 @@ fn processField(
         errdefer result.deinit();
 
         for (v.ast.elements) |v_idx| {
-            const index = @intFromEnum(v_idx);
+            const index = @backingInt(v_idx);
             const value = utils.parseString(
                 allocator,
                 ast,
@@ -370,7 +370,7 @@ fn processField(
     }
 
     const node: NodeIndex = root.ast.fields[field_index - 1];
-    const info: std.zig.Ast.Node = ast.nodes.get(@intFromEnum(node));
+    const info: std.zig.Ast.Node = ast.nodes.get(@backingInt(node));
 
     try parseByNodeTag(
         config,

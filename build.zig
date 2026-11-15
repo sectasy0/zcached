@@ -1,9 +1,29 @@
 const std = @import("std");
 
+comptime {
+    if (@import("builtin").zig_version.order(.{ .major = 0, .minor = 17, .patch = 1 }) == .lt) {
+        @compileError("zcached requires Zig 0.17.1 or newer");
+    }
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const tls_enabled = b.option(bool, "tls-enabled", "Enable TLS") orelse false;
+
+    const libc = b.addTranslateC(.{
+        .root_source_file = b.path("src/runtime/libc.h"),
+        .target = target,
+        .optimize = optimize,
+    }).createModule();
+    const openssl_headers = b.addTranslateC(.{
+        .root_source_file = b.path("src/server/network/openssl.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    openssl_headers.linkSystemLibrary("ssl", .{});
+    openssl_headers.linkSystemLibrary("crypto", .{});
+    const openssl = openssl_headers.createModule();
 
     const options = b.addOptions();
     options.addOption(bool, "tls_enabled", false);
@@ -31,6 +51,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "runtime_io", .module = runtime_io },
         .{ .name = "fs", .module = fs },
         .{ .name = "sync", .module = sync },
+        .{ .name = "c", .module = libc },
     };
 
     const exe = b.addExecutable(.{
@@ -78,6 +99,8 @@ pub fn build(b: *std.Build) void {
         module.addOptions("build_options", options);
     }
     exe_tls.root_module.addOptions("build_options", tls_options);
+    exe_tls.root_module.addImport("openssl", openssl);
+    server.addImport("openssl", openssl);
     e2e.root_module.addImport("server", server);
 
     for ([_]*std.Build.Module{ exe.root_module, exe_tls.root_module, e2e.root_module, unit_tests.root_module }) |module| {
@@ -101,21 +124,21 @@ pub fn build(b: *std.Build) void {
     const run_e2e = b.addRunArtifact(e2e);
     for ([_]*std.Build.Step.Run{ run_cmd, run_e2e }) |run| {
         run.step.dependOn(b.getInstallStep());
-        if (b.args) |args| run.addArgs(args);
+        run.addPassthruArgs();
     }
     b.step("run", "Run the app").dependOn(&run_cmd.step);
 
     const install_exe = b.addInstallArtifact(exe, .{});
     const install_exe_tls = b.addInstallArtifact(exe_tls, .{});
     const e2e_step = b.step("e2e", "Run e2e tests");
-    e2e_step.dependOn(&install_exe.step);
-    e2e_step.dependOn(&install_exe_tls.step);
+    run_e2e.step.dependOn(&install_exe.step);
+    run_e2e.step.dependOn(&install_exe_tls.step);
     e2e_step.dependOn(&run_e2e.step);
 
     // Preserve terminal test output instead of using the build runner's test protocol.
     const run_unit_tests = std.Build.Step.Run.create(b, "run zcached-tests");
     run_unit_tests.addArtifactArg(unit_tests);
-    run_unit_tests.addArg(b.fmt("--seed=0x{x}", .{b.graph.random_seed}));
+    run_unit_tests.addPassthruArgs();
     run_unit_tests.stdio = .inherit;
     b.step("test", "Run unit tests").dependOn(&run_unit_tests.step);
 }
