@@ -1,11 +1,6 @@
-const stdlib = @import("std");
-const std = struct {
-    pub const testing = stdlib.testing;
-    pub const io = struct {
-        pub const fixedBufferStream = @import("../../protocol/fixed_buffer_stream.zig").fixedBufferStream;
-    };
-};
-const fifo_module = @import("../../server/processing/fifo.zig");
+const std = @import("std");
+const fixedBufferStream = @import("../../protocol/fixed_buffer_stream.zig").fixedBufferStream;
+const fifo_module = @import("../../server/background/fifo.zig");
 
 const LinearFifo = fifo_module.LinearFifo;
 const LinearFifoBufferType = fifo_module.LinearFifoBufferType;
@@ -98,9 +93,9 @@ test "LinearFifo(u8, .Dynamic)" {
 
     {
         try fifo.ensureTotalCapacity(1);
-        var in_fbs = std.io.fixedBufferStream("pump test");
+        var in_fbs = fixedBufferStream("pump test");
         var out_buf: [50]u8 = undefined;
-        var out_fbs = std.io.fixedBufferStream(&out_buf);
+        var out_fbs = fixedBufferStream(&out_buf);
         try fifo.pump(in_fbs.reader(), out_fbs.writer());
         try testing.expectEqualSlices(u8, in_fbs.buffer, out_fbs.getWritten());
     }

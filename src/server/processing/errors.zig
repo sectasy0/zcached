@@ -4,7 +4,7 @@ const consts = @import("../network/consts.zig");
 
 const ZType = @import("../../protocol/types.zig").ZType;
 
-const Args = struct {
+pub const Args = struct {
     command: ?[]const u8 = null,
     key: ?[]const u8 = null,
 };

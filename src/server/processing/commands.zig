@@ -7,7 +7,7 @@ const ZType = @import("../../protocol/types.zig").ZType;
 const Memory = @import("../storage/memory.zig");
 
 // Processing / application logic
-const Context = @import("../processing/employer.zig").Context;
+const Context = @import("../context.zig");
 
 // Tracing utilities
 const TracingAllocator = @import("../tracing.zig").TracingAllocator;

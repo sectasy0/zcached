@@ -3,6 +3,29 @@ const fs = @import("fs");
 
 const Logger = @import("../../server/logger.zig");
 
+test "logger preserves network payloads larger than its initial buffer" {
+    const path = "./tmp/network-payload.log";
+    fs.cwd().deleteFile(path) catch |err| switch (err) {
+        error.FileNotFound => {},
+        else => return err,
+    };
+    var logger = try Logger.init(std.testing.allocator, null, path, false);
+    defer {
+        logger.deinit();
+        fs.cwd().deleteFile(path) catch |err| std.log.err("Failed to remove test log: {any}", .{err});
+    }
+    const payload = [_]u8{'x'} ** 16384;
+    logger.logEvent(.Response, &payload);
+
+    var file = try fs.cwd().openFile(path, .{ .mode = .read_only });
+    defer file.close();
+    const bytes = try std.testing.allocator.alloc(u8, (try file.stat()).size);
+    defer std.testing.allocator.free(bytes);
+    try std.testing.expectEqual(bytes.len, try file.readAll(bytes));
+    try std.testing.expectStringStartsWith(bytes, "INFO [");
+    try std.testing.expectStringEndsWith(bytes, "< response: " ++ payload ++ "\n");
+}
+
 test "test logger debug" {
     fs.cwd().deleteTree("log") catch {};
 

@@ -1,9 +1,40 @@
 const std = @import("std");
 const runtime_io = @import("runtime_io");
-const sync = @import("../sync.zig");
+const sync = @import("sync");
 
 const fifo = @import("fifo.zig");
 const utils = @import("../utils.zig");
+
+const Cancellation = struct {
+    allocator: std.mem.Allocator,
+    // One reference belongs to the handle, one to the queued task's lifetime.
+    references: std.atomic.Value(usize) = .init(2),
+    mutex: sync.Mutex = .{},
+    canceled: bool = false,
+
+    fn release(self: *Cancellation) void {
+        if (self.references.fetchSub(1, .acq_rel) == 1) self.allocator.destroy(self);
+    }
+};
+
+pub const ScheduledTask = struct {
+    cancellation: ?*Cancellation,
+
+    /// Waits for an executing callback and prevents subsequent executions.
+    pub fn cancel(self: *ScheduledTask) void {
+        const state = self.cancellation orelse return;
+        state.mutex.lock();
+        defer state.mutex.unlock();
+        state.canceled = true;
+    }
+
+    pub fn deinit(self: *ScheduledTask) void {
+        const state = self.cancellation orelse return;
+        self.cancel();
+        self.cancellation = null;
+        state.release();
+    }
+};
 
 pub const Task = struct {
     run: ?*const fn (args: ?*const anyopaque) void,
@@ -13,13 +44,17 @@ pub const Task = struct {
     interval: i64 = 0,
 
     args: ?*const anyopaque,
+    cancellation: ?*Cancellation = null,
 
     pub fn executeAndDestroy(self: *Task, allocator: std.mem.Allocator) void {
         if (self.run) |run| {
             run(self.args);
             self.run = null;
         }
+        self.deinit(allocator);
+    }
 
+    fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         const local_destroy = self.destroy;
         const local_args = self.args;
 
@@ -29,6 +64,8 @@ pub const Task = struct {
         if (local_destroy) |destroy_fn| {
             destroy_fn(allocator, local_args);
         }
+        if (self.cancellation) |state| state.release();
+        self.cancellation = null;
     }
 
     pub fn execute(self: *Task) void {
@@ -46,8 +83,7 @@ pub const Task = struct {
 pub const Queue = struct {
     // FIFO for ready to execute tasks
     ready: fifo.LinearFifo(Task, .Dynamic),
-    // Priority queue for delayed tasks, ordered by execute_at,
-    // when the time comes, tasks are moved from delayed to ready.
+    // Priority queue for delayed tasks, ordered by execute_at.
     delayed: std.PriorityQueue(Task, void, Task.compare),
     allocator: std.mem.Allocator,
 
@@ -56,8 +92,8 @@ pub const Queue = struct {
 
     lock: sync.Mutex,
 
-    not_full: sync.Condition = .{},
-    not_empty: sync.Condition = .{},
+    wakeup: std.Io.Event = .unset,
+    stopping: bool = false,
 
     pub fn init(allocator: std.mem.Allocator) !Queue {
         return .{
@@ -70,6 +106,7 @@ pub const Queue = struct {
 
     pub const EnqueueOptions = struct {
         interval: i64 = 0,
+        cancellation: ?*Cancellation = null,
     };
 
     pub fn enqueue(
@@ -109,6 +146,7 @@ pub const Queue = struct {
             .execute_at = if (options) |opts| runtime_io.timestamp() + opts.interval else 0,
             .interval = if (options) |opts| opts.interval else 0,
             .args = @ptrCast(@alignCast(owned_args_ptr)),
+            .cancellation = if (options) |opts| opts.cancellation else null,
         })) {
             return; // Task enqueued successfully
         } else |err| {
@@ -120,6 +158,7 @@ pub const Queue = struct {
     }
 
     fn enqueueInner(self: *Queue, task: Task) !void {
+        if (self.stopping) return error.AgentStopped;
         if (self.capacity) |cap| {
             const queue_len = self.ready.count + self.delayed.count();
             if (queue_len >= cap and task.run != null) return error.QueueFull;
@@ -132,7 +171,7 @@ pub const Queue = struct {
         }
 
         // Wakeup threads waiting for dequeue
-        self.not_empty.broadcast();
+        self.wakeup.set(runtime_io.get());
     }
 
     pub fn dequeue(self: *Queue) Task {
@@ -141,46 +180,39 @@ pub const Queue = struct {
 
         while (true) {
             if (self.ready.readItem()) |task| {
-                // Wake up threads waiting to enqueue
-                self.not_full.broadcast();
                 return task;
             }
+            if (self.stopping) return .{ .run = null, .destroy = null, .args = null };
 
-            if (self.delayed.peek()) |task| {
-                const now = runtime_io.timestamp();
-                // std.debug.print("# Next delayed task at {d}, now {d}\n", .{ task.execute_at, now });
-
+            const next = self.delayed.peek();
+            const now = runtime_io.timestamp();
+            if (next) |task| {
                 if (task.execute_at <= now) {
-                    std.debug.print("# Moving delayed task scheduled at {d} to ready queue\n", .{task.execute_at});
-                    // move to ready queue
-                    // (this might fail if the ready queue is full,
-                    // but that's okay — space will free up soon)
-                    _ = self.ready.writeItem(task) catch {
-                        // if adding to the ready queue failed,
-                        // try returning the task back to the heap
-                        self.delayed.push(self.allocator, task) catch {
-                            // if adding back to the heap failed,
-                            // the task is lost, but there's nothing we can do
-                        };
-                        // wait until space becomes available in the ready queue
-                        self.not_full.wait(&self.lock);
-                        continue;
-                    };
-
-                    _ = self.delayed.pop(); // remove from heap
-
-                    continue;
-                } else {
-                    const wait_ns: u64 = @intCast((task.execute_at - now) * std.time.ns_per_s);
-                    self.lock.unlock();
-                    runtime_io.sleepNanoseconds(wait_ns);
-                    self.lock.lock();
-                    continue;
+                    _ = self.delayed.pop();
+                    return task;
                 }
             }
 
-            // nothing to do, wait for something to be enqueued
-            self.not_empty.wait(&self.lock);
+            // Reset under the queue lock so enqueue/stop cannot lose a wakeup.
+            self.wakeup.reset();
+            self.lock.unlock();
+            const io = runtime_io.get();
+            if (next) |task| {
+                self.wakeup.waitTimeout(io, .{
+                    .duration = .{ .raw = .fromSeconds(task.execute_at - now), .clock = .awake },
+                }) catch |err| switch (err) {
+                    error.Timeout => {},
+                    error.Canceled => {
+                        std.log.err("Database queue wait canceled", .{});
+                        self.lock.lock();
+                        self.stopping = true;
+                        return .{ .run = null, .destroy = null, .args = null };
+                    },
+                };
+            } else {
+                self.wakeup.waitUncancelable(io);
+            }
+            self.lock.lock();
         }
     }
 
@@ -203,7 +235,9 @@ pub const Queue = struct {
         switch (@typeInfo(T)) {
             .@"struct" => |s| {
                 if (s.is_tuple) {
+                    if (s.fields.len == 0) return res;
                     const args_root = @field(res, "0");
+                    if (@typeInfo(@TypeOf(args_root)) != .@"struct") return res;
 
                     // on failure, free all strings that were allocated
                     var got_to: usize = 0;
@@ -263,17 +297,23 @@ pub const Queue = struct {
     /// - Frees any `[]u8` or `[]const u8` fields inside `args.args`.
     /// - Destroys the struct allocation.
     fn releaseOwnership(allocator: std.mem.Allocator, args: anytype) void {
-        const args_root = @field(args, "0");
-
-        inline for (std.meta.fields(@TypeOf(args_root))) |field| {
-            if (comptime std.mem.eql(u8, field.name, "args")) {
-                const args_ptr = @field(args_root, field.name);
-                const ArgsT = @TypeOf(args_ptr);
-
-                inline for (std.meta.fields(ArgsT)) |subfield| {
-                    const sub_ptr = @field(args_ptr, subfield.name);
-                    if (subfield.type == []const u8 or subfield.type == []u8) {
-                        allocator.free(sub_ptr);
+        const T = @TypeOf(args.*);
+        if (@typeInfo(T) == .@"struct") {
+            const info = @typeInfo(T).@"struct";
+            if (info.is_tuple and info.fields.len > 0) {
+                const args_root = @field(args, "0");
+                if (@typeInfo(@TypeOf(args_root)) == .@"struct") {
+                    inline for (std.meta.fields(@TypeOf(args_root))) |field| {
+                        if (comptime std.mem.eql(u8, field.name, "args")) {
+                            const args_ptr = @field(args_root, field.name);
+                            const ArgsT = @TypeOf(args_ptr);
+                            inline for (std.meta.fields(ArgsT)) |subfield| {
+                                const sub_ptr = @field(args_ptr, subfield.name);
+                                if (subfield.type == []const u8 or subfield.type == []u8) {
+                                    allocator.free(sub_ptr);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -288,16 +328,14 @@ pub const Queue = struct {
 
         var iter = self.delayed.iterator();
         while (iter.next()) |task| {
-            if (task.destroy) |destroy| {
-                destroy(allocator, task.args);
-            }
+            var owned_task = task;
+            owned_task.deinit(allocator);
         }
         self.delayed.deinit(self.allocator);
 
         while (self.ready.readItem()) |task| {
-            if (task.destroy) |destroy| {
-                destroy(allocator, task.args);
-            }
+            var owned_task = task;
+            owned_task.deinit(allocator);
         }
 
         self.ready.deinit();
@@ -343,35 +381,26 @@ pub fn schedule(self: *Self, comptime func: anytype, args: anytype, options: ?Qu
     try self.queue.enqueue(self.allocator, func, args, options);
 }
 
-pub fn deinit(self: *Self) void {
-    // We will try until poison pill is enqueued, but break as soon as it succeeds.
+pub fn scheduleCancelable(self: *Self, comptime func: anytype, args: anytype, interval: i64) !ScheduledTask {
+    const state = try self.allocator.create(Cancellation);
+    state.* = .{ .allocator = self.allocator };
+    errdefer self.allocator.destroy(state);
+    try self.schedule(func, args, .{ .interval = interval, .cancellation = state });
+    return .{ .cancellation = state };
+}
+
+pub fn stop(self: *Self) void {
+    const thread = self.drain_thread orelse return;
     self.queue.lock.lock();
-
-    while (true) {
-        // Try to insert poison pill. If enqueueInner returns normally -> success -> break.
-        // If it errors (timedWait timeout) -> continue and retry.
-        self.queue.enqueueInner(.{
-            .run = null,
-            .destroy = null,
-            .args = null,
-        }) catch {
-            // enqueueInner did a timedWait internally (which released and reacquired lock),
-            // and returned an error (timeout). We should retry.
-            continue;
-        };
-        // success
-        break;
-    }
-
-    // Wake consumer(s) that something is available.
-    self.queue.not_empty.broadcast();
+    self.queue.stopping = true;
+    self.queue.wakeup.set(runtime_io.get());
     self.queue.lock.unlock();
+    thread.join();
+    self.drain_thread = null;
+}
 
-    if (self.drain_thread) |t| {
-        t.join();
-        self.drain_thread = null;
-    }
-
+pub fn deinit(self: *Self) void {
+    self.stop();
     self.queue.deinit(self.allocator);
 }
 
@@ -386,6 +415,16 @@ fn drain(self: *Self) void {
         if (task.run == null) { // poison pill
             return;
         }
+        const cancellation = task.cancellation;
+        if (cancellation) |state| {
+            state.mutex.lock();
+            if (state.canceled) {
+                state.mutex.unlock();
+                task.deinit(self.allocator);
+                continue;
+            }
+        }
+        defer if (cancellation) |state| state.mutex.unlock();
 
         // remember the previous scheduled time (we'll use it to compute the next one
         // so that we get a "fixed-rate" schedule (less drift) instead of "fixed-delay")

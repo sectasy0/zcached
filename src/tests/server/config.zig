@@ -19,7 +19,7 @@ test "config default values ipv4" {
     defer config.deinit();
 
     const address = Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
-    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expect(config.address.eql(address));
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.client_buffer, 4096);
@@ -42,7 +42,7 @@ test "config load custom values ipv4" {
     defer config.deinit();
 
     const address = Address.initIp4(.{ 192, 168, 0, 1 }, 1234);
-    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expect(config.address.eql(address));
     try std.testing.expectEqual(config.max_clients, 1024);
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.client_buffer, 8192);
@@ -72,7 +72,7 @@ test "config load custom values ipv6" {
     };
     const address = Address.initIp6(addr, 1234, 0, 0);
 
-    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expect(config.address.eql(address));
     try std.testing.expectEqual(config.max_clients, 1024);
     try std.testing.expectEqual(config.workers, 12);
     try std.testing.expectEqual(config.client_buffer, 4096);
@@ -95,7 +95,7 @@ test "config load custom values empty port" {
 
     const address = Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
 
-    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expect(config.address.eql(address));
     try std.testing.expectEqual(config.address.getPort(), 7556); // default
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.client_buffer, 4096);
@@ -117,7 +117,7 @@ test "config load custom values empty address" {
 
     const address = Address.initIp4(.{ 127, 0, 0, 1 }, 1234);
 
-    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expect(config.address.eql(address));
     try std.testing.expectEqual(config.address.getPort(), 1234); // default
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.client_buffer, 4096);
@@ -140,7 +140,7 @@ test "config load custom values empty workers" {
 
     const address = Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
 
-    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expect(config.address.eql(address));
     try std.testing.expectEqual(config.address.getPort(), 7556); // default
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.client_buffer, 4096);
@@ -158,7 +158,7 @@ test "config load custom values whitelist" {
     defer config.deinit();
 
     const address = Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
-    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expect(config.address.eql(address));
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.client_buffer, 4096);
@@ -200,7 +200,7 @@ test "config load custom values empty whitelist" {
     defer config.deinit();
 
     const address = Address.initIp4(.{ 127, 0, 0, 8 }, 7556);
-    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expect(config.address.eql(address));
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 12);
     try std.testing.expectEqual(config.client_buffer, 1024);
@@ -233,7 +233,7 @@ test "config load custom values empty whitelist string in zon" {
     defer config.deinit();
 
     const address = Address.initIp4(.{ 127, 0, 0, 8 }, 7556);
-    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expect(config.address.eql(address));
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 12);
     try std.testing.expectEqual(config.client_buffer, 1024);
@@ -267,7 +267,7 @@ test "config load custom values empty whitelist int in zon" {
     defer config.deinit();
 
     const address = Address.initIp4(.{ 127, 0, 0, 8 }, 7556);
-    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expect(config.address.eql(address));
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 12);
     try std.testing.expectEqual(config.client_buffer, 1024);
@@ -289,7 +289,7 @@ test "config load custom values only root" {
     defer config.deinit();
 
     const address = Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
-    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expect(config.address.eql(address));
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.client_buffer, 4096);
@@ -311,7 +311,7 @@ test "config load custom values empty file" {
     defer config.deinit();
 
     const address = Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
-    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expect(config.address.eql(address));
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.client_buffer, 4096);
@@ -340,7 +340,7 @@ test "config load custom values missing some fields" {
     defer config.deinit();
 
     const address = Address.initIp4(.{ 127, 0, 0, 1 }, 7556);
-    try std.testing.expectEqual(config.address.any, address.any);
+    try std.testing.expect(config.address.eql(address));
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.client_buffer, 4096);

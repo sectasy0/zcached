@@ -1,125 +1,99 @@
 const std = @import("std");
-
-// Core utilities
-const consts = @import("consts.zig");
-const utils = @import("../utils.zig");
-const Logger = @import("../logger.zig");
-
-// Middleware
+const runtime_io = @import("runtime_io");
 const AccessMiddleware = @import("../middleware/access.zig");
-
-// Networking
-const Connection = @import("../network/connection.zig");
-const StreamServer = @import("../network/stream_server.zig");
-const Stream = @import("stream.zig").Stream;
-
-// Processing / application logic
-const Context = @import("../processing/employer.zig").Context;
-const requests = @import("../processing/requests.zig");
-const Worker = @import("../processing/worker.zig");
-
-// Storage / memory
-const Memory = @import("../storage/memory.zig");
-
-// Internal modules
-const Warden = @import("./warden.zig");
+const Connection = @import("connection.zig");
+const StreamServer = @import("stream_server.zig");
+const Context = @import("../context.zig");
+const Processor = @import("../processing/requests.zig").Processor;
 
 const Listener = @This();
 
 server: *StreamServer,
-
 context: Context,
 allocator: std.mem.Allocator,
+slots: std.Io.Semaphore,
 
 pub fn init(allocator: std.mem.Allocator, server: *StreamServer, context: Context) Listener {
     return .{
         .allocator = allocator,
         .server = server,
         .context = context,
+        .slots = .{ .permits = context.config.max_clients },
     };
 }
 
-pub fn listen(self: *Listener, worker: *Worker) void {
-    worker.poll_fds[0] = .{
-        .revents = 0,
-        .fd = self.server.sockfd.?,
-        .events = std.posix.POLL.IN,
-    };
+pub fn listen(self: *Listener) std.Io.Cancelable!void {
+    const io = runtime_io.get();
+    var connections: std.Io.Group = .init;
+    defer connections.cancel(io);
 
-    var warden: Warden = .init(worker.allocator, self.context);
-    defer warden.deinit();
-
-    while (self.context.running.*.load(.seq_cst)) {
-        _ = std.posix.poll(worker.poll_fds[warden.start..worker.connections], 1000) catch |err| {
-            self.context.resources.logger.err(
-                "# std.os.poll failure: {any}",
-                .{err},
-            );
+    while (self.context.running.load(.seq_cst)) {
+        try self.slots.wait(io);
+        const incoming = self.server.accept() catch |err| {
+            self.slots.post(io);
+            if (err == error.Canceled) return error.Canceled;
+            if (err == error.ConnectionAborted) continue;
+            self.context.resources.logger.err("# accept failed: {any}", .{err});
+            self.context.running.store(false, .seq_cst);
             return;
         };
 
-        for (0..worker.connections) |i| {
-            const pollfd = worker.poll_fds[i];
+        connections.concurrent(io, serve, .{ self, incoming }) catch |err| {
+            var stream = incoming.stream;
+            stream.close();
+            self.slots.post(io);
+            if (err == error.Canceled) return error.Canceled;
+            self.context.resources.logger.err("# failed to start connection task: {any}", .{err});
+        };
+    }
+}
 
-            // there is no events for this file descriptor.
-            if (pollfd.revents == 0) continue;
+fn serve(self: *Listener, incoming: StreamServer.Connection) std.Io.Cancelable!void {
+    const io = runtime_io.get();
+    defer self.slots.post(io);
+    var accepted = incoming;
+    defer accepted.stream.close();
 
-            // file descriptor for listening incoming connections
-            if (pollfd.fd == self.server.sockfd.?) {
-                const incoming = self.server.accept() catch |err| {
-                    // "WouldBlock" is not an error, it just means that there are no incoming connections at the moment.
-                    // We can safely ignore it and continue listening.
-                    if (err == error.WouldBlock) continue;
+    var access = AccessMiddleware.init(self.context.config, self.context.resources.logger);
+    access.verify(accepted.address) catch return;
 
-                    self.context.resources.logger.err(
-                        "# accept() failed with: {any}",
-                        .{err},
-                    );
+    self.server.upgrade(&accepted.stream) catch |err| {
+        if (err == error.Canceled) return error.Canceled;
+        self.context.resources.logger.err("# TLS handshake failed: {any}", .{err});
+        return;
+    };
 
-                    continue;
-                };
-                const handle_result = warden.setupConnection(worker, incoming);
-                if (handle_result != .err) continue;
+    var connection = Connection.init(self.allocator, accepted) catch |err| {
+        self.context.resources.logger.err("# failed to initialize connection: {any}", .{err});
+        return;
+    };
+    defer connection.deinit();
+    var processor = Processor.init(self.allocator, self.context) catch |err| {
+        self.context.resources.logger.err("# failed to initialize request processor: {any}", .{err});
+        return;
+    };
+    defer processor.deinit();
 
-                const err = handle_result.err.etype;
-                var connection = handle_result.err.fd;
-                if (connection == null) continue;
+    self.context.resources.logger.info("# new connection from: {any}", .{accepted.address});
+    defer self.context.resources.logger.info("# connection with client closed: {any}", .{accepted.address});
 
-                switch (err) {
-                    // ConnectionAborted aborted is returned when:
-                    // - cant set fd to non-block
-                    // - cant allocate buffer for incoming connection
-                    // - cant set fd to worker states
-                    //
-                    // NotPermitted is returned when:
-                    // - access control fails (that means client is not permitted to connect)
-                    error.ConnectionAborted, error.NotPermitted, error.MaxConnections => {
-                        // also send message to the client
-                        if (connection) |_| connection.?.close();
-                        continue;
-                    },
-                    else => continue,
-                }
+    while (self.context.running.load(.seq_cst)) {
+        connection.readPending(self.context.config.max_request_size) catch |err| {
+            switch (err) {
+                error.IncompleteMessage => continue,
+                error.Canceled => return error.Canceled,
+                error.ConnectionClosed, error.ConnectionResetByPeer, error.SocketUnconnected => return,
+                else => {
+                    self.context.resources.logger.err("# failed to read request: {any}", .{err});
+                    return;
+                },
             }
-
-            // file descriptor is ready for reading.
-            if (pollfd.revents & (std.posix.POLL.IN | std.posix.POLL.HUP) != 0) {
-                const connection = worker.states.getPtr(pollfd.fd) orelse continue;
-                warden.dispatch(worker, connection);
-                continue;
-            }
-
-            // file descriptor is ready for writing.
-            if (pollfd.revents & std.posix.POLL.OUT != 0) {
-                const connection = worker.states.getPtr(pollfd.fd) orelse continue;
-                // event returned for writing, so we can send data to the client.
-                warden.handleOutgoing(worker, connection);
-                continue;
-            }
-
-            // treat everything else as error/disconnect
-            const connection = worker.states.getPtr(pollfd.fd) orelse continue;
-            warden.teardownConnection(worker, connection);
-        }
+        };
+        processor.deframe(&connection);
+        connection.writePending() catch |err| {
+            if (err == error.Canceled) return error.Canceled;
+            self.context.resources.logger.err("# failed to write response: {any}", .{err});
+            return;
+        };
     }
 }

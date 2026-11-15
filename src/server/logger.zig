@@ -3,7 +3,7 @@ const fs = @import("fs");
 const utils = @import("utils.zig");
 const builtin = @import("builtin");
 
-const Agent = @import("./processing/agent.zig");
+const Agent = @import("background/agent.zig");
 
 pub const Logger = @This();
 
@@ -173,36 +173,19 @@ pub fn log(self: *Logger, level: LogLevel, comptime format: []const u8, args: an
         LogLevel.Error => "ERROR",
     };
 
-    var buf: [buffer_size]u8 = undefined;
-    const message = std.fmt.bufPrint(&buf, format, args) catch |e| {
-        std.log.err("# failed to format log message: {any}", .{e});
-        return;
-    };
-
-    var fbuf: [buffer_size]u8 = undefined;
-    const formatted = std.fmt.bufPrint(&fbuf, "{s} [{s}] {s}\n", .{
-        log_level,
-        timestamp[0..t_size],
-        message,
-    }) catch |e| {
+    const start = self.buffer.items.len;
+    self.buffer.print("{s} [{s}] " ++ format ++ "\n", .{ log_level, timestamp[0..t_size] } ++ args) catch |e| {
+        self.buffer.shrinkRetainingCapacity(start);
         std.log.err("# failed to format log message: {any}", .{e});
         return;
     };
 
     if (self.stdout) |stdout| {
-        stdout.writeAll(formatted) catch |e| {
+        stdout.writeAll(self.buffer.items[start..]) catch |e| {
             std.log.err("# failed to write log message to stdout: {any}", .{e});
         };
     }
 
-    self.buffer.appendSlice(formatted) catch |e| {
-        std.log.err("# failed to buffer log message: {any}", .{e});
-        return;
-    };
-
-    if (self.buffer.items.len + formatted.len >= self.buffer.capacity) {
-        self.flush();
-    }
     self.flush();
 }
 
