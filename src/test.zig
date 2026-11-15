@@ -16,7 +16,7 @@ comptime {
 
     _ = @import("tests/network/connection.zig");
     _ = @import("tests/network/stream_server.zig");
-    _ = @import("tests/network/listener.zig");
+    _ = @import("tests/network/server.zig");
 
     _ = @import("tests/server/commands.zig");
     _ = @import("tests/server/errors.zig");
