@@ -88,6 +88,8 @@ module, without separate listener objects. Each accept loop keeps its own
 `max_clients` semaphore, preserving the per-worker limit. Socket listening and
 TLS setup remain in the reusable `StreamServer` transport, while access checks
 are a stateless function.
+The runtime manages worker threads and backend lifetimes. Network tasks receive
+`std.Io` explicitly, and accepted streams retain it for plaintext/TLS operations.
 
 AOF's `everysec` flush is a recurring task on the database's background queue,
 not a dedicated flush thread. Due recurring work runs before the ready FIFO;

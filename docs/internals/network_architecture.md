@@ -24,6 +24,7 @@ socket traffic goes through the same reactor as plaintext traffic.
 | --- | --- | --- |
 | Process entry point | Creates the I/O backend and shared resources; installs signal handlers; coordinates teardown. | [main.zig](../../src/main.zig) |
 | Evented `std.Io` adapter | Owns fiber stacks, ready queue, timers, futures, groups, cancellation, futex waiters, and TCP operations. | [evented.zig](../../src/runtime/evented.zig) |
+| Runtime `Worker` | Owns the worker thread and its stable backend; initializes/destroys it on the owner thread and passes `std.Io` to the supplied entry function. | [io.zig](../../src/runtime/io.zig) |
 | Native reactor | One-shot descriptor readiness, bounded kernel waits, and stale-event suppression. | [reactor.zig](../../src/runtime/reactor.zig) |
 | Network `Server` | Supervises native worker threads and their accept tasks, owns their shared transport, checks access, and runs connection tasks. | [network/server.zig](../../src/server/network/server.zig) |
 | `StreamServer` | Owns the listening socket and optional shared TLS context; binds, accepts, and upgrades streams. | [stream_server.zig](../../src/server/network/stream_server.zig) |
@@ -47,7 +48,8 @@ flowchart TD
     Main["main: resource lifetime + Evented std.Io"]
     Server["Network Server"]
     Transport["StreamServer: one listening socket + optional SSL_CTX"]
-    Accept["workers OS threads: own reactor + accept task + semaphore + connection Group"]
+    Runtime["Worker runtime: backend lifetime + OS threads"]
+    Accept["network workers: accept task + semaphore + connection Group"]
     Serve["one serve task per admitted connection"]
     Access["IP whitelist"]
     Stream["Stream: plaintext or TLS"]
@@ -55,20 +57,22 @@ flowchart TD
     DB["Command handler -> locked Memory methods"]
     AOF["AOF append in connection task"]
     Queue["Agent queue: logs + recurring everysec flush"]
-    Backend["thread-local Evented std.Io: fibers + native reactor"]
-    Main --> Server
-    Server --> Transport
-    Server --> Accept
-    Accept --> Serve
+    Backend["Evented std.Io: fibers + native reactor"]
+    Main -->|"control std.Io"| Server
+    Server -->|"control std.Io"| Transport
+    Server --> Runtime
+    Runtime -. owns .-> Backend
+    Runtime -->|"std.Io argument"| Accept
+    Accept -->|"std.Io argument"| Serve
     Serve --> Access
-    Serve --> Stream
+    Serve -->|"stream carries std.Io"| Stream
     Serve --> Processor
     Processor --> DB
     Processor --> AOF
     Processor --> Queue
     AOF -. recurring flush .-> Queue
     Transport --> Backend
-    Stream --> Backend
+    Stream -->|"stored std.Io"| Backend
 ```
 
 Arrows describe calls or task creation, not transfers of ownership. The queue
@@ -84,20 +88,34 @@ Daemon stdout/stderr are redirected to `/dev/null`, not left closed, so newly
 opened reactor descriptors cannot be accidentally used by diagnostic output.
 Daemon configurations still need absolute storage/certificate paths because
 the existing daemonization code changes its working directory to `/`.
-Each backend is initialized in place on its owner thread and must not be moved
-or migrated. Network workers publish their own backend through the thread-local
-runtime override; bootstrap and external background threads use the process
-backend. Worker backends are destroyed on their owner threads after all their
-connection tasks finish.
+The network path receives `std.Io` explicitly: `main` passes the control handle
+to `Server.init`/`run`, the runtime passes a worker handle to `runWorker`, and
+accept/serve tasks receive it as an argument. Each accepted `Stream` stores
+that handle; plaintext and TLS read/write/close operations use it instead of
+looking up an ambient runtime.
 
-Existing unit tests use `std.testing.io` through the runtime adapter unless a
-server worker installs its explicit thread-local native backend. The
+Each backend is initialized in place on its owner thread and must not be moved
+or migrated. `Server.run` owns a stable array of runtime `Worker` objects. The
+runtime, not the network worker entry function, initializes and destroys their
+backends. It waits for initialization before reporting startup success and
+propagates initialization failures to the network supervisor.
+
+The existing runtime override remains for filesystem and shared
+synchronization helpers that have not been converted to explicit parameters.
+Bootstrap and external background threads use the process backend. Network
+operations do not depend on that override. Backend lifetime ends only after
+its connection tasks finish.
+
+Network unit tests supply `std.testing.io` explicitly; runtime worker tests
+exercise the supplied native handle. Other unit tests use the runtime adapter.
+The
 separate `zcached-io-tests` executable directly constructs `Evented`, so native
 backend coverage cannot accidentally be replaced by the testing backend.
 
-`Server.run` binds once, then starts `config.workers` OS threads. Each thread
-initializes its own `Evented` backend and uses `std.Io.Group.concurrent` to run
-one accept task. These tasks accept from the **same** listening socket. Each
+`Server.run` binds once, then starts `config.workers` runtime workers.
+`runWorker(io, server)` receives an already initialized handle and uses
+`std.Io.Group.concurrent` to run one accept task. These tasks accept from the
+**same** listening socket. Each
 accept task has a local `std.Io.Semaphore` and a local group of
 connection tasks. It cancels and waits for that group before returning, so the
 semaphore cannot disappear while a connection still references it.
@@ -105,15 +123,15 @@ semaphore cannot disappear while a connection still references it.
 ```text
 main / Server.run
   owns StreamServer
-  owns and joins worker threads
-    +-- worker thread #0 / Evented #0
-    |     acceptConnections #0
+  owns and joins runtime Worker objects
+    +-- runtime Worker #0: thread + Evented backend
+    |     runWorker(io, server) -> acceptConnections(server, io)
     |     owns semaphore #0
     |     owns connections Group #0
     |       +-- serve connection A
     |       +-- serve connection B
-    +-- worker thread #1 / Evented #1
-    |     acceptConnections #1
+    +-- runtime Worker #1: thread + Evented backend
+    |     runWorker(io, server) -> acceptConnections(server, io)
     |     owns semaphore #1
     |     owns connections Group #1
     |       +-- serve connection C
@@ -234,6 +252,8 @@ is no fallback to Threaded network tasks or epoll.
 | Resource | Owner and lifetime |
 | --- | --- |
 | Listening socket and shared `SSL_CTX` | `StreamServer`, owned by the network server; destroyed after its accept/connection groups finish. |
+| Worker backend and thread | Stable runtime `Worker` slot owned by `Server.run`; initialized/destroyed on the worker thread, joined before the slot is freed. |
+| `std.Io` handles in tasks, streams, and TLS state | Non-owning copies of backend userdata/vtable pointers; valid until the owning runtime finishes those tasks and destroys the backend. |
 | Accepted socket and per-connection `SSL` / BIOs | The `accepted.stream` local in `serve`; closed on every exit path. |
 | Stream value inside `Connection` | A shallow handle/context copy used for I/O, not a second resource owner. `Connection.deinit` frees buffers only. |
 | Receive and transmit arrays | `Connection`; created after admission and TLS upgrade, freed when `serve` exits. |
@@ -251,17 +271,19 @@ not their underlying byte buffers.
 ```mermaid
 sequenceDiagram
     participant Run as Server.run
+    participant Runtime as runtime Worker
     participant Accept as acceptConnections
     participant IO as std.Io / socket
     participant Serve as serve
     participant TLS as OpenSSL memory BIOs
     participant Proc as Processor / Memory
     Run->>IO: bind + listen once
-    Run->>Accept: spawn worker thread; start local accept task
+    Run->>Runtime: start worker; await backend initialization
+    Runtime->>Accept: pass std.Io; start local accept task
     Accept->>Accept: wait for local semaphore permit
     Accept->>IO: accept
-    IO-->>Accept: stream + peer address
-    Accept->>Serve: connections.concurrent
+    IO-->>Accept: stream carrying std.Io + peer address
+    Accept->>Serve: connections.concurrent(io, serve, server + io + stream)
     Serve->>Serve: verify IP whitelist
     opt TLS compiled in and enabled in config
         Serve->>TLS: upgrade + handshake through std.Io
@@ -667,13 +689,25 @@ than assuming every SET creates a distinct key.
 These are client-inclusive, shared-host loopback observations, not an exclusive
 capacity measurement. The everysec profile ran after the alternating no-AOF
 trials; its higher median does not establish that enabling persistence improves
-performance. The final code passed 194 unit tests and nine native I/O tests in
+performance. That optimization version passed 194 unit tests and nine native I/O tests in
 ReleaseSafe, nine native I/O tests in ReleaseFast, and 100 TCP/TLS E2E checks in
 ReleaseSafe. Focused regressions cover bounded per-command arenas,
 large collection encoding, owned read snapshots, large AOF/log payloads,
 partial-copy allocation failure cleanup, recurring queue priority, and draining
 ready tasks after the running flag clears.
 
-The backend tests cross-compiled for x86_64-linux-musl and
-aarch64-linux-musl. Linux runtime behavior was not exercised locally because
-Docker Desktop was paused; cross-compilation is not runtime validation.
+### Explicit I/O dependency validation
+
+The runtime-managed worker and explicit network-handle refactor passed 196 unit
+tests and nine native I/O tests in ReleaseSafe, nine native I/O tests in
+ReleaseFast, and 100 TCP/TLS E2E checks in ReleaseSafe. Focused tests verify
+that stream reads/writes use the supplied I/O implementation rather than the
+ambient runtime, and that a runtime worker can await native futures and join
+only after their backend resources have been released. The network modules
+contain no `runtime_io.get()` calls or backend construction.
+
+A separate ReleaseFast smoke check with eight configured workers observed ten
+OS threads and verified 1,280 pipelined PING responses across 64 connections.
+SIGTERM with those connections still open exited with status 0 in approximately
+71 ms. The owned process exited and the listening port was released; this is a
+local shutdown observation, not a maximum-latency guarantee.

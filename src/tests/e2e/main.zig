@@ -136,14 +136,15 @@ pub fn connectSecure() !SecureStream {
     var socket = try connectUnsecure(SecureStream);
     errdefer socket.close();
 
-    socket.ctx = try server.secure.upgradeClient(socket.socket);
+    socket.ctx = try server.secure.upgradeClient(socket.io, socket.socket);
     return socket;
 }
 
 pub fn connectUnsecure(T: type) !T {
     const address = try std.Io.net.IpAddress.parse(consts.HOST, consts.PORT);
-    const connected = try address.connect(runtime_io.get(), .{ .mode = .stream });
-    return .{ .socket = connected };
+    const io = runtime_io.get();
+    const connected = try address.connect(io, .{ .mode = .stream });
+    return .{ .io = io, .socket = connected };
 }
 
 fn stopServer(child: *std.process.Child) !std.process.Child.Term {

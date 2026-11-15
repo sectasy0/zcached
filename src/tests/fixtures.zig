@@ -174,7 +174,7 @@ pub const ConnectionFixture = struct {
 
     pub fn init(allocator: std.mem.Allocator) !ConnectionFixture {
         const incoming = server.Connection{
-            .stream = Stream{ .socket = .{ .socket = .{
+            .stream = Stream{ .io = std.testing.io, .socket = .{ .socket = .{
                 .handle = 1,
                 .address = .{ .ip4 = .loopback(1234) },
             } } },

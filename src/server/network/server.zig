@@ -13,7 +13,7 @@ transport: StreamServer,
 context: Context,
 allocator: std.mem.Allocator,
 
-pub fn init(allocator: std.mem.Allocator, context: Context) !Server {
+pub fn init(allocator: std.mem.Allocator, io: std.Io, context: Context) !Server {
     if (context.config.workers == 0 or context.config.max_clients == 0) return error.InvalidWorkerConfig;
 
     if (context.config.tls.enabled and build_options.tls_enabled) {
@@ -21,7 +21,7 @@ pub fn init(allocator: std.mem.Allocator, context: Context) !Server {
     }
 
     return .{
-        .transport = try StreamServer.init(.{
+        .transport = try StreamServer.init(io, .{
             .reuse_address = true,
             .tls = context.config.tls,
         }),
@@ -30,7 +30,7 @@ pub fn init(allocator: std.mem.Allocator, context: Context) !Server {
     };
 }
 
-pub fn run(self: *Server) void {
+pub fn run(self: *Server, io: std.Io) void {
     self.context.resources.logger.info("# starting zcached server on tcp://{any} | Workers {}", .{
         self.context.config.address,
         self.context.config.workers,
@@ -43,7 +43,7 @@ pub fn run(self: *Server) void {
         return;
     };
 
-    const workers = self.allocator.alloc(std.Thread, self.context.config.workers) catch |err| {
+    const workers = self.allocator.alloc(runtime_io.Worker, self.context.config.workers) catch |err| {
         self.context.resources.logger.err("# failed to allocate server workers: {any}", .{err});
         return;
     };
@@ -51,13 +51,14 @@ pub fn run(self: *Server) void {
     var started: usize = 0;
     defer {
         self.context.running.store(false, .seq_cst);
-        for (workers[0..started]) |worker| worker.join();
+        for (workers[0..started]) |*worker| worker.join();
     }
 
     for (workers) |*worker| {
-        worker.* = std.Thread.spawn(.{}, runWorker, .{self}) catch |err| {
+        worker.* = .{};
+        worker.start(io, self.allocator, runWorker, .{self}) catch |err| {
             self.context.resources.logger.err(
-                "# failed to start server worker thread: {any}",
+                "# failed to start server worker runtime: {any}",
                 .{err},
             );
             return;
@@ -65,7 +66,6 @@ pub fn run(self: *Server) void {
         started += 1;
     }
 
-    const io = runtime_io.get();
     while (self.context.running.load(.seq_cst)) {
         io.sleep(.fromMilliseconds(100), .awake) catch |err| {
             self.context.resources.logger.err("# supervisor sleep failed: {any}", .{err});
@@ -74,22 +74,10 @@ pub fn run(self: *Server) void {
     }
 }
 
-fn runWorker(self: *Server) void {
-    var backend: runtime_io.Evented = undefined;
-    backend.init(self.allocator) catch |err| {
-        self.context.resources.logger.err("# failed to initialize worker I/O: {any}", .{err});
-        self.context.running.store(false, .seq_cst);
-        return;
-    };
-    defer backend.deinit();
-    const previous_io = runtime_io.thread_runtime;
-    runtime_io.thread_runtime = backend.io();
-    defer runtime_io.thread_runtime = previous_io;
-
-    const io = runtime_io.get();
+fn runWorker(io: std.Io, self: *Server) void {
     var listener: std.Io.Group = .init;
     defer listener.cancel(io);
-    listener.concurrent(io, acceptConnections, .{self}) catch |err| {
+    listener.concurrent(io, acceptConnections, .{ self, io }) catch |err| {
         self.context.resources.logger.err("# failed to start worker listener: {any}", .{err});
         self.context.running.store(false, .seq_cst);
         return;
@@ -103,15 +91,14 @@ fn runWorker(self: *Server) void {
     }
 }
 
-pub fn acceptConnections(self: *Server) std.Io.Cancelable!void {
-    const io = runtime_io.get();
+pub fn acceptConnections(self: *Server, io: std.Io) std.Io.Cancelable!void {
     var slots: std.Io.Semaphore = .{ .permits = self.context.config.max_clients };
     var connections: std.Io.Group = .init;
     defer connections.cancel(io);
 
     while (self.context.running.load(.seq_cst)) {
         try slots.wait(io);
-        const incoming = self.transport.accept() catch |err| {
+        const incoming = self.transport.accept(io) catch |err| {
             slots.post(io);
             if (err == error.Canceled) return error.Canceled;
             if (err == error.ConnectionAborted) continue;
@@ -120,7 +107,7 @@ pub fn acceptConnections(self: *Server) std.Io.Cancelable!void {
             return;
         };
 
-        connections.concurrent(io, serve, .{ self, incoming, &slots }) catch |err| {
+        connections.concurrent(io, serve, .{ self, io, incoming, &slots }) catch |err| {
             var stream = incoming.stream;
             stream.close();
             slots.post(io);
@@ -130,8 +117,7 @@ pub fn acceptConnections(self: *Server) std.Io.Cancelable!void {
     }
 }
 
-fn serve(self: *Server, incoming: StreamServer.Connection, slots: *std.Io.Semaphore) std.Io.Cancelable!void {
-    const io = runtime_io.get();
+fn serve(self: *Server, io: std.Io, incoming: StreamServer.Connection, slots: *std.Io.Semaphore) std.Io.Cancelable!void {
     defer slots.post(io);
     var accepted = incoming;
     defer accepted.stream.close();

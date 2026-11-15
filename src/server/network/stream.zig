@@ -1,5 +1,4 @@
 const std = @import("std");
-const runtime_io = @import("runtime_io");
 const build_options = @import("build_options");
 const secure = @import("secure.zig");
 const socket_io = @import("socket.zig");
@@ -14,6 +13,7 @@ pub fn StreamT(comptime tls_enabled: bool) type {
         const Self = @This();
 
         socket: std.Io.net.Stream,
+        io: std.Io,
         ctx: ?if (tls_enabled) secure.StreamContext else void = null,
         closed: bool = false,
 
@@ -24,7 +24,7 @@ pub fn StreamT(comptime tls_enabled: bool) type {
                 if (self.ctx) |*ctx| ctx.deinit();
                 self.ctx = null;
             }
-            self.socket.close(runtime_io.get());
+            self.socket.close(self.io);
         }
 
         pub fn read(self: *Self, buffer: []u8) ReadError!usize {
@@ -33,7 +33,7 @@ pub fn StreamT(comptime tls_enabled: bool) type {
             if (tls_enabled) {
                 if (self.ctx) |*ctx| return ctx.read(self.socket, buffer);
             }
-            return socket_io.read(runtime_io.get(), self.socket, buffer);
+            return socket_io.read(self.io, self.socket, buffer);
         }
 
         pub fn write(self: *Self, bytes: []const u8) WriteError!usize {
@@ -42,7 +42,7 @@ pub fn StreamT(comptime tls_enabled: bool) type {
             if (tls_enabled) {
                 if (self.ctx) |*ctx| return ctx.write(self.socket, bytes);
             }
-            return socket_io.write(runtime_io.get(), self.socket, bytes);
+            return socket_io.write(self.io, self.socket, bytes);
         }
 
         pub fn writeAll(self: *Self, bytes: []const u8) WriteError!void {

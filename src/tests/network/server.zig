@@ -7,6 +7,31 @@ const ContextFixture = @import("../fixtures.zig").ContextFixture;
 const ping = "*1\r\n$4\r\nPING\r\n\x03";
 const pong = "+PONG\r\n\x03";
 
+test "Runtime worker passes native IO and joins after its futures finish" {
+    const State = struct {
+        failure: ?anyerror = null,
+        completed: bool = false,
+
+        fn run(io: std.Io, self: *@This()) void {
+            var future = io.concurrent(std.Io.sleep, .{ io, .fromMilliseconds(1), .awake }) catch |err| {
+                self.failure = err;
+                return;
+            };
+            future.await(io) catch |err| {
+                self.failure = err;
+                return;
+            };
+            self.completed = true;
+        }
+    };
+    var state: State = .{};
+    var worker: runtime_io.Worker = .{};
+    try worker.start(std.testing.io, std.testing.allocator, State.run, .{&state});
+    worker.join();
+    try std.testing.expect(state.failure == null);
+    try std.testing.expect(state.completed);
+}
+
 fn expectResponse(client: std.Io.net.Stream, expected: []const u8) !void {
     var reader = client.reader(runtime_io.get(), &.{});
     var buffer: [64]u8 = undefined;
@@ -42,10 +67,10 @@ test "Server handles fragmented and pipelined requests alongside an idle client"
     var running: std.atomic.Value(bool) = .init(true);
     var context = fixture.context();
     context.running = &running;
-    var server = try Server.init(fixture.allocator, context);
+    var server = try Server.init(fixture.allocator, io, context);
     defer server.deinit();
     try server.transport.listen(Address.initIp4(.{ 127, 0, 0, 1 }, 0));
-    var task = try io.concurrent(Server.acceptConnections, .{&server});
+    var task = try io.concurrent(Server.acceptConnections, .{ &server, io });
     defer task.cancel(io) catch |err| switch (err) {
         error.Canceled => {},
     };
@@ -76,10 +101,10 @@ test "Server resumes accepting after its client limit is released" {
     var running: std.atomic.Value(bool) = .init(true);
     var context = fixture.context();
     context.running = &running;
-    var server = try Server.init(fixture.allocator, context);
+    var server = try Server.init(fixture.allocator, io, context);
     defer server.deinit();
     try server.transport.listen(Address.initIp4(.{ 127, 0, 0, 1 }, 0));
-    var task = try io.concurrent(Server.acceptConnections, .{&server});
+    var task = try io.concurrent(Server.acceptConnections, .{ &server, io });
     defer task.cancel(io) catch |err| switch (err) {
         error.Canceled => {},
     };

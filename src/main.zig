@@ -231,12 +231,12 @@ pub fn main(init: std.process.Init) void {
     };
 
     {
-        var server = NetworkServer.init(allocator, context) catch |err| {
+        var server = NetworkServer.init(allocator, evented_io.io(), context) catch |err| {
             logger.err("# failed to initialize server: {any}", .{err});
             return;
         };
         defer server.deinit();
-        server.run();
+        server.run(evented_io.io());
     }
 }
 

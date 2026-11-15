@@ -1,5 +1,4 @@
 const std = @import("std");
-const runtime_io = @import("runtime_io");
 const socket_io = @import("socket.zig");
 const VerifyMode = @import("../config.zig").TLSConfig.VerifyMode;
 
@@ -42,8 +41,8 @@ pub const Context = struct {
         return .{ .ctx = ctx };
     }
 
-    pub fn upgrade(self: *const Context, socket: std.Io.net.Stream) !StreamContext {
-        return upgradeWithContext(self.ctx, socket, false);
+    pub fn upgrade(self: *const Context, io: std.Io, socket: std.Io.net.Stream) !StreamContext {
+        return upgradeWithContext(io, self.ctx, socket, false);
     }
 
     pub fn deinit(self: *Context) void {
@@ -52,15 +51,15 @@ pub const Context = struct {
 };
 
 /// E2E client helper; certificate verification is intentionally disabled.
-pub fn upgradeClient(socket: std.Io.net.Stream) !StreamContext {
+pub fn upgradeClient(io: std.Io, socket: std.Io.net.Stream) !StreamContext {
     const ctx = openssl.SSL_CTX_new(openssl.TLS_client_method()) orelse return error.SSLContextFailure;
     defer openssl.SSL_CTX_free(ctx);
     if (openssl.SSL_CTX_set_min_proto_version(ctx, openssl.TLS1_3_VERSION) != 1) return error.SSLMinVersion;
     openssl.SSL_CTX_set_verify(ctx, openssl.SSL_VERIFY_NONE, null);
-    return upgradeWithContext(ctx, socket, true);
+    return upgradeWithContext(io, ctx, socket, true);
 }
 
-fn upgradeWithContext(ctx: *openssl.SSL_CTX, socket: std.Io.net.Stream, client: bool) !StreamContext {
+fn upgradeWithContext(io: std.Io, ctx: *openssl.SSL_CTX, socket: std.Io.net.Stream, client: bool) !StreamContext {
     const ssl = openssl.SSL_new(ctx) orelse return error.SSLInitFailure;
     errdefer openssl.SSL_free(ssl);
     const input = openssl.BIO_new(openssl.BIO_s_mem()) orelse return error.TLSBioFailure;
@@ -71,12 +70,13 @@ fn upgradeWithContext(ctx: *openssl.SSL_CTX, socket: std.Io.net.Stream, client: 
     openssl.SSL_set_bio(ssl, input, output);
     if (client) openssl.SSL_set_connect_state(ssl) else openssl.SSL_set_accept_state(ssl);
 
-    var state = StreamContext{ .ssl = ssl, .input = input, .output = output };
+    var state = StreamContext{ .io = io, .ssl = ssl, .input = input, .output = output };
     try state.handshake(socket);
     return state;
 }
 
 pub const StreamContext = struct {
+    io: std.Io,
     ssl: *openssl.SSL,
     input: *openssl.BIO,
     output: *openssl.BIO,
@@ -93,7 +93,7 @@ pub const StreamContext = struct {
             const n = openssl.BIO_read(self.output, &buffer, buffer.len);
             if (n <= 0) return error.TLSBioFailure;
             const length: usize = @intCast(n);
-            try socket_io.writeAll(runtime_io.get(), socket, buffer[0..length]);
+            try socket_io.writeAll(self.io, socket, buffer[0..length]);
             total += length;
         }
         return total;
@@ -101,7 +101,7 @@ pub const StreamContext = struct {
 
     fn receive(self: *StreamContext, socket: std.Io.net.Stream) Error!void {
         var buffer: [16384]u8 = undefined;
-        const count = try socket_io.read(runtime_io.get(), socket, &buffer);
+        const count = try socket_io.read(self.io, socket, &buffer);
         if (count == 0) return error.TLSUnexpectedEof;
         var offset: usize = 0;
         while (offset < count) {
