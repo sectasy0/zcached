@@ -4,15 +4,11 @@ const consts = @import("consts.zig");
 const MAX_WORKERS = 8;
 const ITERATIONS = 10000;
 
-fn randomString(comptime len: usize) ![len]u8 {
-    var prng = std.Random.DefaultPrng.init(blk: {
-        var seed: u64 = undefined;
-        try std.posix.getrandom(std.mem.asBytes(&seed));
-        break :blk seed;
-    });
+fn randomString(io: std.Io, comptime len: usize) [len]u8 {
+    const seed: u64 = @intCast(std.Io.Clock.awake.now(io).nanoseconds);
+    var prng = std.Random.DefaultPrng.init(seed);
     const rand = prng.random();
 
-    // const result = try allocator.alloc(u8, len);
     var result: [len]u8 = undefined;
 
     for (&result) |*byte| {
@@ -22,34 +18,42 @@ fn randomString(comptime len: usize) ![len]u8 {
     return result;
 }
 
-fn runCommandFmt(socket: *std.net.Stream, comptime fmt: []const u8, args: anytype) !void {
-    var bw = std.io.bufferedWriter(socket.writer());
-    try std.fmt.format(bw.writer(), fmt, args);
-    _ = try bw.write("\x03");
-    try bw.flush();
-    var buffer: [1024]u8 = undefined;
-    const reader = socket.reader();
-    _ = try reader.read(buffer[0..]);
+fn runCommandFmt(
+    writer: *std.Io.net.Stream.Writer,
+    reader: *std.Io.net.Stream.Reader,
+    comptime fmt: []const u8,
+    args: anytype,
+) !void {
+    try writer.interface.print(fmt, args);
+    try writer.interface.writeAll("\x03");
+    try writer.interface.flush();
+    _ = try reader.interface.discardDelimiterInclusive(consts.EXT_CHAR);
 }
 
-fn worker() !void {
-    const addr = try std.net.Address.parseIp(consts.HOST, consts.PORT);
+fn worker(io: std.Io) !void {
+    const address = try std.Io.net.IpAddress.parse(consts.HOST, consts.PORT);
+    const socket = try address.connect(io, .{ .mode = .stream });
+    defer socket.close(io);
 
-    var socket = try std.net.tcpConnectToAddress(addr);
-    defer socket.close();
+    var writer_buffer: [1024]u8 = undefined;
+    var reader_buffer: [1024]u8 = undefined;
+    var writer = socket.writer(io, &writer_buffer);
+    var reader = socket.reader(io, &reader_buffer);
 
     for (0..ITERATIONS) |_| {
-        const key = try randomString(10);
-        const value = try randomString(20);
+        const key = randomString(io, 10);
+        const value = randomString(io, 20);
 
         try runCommandFmt(
-            &socket,
+            &writer,
+            &reader,
             "*3\r\n$3\r\nset\r\n${d}\r\n{s}\r\n${d}\r\n{s}\r\n",
             .{ key.len, key, value.len, value },
         );
 
         try runCommandFmt(
-            &socket,
+            &writer,
+            &reader,
             "*2\r\n$3\r\nget\r\n${d}\r\n{s}\r\n",
             .{ key.len, key },
         );
@@ -57,19 +61,23 @@ fn worker() !void {
 }
 
 pub fn main() !void {
-    const start_time = std.time.milliTimestamp();
+    var threaded_io = std.Io.Threaded.init(std.heap.page_allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const start_time = std.Io.Clock.awake.now(io).toMilliseconds();
 
     var workers: [MAX_WORKERS]std.Thread = undefined;
 
     for (0..MAX_WORKERS) |i| workers[i] = try std.Thread.spawn(
         .{},
         worker,
-        .{},
+        .{io},
     );
 
     for (workers) |worker_thread| worker_thread.join();
 
-    const end_time = std.time.milliTimestamp();
+    const end_time = std.Io.Clock.awake.now(io).toMilliseconds();
     const elapsed_ms = end_time - start_time;
 
     const elapsed_s = @as(f64, @floatFromInt(elapsed_ms)) / 1000;

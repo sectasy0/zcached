@@ -1,4 +1,5 @@
 const std = @import("std");
+const fs = @import("fs");
 
 pub const Args = struct {
     @"config-path": ?[]const u8 = null,
@@ -26,13 +27,13 @@ pub const ParserResult = struct {
     args: Args,
 };
 pub const Parser = struct {
-    _process_args: [][:0]u8 = undefined,
+    _process_args: []const [:0]const u8 = undefined,
     _allocator: std.mem.Allocator,
 
     args: Args,
 
     pub fn showHelp() !void {
-        const stdout = std.fs.File.stdout().deprecatedWriter();
+        const stdout = fs.File.stdout();
         const help_text: []const u8 =
             \\Usage: zcached [OPTIONS]
             \\
@@ -51,27 +52,29 @@ pub const Parser = struct {
             \\  zcached --config-path /etc/zcached.conf
             \\
         ;
-        try stdout.print("{s}\n", .{help_text});
+        try stdout.writeAll(help_text);
+        try stdout.writeAll("\n");
     }
 
     pub fn showVersion() !void {
-        const stdout = std.fs.File.stdout().deprecatedWriter();
+        const stdout = fs.File.stdout();
         const version_text: []const u8 =
             \\zcached 0.0.1
             \\
         ;
-        try stdout.print("{s}\n", .{version_text});
+        try stdout.writeAll(version_text);
     }
 
-    pub fn parse(allocator: std.mem.Allocator) !ParserResult {
+    pub fn parse(allocator: std.mem.Allocator, process_args: std.process.Args) !ParserResult {
         var parser = Parser{ ._allocator = allocator, .args = .{} };
-        parser._process_args = try std.process.argsAlloc(allocator);
+        parser._process_args = try process_args.toSlice(allocator);
+        errdefer parser.deinit();
         parser.args = try parseArgs(parser._process_args);
 
         return .{ .parser = parser, .args = parser.args };
     }
 
-    pub fn parseArgs(process_args: [][:0]u8) !Args {
+    pub fn parseArgs(process_args: []const [:0]const u8) !Args {
         var args = Args{};
         if (process_args.len == 1) return args;
 
@@ -102,7 +105,7 @@ pub const Parser = struct {
     }
 
     pub fn deinit(self: *const Parser) void {
-        std.process.argsFree(self._allocator, self._process_args);
+        self._allocator.free(self._process_args);
     }
 
     fn fieldShorthand(field_name: []const u8) ![]const u8 {
@@ -114,7 +117,7 @@ pub const Parser = struct {
         return error.InvalidShorthand;
     }
 
-    fn argsForField(field: anytype, short: []const u8, args: [][:0]u8) !?[2][]const u8 {
+    fn argsForField(field: anytype, short: []const u8, args: []const [:0]const u8) !?[2][]const u8 {
         for (args, 0..) |arg, index| {
             if (index == 0 or arg.len < 2 or arg[0] != '-') continue;
 

@@ -10,6 +10,7 @@ const utils = @import("../utils.zig");
 
 // Protocol handling
 const proto = @import("../../protocol/handler.zig");
+const fixed_buffer_stream = @import("../../protocol/fixed_buffer_stream.zig");
 const ZType = @import("../../protocol/types.zig").ZType;
 
 // Application logic
@@ -21,7 +22,7 @@ const consts = @import("../network/consts.zig");
 
 pub const Processor = @This();
 
-const Protocol = proto.ProtocolHandlerT(std.io.FixedBufferStream([]u8).Reader);
+const Protocol = proto.ProtocolHandlerT(fixed_buffer_stream.FixedBufferStream.Reader);
 
 cmd_handler: commands.Handler,
 context: Context,
@@ -72,10 +73,10 @@ pub fn deframe(self: *Processor, connection: *Connection) void {
 }
 
 pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
-    var stream = std.io.fixedBufferStream(request);
+    var stream = fixed_buffer_stream.fixedBufferStream(request);
     const reader = stream.reader();
 
-    const out_writer = connection.out().any();
+    var out_writer = connection.out();
     defer connection.signalWritable();
 
     // defer self.protocol.serializer.resetPosition();

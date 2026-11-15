@@ -1,4 +1,6 @@
 const std = @import("std");
+const fs = @import("fs");
+const Address = @import("../../server/network/address.zig").Address;
 
 const fixtures = @import("../fixtures.zig");
 const ContextFixture = fixtures.ContextFixture;
@@ -9,14 +11,14 @@ test "should not return errors" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
 
-    const whitelist = std.array_list.Managed(std.net.Address).init(fixture.allocator);
+    const whitelist = std.array_list.Managed(Address).init(fixture.allocator);
     const previous_whitelist = fixture.config.whitelist;
     defer previous_whitelist.deinit();
 
     fixture.config.whitelist = whitelist;
 
     const access_control = AccessMiddleware.init(&fixture.config, &fixture.logger);
-    const address = std.net.Address.initIp4(.{ 192, 168, 0, 2 }, 1234);
+    const address = Address.initIp4(.{ 192, 168, 0, 2 }, 1234);
     const result = access_control.verify(address);
     try std.testing.expectEqual(result, void{});
 }
@@ -26,18 +28,32 @@ test "should return error.NotPermitted" {
     defer fixture.deinit();
     const previous_whitelist = fixture.config.whitelist;
 
-    const whitelisted = std.net.Address.initIp4(.{ 192, 168, 0, 2 }, 1234);
-    var whitelist = std.array_list.Managed(std.net.Address).init(fixture.allocator);
+    const whitelisted = Address.initIp4(.{ 192, 168, 0, 2 }, 1234);
+    var whitelist = std.array_list.Managed(Address).init(fixture.allocator);
     try whitelist.append(whitelisted);
     defer previous_whitelist.deinit();
 
     fixture.config.whitelist = whitelist;
 
     const access_control = AccessMiddleware.init(&fixture.config, &fixture.logger);
-    const address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234);
+    const address = Address.initIp4(.{ 192, 168, 0, 1 }, 1234);
     const result = access_control.verify(address);
     try std.testing.expectEqual(result, error.NotPermitted);
 
     // Yep, without this in the logs, there is still a log about the rejected connection.
-    std.fs.cwd().deleteTree("log") catch {};
+    fs.cwd().deleteTree("log") catch {};
+}
+
+test "whitelist matches IP regardless of client port" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+
+    var whitelist = std.array_list.Managed(Address).init(fixture.allocator);
+    try whitelist.append(Address.initIp4(.{ 127, 0, 0, 1 }, 7556));
+    const previous_whitelist = fixture.config.whitelist;
+    defer previous_whitelist.deinit();
+    fixture.config.whitelist = whitelist;
+
+    const access_control = AccessMiddleware.init(&fixture.config, &fixture.logger);
+    try access_control.verify(Address.initIp4(.{ 127, 0, 0, 1 }, 64550));
 }

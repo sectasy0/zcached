@@ -20,6 +20,18 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    const runtime_io = b.createModule(.{
+        .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = "src/io.zig" } },
+        .target = target,
+        .optimize = optimize,
+    });
+    const fs = b.createModule(.{
+        .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = "src/fs.zig" } },
+        .target = target,
+        .optimize = optimize,
+    });
+    fs.addImport("runtime_io", runtime_io);
+
     const exe = b.addExecutable(.{
         .name = "zcached",
         // In this case the main source file is merely a path, however, in more
@@ -34,8 +46,10 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.root_module.addOptions("build_options", options);
+    exe.root_module.addImport("fs", fs);
+    exe.root_module.addImport("runtime_io", runtime_io);
 
-    exe.linkLibC();
+    exe.root_module.link_libc = true;
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -56,6 +70,8 @@ pub fn build(b: *std.Build) void {
     });
 
     e2e.root_module.addOptions("build_options", options);
+    e2e.root_module.addImport("fs", fs);
+    e2e.root_module.addImport("runtime_io", runtime_io);
 
     const server = b.addModule(
         "server",
@@ -70,12 +86,14 @@ pub fn build(b: *std.Build) void {
     );
 
     server.addOptions("build_options", options);
+    server.addImport("fs", fs);
+    server.addImport("runtime_io", runtime_io);
 
     e2e.root_module.addImport("server", server);
-    e2e.linkSystemLibrary("openssl");
-    e2e.linkSystemLibrary("crypto");
+    e2e.root_module.linkSystemLibrary("ssl", .{});
+    e2e.root_module.linkSystemLibrary("crypto", .{});
 
-    e2e.linkLibC();
+    e2e.root_module.link_libc = true;
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -98,10 +116,12 @@ pub fn build(b: *std.Build) void {
     });
 
     exe_tls.root_module.addOptions("build_options", tls_options);
+    exe_tls.root_module.addImport("fs", fs);
+    exe_tls.root_module.addImport("runtime_io", runtime_io);
 
-    exe_tls.linkSystemLibrary("openssl");
-    exe_tls.linkSystemLibrary("crypto");
-    exe_tls.linkLibC();
+    exe_tls.root_module.linkSystemLibrary("ssl", .{});
+    exe_tls.root_module.linkSystemLibrary("crypto", .{});
+    exe_tls.root_module.link_libc = true;
 
     if (tls_enabled) {
         // This declares intent for the executable to be installed into the
@@ -172,9 +192,14 @@ pub fn build(b: *std.Build) void {
     });
 
     unit_tests.root_module.addOptions("build_options", options);
+    unit_tests.root_module.addImport("fs", fs);
+    unit_tests.root_module.addImport("runtime_io", runtime_io);
 
-    const run_unit_tests = b.addRunArtifact(unit_tests);
-    unit_tests.linkLibC();
+    const run_unit_tests = std.Build.Step.Run.create(b, "run zcached-tests");
+    run_unit_tests.addArtifactArg(unit_tests);
+    run_unit_tests.addArg(b.fmt("--seed=0x{x}", .{b.graph.random_seed}));
+    run_unit_tests.stdio = .inherit;
+    unit_tests.root_module.link_libc = true;
 
     // Similar to creating the run step earlier, this exposes a `test` step to
     // the `zig build --help` menu, providing a way for the user to request
@@ -183,8 +208,8 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_unit_tests.step);
 
     if (tls_enabled) {
-        unit_tests.linkSystemLibrary("crypto");
-        unit_tests.linkSystemLibrary("openssl");
+        unit_tests.root_module.linkSystemLibrary("crypto", .{});
+        unit_tests.root_module.linkSystemLibrary("ssl", .{});
     }
 
     b.installArtifact(unit_tests);

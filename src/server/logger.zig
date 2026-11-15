@@ -1,4 +1,5 @@
 const std = @import("std");
+const fs = @import("fs");
 const utils = @import("utils.zig");
 const builtin = @import("builtin");
 
@@ -25,8 +26,8 @@ pub const EType = enum {
 allocator: std.mem.Allocator,
 agent: ?*Agent,
 
-file: std.fs.File = undefined,
-stdout: ?std.fs.File = undefined,
+file: fs.File = undefined,
+stdout: ?fs.File = undefined,
 log_path: []const u8 = DEFAULT_PATH,
 
 buffer: std.array_list.Managed(u8),
@@ -44,12 +45,12 @@ pub fn init(
         .agent = agent,
         .sout = sout,
         .buffer = try .initCapacity(allocator, buffer_size),
-        .stdout = std.fs.File.stderr(),
+        .stdout = fs.File.stderr(),
     };
     if (file_path != null) logger.log_path = file_path.?;
     utils.createPath(logger.log_path);
 
-    logger.file = try std.fs.cwd().createFile(
+    logger.file = try fs.cwd().createFile(
         logger.log_path,
         .{ .read = true, .truncate = false },
     );

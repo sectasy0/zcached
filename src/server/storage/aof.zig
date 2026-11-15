@@ -1,4 +1,7 @@
 const std = @import("std");
+const runtime_io = @import("runtime_io");
+const sync = @import("../sync.zig");
+const fs = @import("fs");
 const Config = @import("../config.zig");
 
 const consts = @import("../network/consts.zig");
@@ -43,11 +46,12 @@ const REWRITE_BUFFER_MAX_SIZE = 262144; // 256 KiB
 const AUTO_FLUSH_THRESHOLD = 4096; // 4 KiB
 
 pub const Strategy = Config.AOFConfig.FlushStrategy;
-const Protocol = protocol_handler.ProtocolHandlerT(std.io.FixedBufferStream([]u8).Reader);
+const fixed_buffer_stream = @import("../../protocol/fixed_buffer_stream.zig");
+const Protocol = protocol_handler.ProtocolHandlerT(fixed_buffer_stream.FixedBufferStream.Reader);
 
-journal: std.fs.File,
+journal: fs.File,
 path: []const u8,
-mutex: std.Thread.Mutex = .{},
+mutex: sync.Mutex = .{},
 flush_thread: ?std.Thread = null,
 flush_running: std.atomic.Value(bool) = .init(false),
 /// Normal buffer for new writes.
@@ -58,14 +62,14 @@ rewrite_buffer: std.array_list.Managed(u8),
 /// Flag indicating if rewrite is active, if set flushes are disabled.
 rewrite_in_progress: std.atomic.Value(bool) = .init(false),
 last_rewrite_size: std.atomic.Value(usize) = .init(0),
-rewrite_mutex: std.Thread.Mutex = std.Thread.Mutex{},
+rewrite_mutex: sync.Mutex = .{},
 rewrite_thread: ?std.Thread = null,
 // Queue for snapshot the data before rewrite.
 queue: Queue,
 
 size: std.atomic.Value(usize) = .init(0),
 
-test_event: ?std.Thread.ResetEvent = null,
+test_event: ?sync.Event = null,
 
 strategy: Strategy,
 /// Execution context or environment.
@@ -76,8 +80,8 @@ allocator: std.mem.Allocator,
 pub fn init(allocator: std.mem.Allocator, context: Context) !Self {
     const path = context.config.aof.path orelse AOF_PATH;
     @import("../utils.zig").createPath(path);
-    const journal = std.fs.cwd().openFile(path, .{ .mode = .read_write }) catch |err| switch (err) {
-        error.FileNotFound => try std.fs.cwd().createFile(path, .{ .read = true, .truncate = false }),
+    const journal = fs.cwd().openFile(path, .{ .mode = .read_write }) catch |err| switch (err) {
+        error.FileNotFound => try fs.cwd().createFile(path, .{ .read = true, .truncate = false }),
         else => return err,
     };
     try journal.seekFromEnd(0);
@@ -102,7 +106,7 @@ pub fn init(allocator: std.mem.Allocator, context: Context) !Self {
     };
 
     if (builtin.is_test) {
-        aof.test_event = std.Thread.ResetEvent{};
+        aof.test_event = .{};
     }
 
     return aof;
@@ -197,7 +201,7 @@ pub fn start(self: *Self) !void {
 
 fn flushLoop(self: *Self) void {
     while (self.flush_running.load(.seq_cst)) {
-        std.Thread.sleep(std.time.ns_per_s);
+        runtime_io.sleepNanoseconds(std.time.ns_per_s);
         if (!self.flush_running.load(.seq_cst)) break;
         self.flush() catch |err| {
             self.context.resources.logger.err("# failed to flush AOF file: {any}", .{err});
@@ -208,7 +212,7 @@ fn flushLoop(self: *Self) void {
 pub fn replay(self: *Self) !void {
     if (self.strategy == .no) return;
 
-    const journal = try std.fs.cwd().openFile(self.path, .{ .mode = .read_only });
+    const journal = try fs.cwd().openFile(self.path, .{ .mode = .read_only });
     defer journal.close();
 
     const size = (try journal.stat()).size;
@@ -225,7 +229,7 @@ pub fn replay(self: *Self) !void {
         readed_size += bytes_read;
     }
 
-    var stream = std.io.fixedBufferStream(buffer[0..buffer.len]);
+    var stream = fixed_buffer_stream.fixedBufferStream(buffer[0..buffer.len]);
     const reader = stream.reader();
 
     var protocol: Protocol = try Protocol.init(self.allocator);
@@ -250,7 +254,7 @@ pub fn replay(self: *Self) !void {
 
         defer self.allocator.free(command_bytes);
 
-        var command_stream = std.io.fixedBufferStream(command_bytes);
+        var command_stream = fixed_buffer_stream.fixedBufferStream(command_bytes);
         const command_set = protocol.serialize(command_stream.reader()) catch continue;
 
         if (std.meta.activeTag(command_set) != .array) {
@@ -321,7 +325,7 @@ pub fn rewrite(self: *Self) void {
         return;
     };
     defer self.allocator.free(rewritten_path);
-    const rewritten = std.fs.cwd().createFile(
+    const rewritten = fs.cwd().createFile(
         rewritten_path,
         .{ .truncate = true },
     ) catch |err| {
@@ -422,7 +426,7 @@ pub fn rewrite(self: *Self) void {
 
     var delete_error = false;
     const old_journal = self.journal;
-    std.fs.cwd().deleteFile(self.path) catch |err| {
+    fs.cwd().deleteFile(self.path) catch |err| {
         self.context.resources.logger.log(
             .Error,
             "# Failed to delete old AOF file: {}",
@@ -433,7 +437,7 @@ pub fn rewrite(self: *Self) void {
 
     if (!delete_error) old_journal.close();
 
-    std.fs.cwd().rename(rewritten_path, self.path) catch |err| {
+    fs.cwd().rename(rewritten_path, self.path) catch |err| {
         self.context.resources.logger.log(
             .Error,
             "# Failed to rename rewritten AOF file: {}",
@@ -580,12 +584,12 @@ pub fn deinit(self: *Self) void {
 
 const Queue = struct {
     items: std.array_list.Managed(u8),
-    lock: std.Thread.Mutex,
+    lock: sync.Mutex,
 
     pub fn init(allocator: std.mem.Allocator) !Queue {
         return .{
             .items = std.array_list.Managed(u8).init(allocator),
-            .lock = std.Thread.Mutex{},
+            .lock = .{},
         };
     }
 

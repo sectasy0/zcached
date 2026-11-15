@@ -20,7 +20,7 @@ pub fn buildArgs(command_set: *const std.array_list.Managed(ZType)) Args {
     return args;
 }
 
-pub fn handle(out: std.io.AnyWriter, err: anyerror, args: Args, logger: *Logger) !void {
+pub fn handle(out: anytype, err: anyerror, args: Args, logger: *Logger) !void {
     logger.debug("handling error: {}", .{err});
 
     _ = switch (err) {

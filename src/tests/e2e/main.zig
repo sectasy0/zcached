@@ -1,5 +1,5 @@
 const std = @import("std");
-const builtin = @import("builtin");
+const runtime_io = @import("runtime_io");
 
 const consts = @import("consts.zig");
 
@@ -26,6 +26,7 @@ fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
 }
 
 fn sendAndExpect(socket: anytype, command: []const u8, label: []const u8, expected: []const u8, reverse: bool) !void {
+
     _ = try socket.writeAll(@constCast(command));
     // std.Thread.sleep(100_0000); // Give the server some time to respond
     const response = try socket.reader().readUntilDelimiterAlloc(
@@ -68,15 +69,11 @@ pub fn runServer(tls: bool) !std.process.Child {
     if (tls) {
         argv = [_][]const u8{"./zig-out/bin/zcached_tls"};
     }
-    var child = std.process.Child.init(&argv, std.heap.page_allocator);
-    // child.stderr_behavior = .Ignore;
-    // child.stdout_behavior = .Ignore;
-    try child.spawn();
-    try child.waitForSpawn();
+    const child = try std.process.spawn(runtime_io.get(), .{ .argv = &argv });
 
     // std.debug.print("Server started with PID: {}, TLS: {}\n", .{ child.id, tls });
 
-    std.Thread.sleep(1_000_000_000);
+    runtime_io.sleepNanoseconds(1_000_000_000);
 
     return child;
 }
@@ -120,65 +117,58 @@ pub fn connectSecure() !SecureStream {
 }
 
 pub fn connectUnsecure(T: type) !T {
-    const address = try std.net.Address.parseIp(consts.HOST, consts.PORT);
-    const nonblock = 0;
-    const sock_flags = std.posix.SOCK.STREAM | nonblock |
-        (if (builtin.os.tag == .windows) 0 else std.posix.SOCK.CLOEXEC);
-
-    const sockfd = try std.posix.socket(address.any.family, sock_flags, std.posix.IPPROTO.TCP);
+    const address = try std.Io.net.IpAddress.parse(consts.HOST, consts.PORT);
+    const connected = try address.connect(runtime_io.get(), .{ .mode = .stream });
+    const sockfd = connected.socket.handle;
     errdefer T.close(@constCast(&T{ .handle = sockfd, .ctx = null }));
-
-    try std.posix.connect(sockfd, &address.any, address.getOsSockLen());
 
     return .{ .handle = sockfd, .ctx = null };
 }
 
+fn stopServer(child: *std.process.Child) !std.process.Child.Term {
+    const pid = child.id orelse return error.ChildAlreadyWaited;
+    try std.posix.kill(pid, .TERM);
+    return child.wait(runtime_io.get());
+}
+
 pub fn main() !u8 {
+    var threaded_io = std.Io.Threaded.init(std.heap.page_allocator, .{});
+    defer threaded_io.deinit();
+    runtime_io.runtime = threaded_io.io();
+
     var server_process = try runServer(false);
 
     var unsecure_stream = connectUnsecure(Stream) catch {
-        _ = server_process.kill() catch |err| {
-            std.debug.print("Failed to kill server process: {}\n", .{err});
-        };
+        _ = try stopServer(&server_process);
         return 1;
     };
     defer unsecure_stream.close();
 
     try runTests(unsecure_stream);
 
-    _ = server_process.kill() catch |err| {
-        std.debug.print("Failed to kill server process: {}\n", .{err});
-    };
-
-    var term = try server_process.wait();
+    var term = try stopServer(&server_process);
 
     // For now it means memory leak or crash
-    if (term.Exited != 0) std.process.exit(1);
+    if (term != .exited or term.exited != 0) std.process.exit(1);
 
     var secure_server_process = try runServer(true);
     var secure_stream = connectSecure() catch {
-        _ = secure_server_process.kill() catch |err| {
-            std.debug.print("Failed to kill server process: {}\n", .{err});
-        };
+        _ = try stopServer(&secure_server_process);
         return 1;
     };
     defer secure_stream.close();
 
     errdefer {
-        _ = secure_server_process.kill() catch |err| {
-            std.debug.print("Failed to kill secure server process: {}\n", .{err});
+        _ = stopServer(&secure_server_process) catch |err| {
+            std.debug.print("Failed to stop secure server: {s}\n", .{@errorName(err)});
         };
     }
 
     try runTests(secure_stream);
 
-    _ = secure_server_process.kill() catch |err| {
-        std.debug.print("Failed to kill secure server process: {}\n", .{err});
-    };
-
-    term = try secure_server_process.wait();
+    term = try stopServer(&secure_server_process);
     // For now it means memory leak or crash
-    if (term.Exited != 0) std.process.exit(1);
+    if (term != .exited or term.exited != 0) std.process.exit(1);
 
     if (failed > 0) {
         std.debug.print("\n[SUMMARY] Test suite completed: {d} passed, {d} failed.\n", .{ passed, failed });
@@ -352,7 +342,7 @@ fn save(socket: anytype) !void {
         false,
     );
 
-    std.Thread.sleep(1000000000); // Wait for a second to ensure LASTSAVE changes
+    runtime_io.sleepNanoseconds(1000000000); // Wait for a second to ensure LASTSAVE changes
 
     // SAVE command
     try sendAndExpect(

@@ -1,4 +1,5 @@
 const std = @import("std");
+const runtime_io = @import("runtime_io");
 
 const builtin = @import("builtin");
 const native_os = builtin.os.tag;
@@ -22,6 +23,7 @@ pub const ReadError = error{
     ConnectionTimedOut,
     NotOpenForReading,
     SocketNotConnected,
+    SocketUnconnected,
     SSLProtocolError,
 
     /// This error occurs when no global event loop is configured,
@@ -63,11 +65,14 @@ pub const WriteError = error{
 
     /// Connection reset by peer.
     ConnectionResetByPeer,
+    SocketUnconnected,
 
     NoDevice,
     ProcessNotFound,
     PermissionDenied,
     MessageTooBig,
+    FileBusy,
+    Canceled,
 } || std.posix.UnexpectedError;
 
 pub fn StreamT(comptime T: type) type {
@@ -84,20 +89,56 @@ pub fn StreamT(comptime T: type) type {
 
             switch (native_os) {
                 .windows => std.windows.closesocket(self.handle) catch unreachable,
-                else => std.posix.close(self.handle),
+                else => (std.Io.File{ .handle = self.handle, .flags = .{ .nonblocking = false } }).close(runtime_io.get()),
             }
         }
 
         const Self = @This();
-        pub const Reader = std.io.GenericReader(Self, ReadError, read);
-        pub const Writer = std.io.GenericWriter(Self, WriteError, write);
+        pub const Reader = struct {
+            stream: Self,
+
+            pub fn read(self: Reader, buffer: []u8) ReadError!usize {
+                return self.stream.read(buffer);
+            }
+
+            pub fn readUntilDelimiterAlloc(
+                self: Reader,
+                allocator: std.mem.Allocator,
+                delimiter: u8,
+                max_size: usize,
+            ) ![]u8 {
+                var result = std.array_list.Managed(u8).init(allocator);
+                errdefer result.deinit();
+
+                while (result.items.len <= max_size) {
+                    var byte: [1]u8 = undefined;
+                    const count = try self.read(&byte);
+                    if (count == 0) return error.EndOfStream;
+                    if (byte[0] == delimiter) return result.toOwnedSlice();
+                    try result.append(byte[0]);
+                }
+                return error.StreamTooLong;
+            }
+        };
+
+        pub const Writer = struct {
+            stream: Self,
+
+            pub fn write(self: Writer, buffer: []const u8) WriteError!usize {
+                return self.stream.write(buffer);
+            }
+
+            pub fn writeAll(self: Writer, buffer: []const u8) WriteError!void {
+                return self.stream.writeAll(buffer);
+            }
+        };
 
         pub fn reader(self: Self) Reader {
-            return .{ .context = self };
+            return .{ .stream = self };
         }
 
         pub fn writer(self: Self) Writer {
-            return .{ .context = self };
+            return .{ .stream = self };
         }
 
         pub fn read(self: Self, buffer: []u8) ReadError!usize {

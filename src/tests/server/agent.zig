@@ -1,13 +1,11 @@
 const std = @import("std");
+const runtime_io = @import("runtime_io");
 
 const Agent = @import("../../server/processing/agent.zig");
 
 var running: std.atomic.Value(bool) = .init(true);
 
-var thread_safe_allocator: std.heap.ThreadSafeAllocator = .{
-    .child_allocator = std.testing.allocator,
-};
-const allocator = thread_safe_allocator.allocator();
+const allocator = std.testing.allocator;
 
 test "enqueue and dequeue works" {
     var q: Agent.Queue = try .init(allocator);
@@ -173,7 +171,7 @@ test "enqueue tasks with interval" {
 
     try agent.kickoff();
 
-    std.Thread.sleep(3 * std.time.ns_per_s);
+    runtime_io.sleepNanoseconds(3 * std.time.ns_per_s);
     agent.deinit();
     try std.testing.expect(counter >= 2);
 }
@@ -216,7 +214,7 @@ test "cyclic reschedule fails when enqueueInner times out" {
     try agent.kickoff();
 
     // Give some time for the worker to attempt reschedule
-    std.Thread.sleep(3 * std.time.ns_per_s);
+    runtime_io.sleepNanoseconds(3 * std.time.ns_per_s);
 
     agent.deinit();
 
@@ -252,11 +250,11 @@ test "cyclic reschedule succeeds after retries" {
     try agent.kickoff();
 
     // Give some time for the worker to attempt reschedule
-    std.Thread.sleep(100 * std.time.ns_per_ms);
+    runtime_io.sleepNanoseconds(100 * std.time.ns_per_ms);
 
     q.capacity = null;
 
-    std.Thread.sleep(2 * std.time.ns_per_s);
+    runtime_io.sleepNanoseconds(2 * std.time.ns_per_s);
 
     agent.deinit();
 

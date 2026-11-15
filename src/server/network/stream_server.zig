@@ -1,7 +1,6 @@
 const std = @import("std");
-const io = std.io;
-const mem = std.mem;
-const posix = std.posix;
+const runtime_io = @import("runtime_io");
+const Address = @import("address.zig").Address;
 
 const Config = @import("../config.zig");
 
@@ -27,9 +26,10 @@ tls: Config.TLSConfig,
 tls_ctx: ?secure.Context = null,
 
 /// `undefined` until `listen` returns successfully.
-listen_address: std.net.Address,
+listen_address: Address,
 
-sockfd: ?std.posix.socket_t = null,
+sockfd: ?std.posix.fd_t = null,
+listener: ?std.Io.net.Server = null,
 
 pub const Options = struct {
     /// How many connections the kernel will accept on the application's behalf.
@@ -70,6 +70,7 @@ pub fn init(options: Options) !StreamServer {
 
     return StreamServer{
         .sockfd = null,
+        .listener = null,
         .kernel_backlog = options.kernel_backlog,
         .reuse_address = options.reuse_address,
         .reuse_port = options.reuse_port,
@@ -89,49 +90,27 @@ pub fn deinit(self: *StreamServer) void {
     self.* = undefined;
 }
 
-pub fn listen(self: *StreamServer, address: std.net.Address) !void {
-    const nonblock = 0;
-    const sock_flags = posix.SOCK.STREAM | posix.SOCK.CLOEXEC | nonblock;
-    var use_sock_flags: u32 = sock_flags;
-    if (self.force_nonblocking) use_sock_flags |= posix.SOCK.NONBLOCK;
-    const proto = if (address.any.family == posix.AF.UNIX) @as(u32, 0) else posix.IPPROTO.TCP;
+pub fn listen(self: *StreamServer, address: Address) !void {
+    const io = runtime_io.get();
+    var listener = try address.ip.listen(io, .{
+        .kernel_backlog = self.kernel_backlog,
+        .reuse_address = self.reuse_address or self.reuse_port,
+    });
+    errdefer listener.deinit(io);
 
-    const sockfd = try posix.socket(address.any.family, use_sock_flags, proto);
-    self.sockfd = sockfd;
-    errdefer {
-        posix.close(sockfd);
-        self.sockfd = null;
-    }
-
-    if (self.reuse_address) {
-        try posix.setsockopt(
-            sockfd,
-            posix.SOL.SOCKET,
-            posix.SO.REUSEADDR,
-            &mem.toBytes(@as(c_int, 1)),
-        );
-    }
-    if (@hasDecl(posix.SO, "REUSEPORT") and self.reuse_port) {
-        try posix.setsockopt(
-            sockfd,
-            posix.SOL.SOCKET,
-            posix.SO.REUSEPORT,
-            &mem.toBytes(@as(c_int, 1)),
-        );
-    }
-
-    var socklen = address.getOsSockLen();
-    try posix.bind(sockfd, &address.any, socklen);
-    try posix.listen(sockfd, self.kernel_backlog);
-    try posix.getsockname(sockfd, &self.listen_address.any, &socklen);
+    try setNonblocking(listener.socket.handle);
+    self.listener = listener;
+    self.sockfd = listener.socket.handle;
+    self.listen_address = Address.fromIp(listener.socket.address);
 }
 
 /// Stop listening. It is still necessary to call `deinit` after stopping listening.
 /// Calling `deinit` will automatically call `close`. It is safe to call `close` when
 /// not listening.
 pub fn close(self: *StreamServer) void {
-    if (self.sockfd) |fd| {
-        posix.close(fd);
+    if (self.listener) |*listener| {
+        listener.deinit(runtime_io.get());
+        self.listener = null;
         self.sockfd = null;
         self.listen_address = undefined;
     }
@@ -172,41 +151,60 @@ pub const AcceptError = error{
     NetworkSubsystemFailed,
 
     OperationNotSupported,
-} || posix.UnexpectedError;
+    Canceled,
+    NetworkDown,
+    NonblockingSetupFailed,
+} || std.posix.UnexpectedError;
 
 pub const Connection = struct {
     stream: Stream.Stream,
-    address: std.net.Address,
+    address: Address,
 };
 
 /// If this function succeeds, the returned `Connection` is a caller-managed resource.
 pub fn accept(self: *StreamServer) AcceptError!Connection {
-    const nonblock = 0;
-
-    var accepted_addr: std.net.Address = undefined;
-    var adr_len: posix.socklen_t = @sizeOf(std.net.Address);
-
-    const sock_flags = posix.SOCK.CLOEXEC | nonblock;
-    var use_sock_flags: u32 = sock_flags;
-    if (self.force_nonblocking) use_sock_flags |= posix.SOCK.NONBLOCK;
-    const accept_result = posix.accept(
-        self.sockfd.?,
-        &accepted_addr.any,
-        &adr_len,
-        use_sock_flags,
-    );
-
-    if (accept_result) |fd| {
-        var stream: Stream.Stream = .{ .handle = fd, .ctx = null };
-        if (build_options.tls_enabled) {
-            if (self.tls_ctx) |ctx| try ctx.upgrade(&stream);
-        }
-
-        return Connection{
-            .stream = stream,
-            .address = accepted_addr,
+    var peer_address: std.Io.Threaded.PosixAddress = undefined;
+    var peer_address_len: std.posix.socklen_t = @sizeOf(std.Io.Threaded.PosixAddress);
+    const fd = std.c.accept(self.sockfd.?, &peer_address.any, &peer_address_len);
+    if (fd < 0) {
+        return switch (std.posix.errno(fd)) {
+            .AGAIN, .INTR => error.WouldBlock,
+            .CONNABORTED => error.ConnectionAborted,
+            .PERM => error.BlockedByFirewall,
+            else => |err| std.posix.unexpectedErrno(err),
         };
-    } else |err| {
-        return err;
+    }
+
+    const socket_fd: std.posix.fd_t = @intCast(fd);
+    const socket_file: std.Io.File = .{
+        .handle = socket_fd,
+        .flags = .{ .nonblocking = false },
+    };
+    errdefer socket_file.close(runtime_io.get());
+
+    const descriptor_flags = std.c.fcntl(socket_fd, std.c.F.GETFD, @as(c_int, 0));
+    if (descriptor_flags < 0 or std.c.fcntl(
+        socket_fd,
+        std.c.F.SETFD,
+        descriptor_flags | std.posix.FD_CLOEXEC,
+    ) < 0) return error.SystemResources;
+    var stream: Stream.Stream = .{ .handle = socket_fd, .ctx = null };
+    errdefer stream.close();
+    if (build_options.tls_enabled) {
+        if (self.tls_ctx) |ctx| try ctx.upgrade(&stream);
+    }
+    try setNonblocking(socket_fd);
+
+    return Connection{
+        .stream = stream,
+        .address = Address.fromIp(std.Io.Threaded.addressFromPosix(&peer_address)),
+    };
+}
+
+fn setNonblocking(fd: std.posix.fd_t) error{NonblockingSetupFailed}!void {
+    const flags = std.c.fcntl(fd, std.c.F.GETFL, @as(c_int, 0));
+    const nonblocking_flag: c_int = @bitCast(std.c.O{ .NONBLOCK = true });
+    if (flags < 0 or std.c.fcntl(fd, std.c.F.SETFL, flags | nonblocking_flag) < 0) {
+        return error.NonblockingSetupFailed;
     }
 }

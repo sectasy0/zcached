@@ -1,4 +1,5 @@
 const std = @import("std");
+const fs = @import("fs");
 
 const Logger = @import("../server/logger.zig");
 const Config = @import("../server/config.zig");
@@ -113,7 +114,7 @@ pub const ConfigFile = struct {
     }
 
     pub fn deinit(self: *ConfigFile) void {
-        std.fs.cwd().deleteFile(self.path) catch {};
+        fs.cwd().deleteFile(self.path) catch {};
         self.whitelist.deinit();
     }
 
@@ -159,7 +160,7 @@ pub const ConfigFile = struct {
     fn write(self: *ConfigFile, content: []const u8) !void {
         utils.createPath(self.path);
 
-        const file = try std.fs.cwd().createFile(self.path, .{});
+        const file = try fs.cwd().createFile(self.path, .{});
         defer file.close();
 
         try file.writeAll(content);
@@ -174,7 +175,7 @@ pub const ConnectionFixture = struct {
     pub fn init(allocator: std.mem.Allocator) !ConnectionFixture {
         const incoming = server.Connection{
             .stream = Stream{ .handle = 1 },
-            .address = std.net.Address.initIp4(.{ 192, 168, 0, 1 }, 1234),
+            .address = @import("../server/network/address.zig").Address.initIp4(.{ 192, 168, 0, 1 }, 1234),
         };
 
         var pollfd = std.posix.pollfd{

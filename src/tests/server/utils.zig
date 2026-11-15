@@ -1,4 +1,5 @@
 const std = @import("std");
+const fs = @import("fs");
 const ctime = @cImport(@cInclude("time.h"));
 const utils = @import("../../server/utils.zig");
 
@@ -15,27 +16,27 @@ test "enumTypeFromStr" {
 
 test "createPath" {
     const file_path = "./test/file.txt";
-    const path = std.fs.path.dirname(file_path).?;
+    const path = fs.path.dirname(file_path).?;
 
-    defer std.fs.cwd().deleteDir(path) catch {};
+    defer fs.cwd().deleteDir(path) catch {};
 
     utils.createPath(file_path);
 
-    std.fs.cwd().makeDir(path) catch |err| {
+    fs.cwd().makeDir(path) catch |err| {
         try std.testing.expectEqual(err, error.PathAlreadyExists);
     };
 }
 
 test "createPath absolute" {
     const file_path = "/home/sectasy/zcached/test/file.txt";
-    const path = std.fs.path.dirname(file_path).?;
+    const path = fs.path.dirname(file_path).?;
 
-    defer std.fs.cwd().deleteDir(path) catch {};
+    defer fs.cwd().deleteDir(path) catch {};
 
-    const cwd_path = try std.fs.cwd().realpathAlloc(std.testing.allocator, ".");
+    const cwd_path = try fs.cwd().realpathAlloc(std.testing.allocator, ".");
     defer std.testing.allocator.free(cwd_path);
 
-    const absolute_path = try std.fs.path.resolve(std.testing.allocator, &.{
+    const absolute_path = try fs.path.resolve(std.testing.allocator, &.{
         cwd_path,
     });
 
@@ -43,7 +44,7 @@ test "createPath absolute" {
 
     utils.createPath(absolute_path);
 
-    std.fs.cwd().makeDir(absolute_path) catch |err| {
+    fs.cwd().makeDir(absolute_path) catch |err| {
         try std.testing.expectEqual(err, error.PathAlreadyExists);
     };
 }

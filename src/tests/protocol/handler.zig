@@ -1,18 +1,23 @@
-const std = @import("std");
+const stdlib = @import("std");
+const std = struct {
+    pub const testing = stdlib.testing;
+    pub const array_list = stdlib.array_list;
+};
 
 const ProtocolHandlerT = @import("../../protocol/handler.zig").ProtocolHandlerT;
+const fixed_buffer_stream = @import("../../protocol/fixed_buffer_stream.zig");
 const types = @import("../../protocol/types.zig");
 
 test "serialize" {
-    var stream = std.io.fixedBufferStream("*3\r\n$3\r\nSET\r\n$9\r\nmycounter\r\n:42\r\n");
+    var stream = fixed_buffer_stream.fixedBufferStream("*3\r\n$3\r\nSET\r\n$9\r\nmycounter\r\n:42\r\n");
 
     const reader = stream.reader();
 
-    const HandlerType = ProtocolHandlerT(*const @TypeOf(reader));
+    const HandlerType = ProtocolHandlerT(@TypeOf(reader));
     var handler = try HandlerType.init(std.testing.allocator);
     defer handler.deinit();
 
-    const result = try handler.serialize(&reader);
+    const result = try handler.serialize(reader);
     const result_array = result.array.items;
     try std.testing.expectEqualStrings("SET", result_array[0].str);
     try std.testing.expectEqualStrings("mycounter", result_array[1].str);
@@ -27,7 +32,7 @@ test "deserialize" {
     try array.append(.{ .str = "second" });
     try array.append(.{ .str = "third" });
 
-    const HandlerType = ProtocolHandlerT(*const std.net.Stream.Reader);
+    const HandlerType = ProtocolHandlerT(fixed_buffer_stream.FixedBufferStream.Reader);
     var handler = try HandlerType.init(std.testing.allocator);
     defer handler.deinit();
 

@@ -1,4 +1,6 @@
 const std = @import("std");
+const fs = @import("fs");
+const runtime_io = @import("runtime_io");
 const AOF = @import("../../server/storage/aof.zig");
 const Context = @import("../../server/processing/employer.zig").Context;
 const Commands = @import("../../server/processing/commands.zig");
@@ -14,7 +16,7 @@ fn uniquePath(allocator: std.mem.Allocator) ![]u8 {
     return std.fmt.allocPrint(
         allocator,
         "tmp/aof-test-{d}.aof",
-        .{std.time.nanoTimestamp()},
+        .{runtime_io.timestampNanoseconds()},
     );
 }
 
@@ -31,7 +33,7 @@ fn configureAOF(
 }
 
 fn fileSize(path: []const u8) !u64 {
-    const file = try std.fs.cwd().openFile(path, .{});
+    const file = try fs.cwd().openFile(path, .{});
     defer file.close();
     return (try file.stat()).size;
 }
@@ -55,7 +57,7 @@ test "AOF stores successful mutations and replays them from configured path" {
 
     const path = try uniquePath(fixture.allocator);
     defer fixture.allocator.free(path);
-    defer std.fs.cwd().deleteFile(path) catch {};
+    defer fs.cwd().deleteFile(path) catch {};
     try configureAOF(&fixture, path, .everysec);
 
     var context: Context = fixture.context();
@@ -119,7 +121,7 @@ test "always strategy flushes each append immediately" {
 
     const path = try uniquePath(fixture.allocator);
     defer fixture.allocator.free(path);
-    defer std.fs.cwd().deleteFile(path) catch {};
+    defer fs.cwd().deleteFile(path) catch {};
     try configureAOF(&fixture, path, .always);
 
     var aof = try AOF.init(fixture.allocator, fixture.context());
@@ -137,7 +139,7 @@ test "auto strategy flushes when the buffer threshold is reached" {
 
     const path = try uniquePath(fixture.allocator);
     defer fixture.allocator.free(path);
-    defer std.fs.cwd().deleteFile(path) catch {};
+    defer fs.cwd().deleteFile(path) catch {};
     try configureAOF(&fixture, path, .auto);
 
     var aof = try AOF.init(fixture.allocator, fixture.context());
@@ -162,7 +164,7 @@ test "everysec strategy flushes from the background loop" {
 
     const path = try uniquePath(fixture.allocator);
     defer fixture.allocator.free(path);
-    defer std.fs.cwd().deleteFile(path) catch {};
+    defer fs.cwd().deleteFile(path) catch {};
     try configureAOF(&fixture, path, .everysec);
 
     var aof = try AOF.init(fixture.allocator, fixture.context());
@@ -173,8 +175,8 @@ test "everysec strategy flushes from the background loop" {
     try aof.start();
 
     var attempts: usize = 0;
-    while (attempts < 150 and try fileSize(path) == 0) : (attempts += 1) {
-        std.Thread.sleep(20 * std.time.ns_per_ms);
+    while (attempts < 150 and (try fileSize(path) == 0 or aof.buffer.items.len != 0)) : (attempts += 1) {
+        runtime_io.sleepNanoseconds(20 * std.time.ns_per_ms);
     }
 
     try std.testing.expectEqual(@as(u64, 2), try fileSize(path));
@@ -188,12 +190,12 @@ test "no strategy neither appends nor replays commands" {
 
     const path = try uniquePath(fixture.allocator);
     defer fixture.allocator.free(path);
-    defer std.fs.cwd().deleteFile(path) catch {};
+    defer fs.cwd().deleteFile(path) catch {};
     try configureAOF(&fixture, path, .no);
 
     const existing_command = "*3\r\n$3\r\nSET\r\n$7\r\nignored\r\n$5\r\nvalue\r\n\x03";
     {
-        const file = try std.fs.cwd().createFile(path, .{ .truncate = true });
+        const file = try fs.cwd().createFile(path, .{ .truncate = true });
         defer file.close();
         try file.writeAll(existing_command);
     }

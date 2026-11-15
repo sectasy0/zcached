@@ -1,9 +1,10 @@
 const std = @import("std");
+const fs = @import("fs");
 
 const Logger = @import("../../server/logger.zig");
 
 test "test logger debug" {
-    std.fs.cwd().deleteTree("log") catch {};
+    fs.cwd().deleteTree("log") catch {};
 
     var logger = try Logger.init(
         std.testing.allocator,
@@ -16,7 +17,7 @@ test "test logger debug" {
 
     logger.flush();
 
-    var file = try std.fs.cwd().openFile(Logger.DEFAULT_PATH, .{ .mode = .read_only });
+    var file = try fs.cwd().openFile(Logger.DEFAULT_PATH, .{ .mode = .read_only });
     defer file.close();
 
     const file_size = (try file.stat()).size;
@@ -28,18 +29,18 @@ test "test logger debug" {
     try std.testing.expectStringEndsWith(buffer, "test\n");
     try std.testing.expectStringStartsWith(buffer, "DEBUG [");
 
-    std.fs.cwd().deleteTree("log") catch {};
+    fs.cwd().deleteTree("log") catch {};
 }
 
 test "test logger info" {
-    std.fs.cwd().deleteTree("log") catch {};
+    fs.cwd().deleteTree("log") catch {};
     var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
 
     logger.log(.Info, "{s}", .{"test"});
     logger.flush();
 
-    var file = try std.fs.cwd().openFile(Logger.DEFAULT_PATH, .{ .mode = .read_only });
+    var file = try fs.cwd().openFile(Logger.DEFAULT_PATH, .{ .mode = .read_only });
     defer file.close();
 
     const file_size = (try file.stat()).size;
@@ -51,18 +52,18 @@ test "test logger info" {
     try std.testing.expectStringEndsWith(buffer, "test\n");
     try std.testing.expectStringStartsWith(buffer, "INFO [");
 
-    std.fs.cwd().deleteTree("log") catch {};
+    fs.cwd().deleteTree("log") catch {};
 }
 
 test "test logger warning" {
-    std.fs.cwd().deleteTree("log") catch {};
+    fs.cwd().deleteTree("log") catch {};
     var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
 
     logger.log(.Warning, "{s}", .{"test"});
     logger.flush();
 
-    var file = try std.fs.cwd().openFile(Logger.DEFAULT_PATH, .{ .mode = .read_only });
+    var file = try fs.cwd().openFile(Logger.DEFAULT_PATH, .{ .mode = .read_only });
     defer file.close();
 
     const file_size = (try file.stat()).size;
@@ -74,11 +75,11 @@ test "test logger warning" {
     try std.testing.expectStringEndsWith(buffer, "test\n");
     try std.testing.expectStringStartsWith(buffer, "WARN [");
 
-    std.fs.cwd().deleteTree("log") catch {};
+    fs.cwd().deleteTree("log") catch {};
 }
 
 test "test logger error" {
-    std.fs.cwd().deleteTree("log") catch {};
+    fs.cwd().deleteTree("log") catch {};
 
     var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
@@ -86,7 +87,7 @@ test "test logger error" {
     logger.log(.Error, "{s}", .{"test"});
     logger.flush();
 
-    var file = try std.fs.cwd().openFile(Logger.DEFAULT_PATH, .{ .mode = .read_only });
+    var file = try fs.cwd().openFile(Logger.DEFAULT_PATH, .{ .mode = .read_only });
     defer file.close();
 
     const file_size = (try file.stat()).size;
@@ -98,11 +99,11 @@ test "test logger error" {
     try std.testing.expectStringEndsWith(buffer, "test\n");
     try std.testing.expectStringStartsWith(buffer, "ERROR [");
 
-    std.fs.cwd().deleteTree("log") catch {};
+    fs.cwd().deleteTree("log") catch {};
 }
 
 test "auto flush when buffer is full" {
-    std.fs.cwd().deleteTree("log") catch {};
+    fs.cwd().deleteTree("log") catch {};
 
     var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
@@ -116,7 +117,7 @@ test "auto flush when buffer is full" {
         try output.appendSlice(data);
     }
 
-    var file = try std.fs.cwd().openFile(Logger.DEFAULT_PATH, .{ .mode = .read_only });
+    var file = try fs.cwd().openFile(Logger.DEFAULT_PATH, .{ .mode = .read_only });
     defer file.close();
 
     const file_size = (try file.stat()).size;
@@ -127,5 +128,5 @@ test "auto flush when buffer is full" {
 
     try std.testing.expectStringStartsWith(buffer, output.items);
 
-    std.fs.cwd().deleteTree("log") catch {};
+    fs.cwd().deleteTree("log") catch {};
 }

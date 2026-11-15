@@ -1,4 +1,5 @@
 const std = @import("std");
+const Address = @import("../network/address.zig").Address;
 
 const Logger = @import("../logger.zig");
 const Config = @import("../config.zig");
@@ -14,7 +15,7 @@ pub fn init(config: *const Config, logger: *Logger) AccessMiddleware {
 }
 
 // Check whether a new connection, represented by the provided network address, can be established.
-pub fn verify(self: AccessMiddleware, address: std.net.Address) !void {
+pub fn verify(self: AccessMiddleware, address: Address) !void {
     try self.check_whitelist(address);
 }
 
@@ -22,7 +23,7 @@ pub fn verify(self: AccessMiddleware, address: std.net.Address) !void {
 // If whitelisting is enabled (whitelist capacity is greater than 0) and the given address is not whitelisted.
 fn check_whitelist(
     self: AccessMiddleware,
-    address: std.net.Address,
+    address: Address,
 ) !void {
     if (self.config.whitelist.capacity > 0 and !is_whitelisted(
         self.config.whitelist,
@@ -38,9 +39,9 @@ fn check_whitelist(
 }
 
 // Checks if the provided network address is present in the given whitelist.
-fn is_whitelisted(whitelist: std.array_list.Managed(std.net.Address), addr: std.net.Address) bool {
+fn is_whitelisted(whitelist: std.array_list.Managed(Address), addr: Address) bool {
     for (whitelist.items) |whitelisted| {
-        if (std.meta.eql(whitelisted.any.data[2..].*, addr.any.data[2..].*)) return true;
+        if (whitelisted.eqlIp(addr)) return true;
     }
     return false;
 }

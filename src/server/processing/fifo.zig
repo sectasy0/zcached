@@ -29,8 +29,47 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
         count: usize,
 
         const Self = @This();
-        pub const Reader = std.io.GenericReader(*Self, error{}, readFn);
-        pub const Writer = std.io.GenericWriter(*Self, error{OutOfMemory}, appendWrite);
+        pub const Reader = struct {
+            context: *Self,
+
+            pub fn read(self: Reader, destination: []u8) error{}!usize {
+                return self.context.read(destination);
+            }
+
+            pub fn readUntilDelimiterOrEof(self: Reader, buffer: []u8, delimiter: u8) !?[]u8 {
+                var index: usize = 0;
+                while (index < buffer.len) : (index += 1) {
+                    var byte: [1]u8 = undefined;
+                    if (try self.read(&byte) == 0) return if (index == 0) null else buffer[0..index];
+                    if (byte[0] == delimiter) return buffer[0..index];
+                    buffer[index] = byte[0];
+                }
+                return error.StreamTooLong;
+            }
+        };
+
+        pub const Writer = struct {
+            context: *Self,
+
+            pub fn write(self: Writer, bytes: []const u8) error{OutOfMemory}!usize {
+                try self.context.write(bytes);
+                return bytes.len;
+            }
+
+            pub fn writeAll(self: Writer, bytes: []const u8) error{OutOfMemory}!void {
+                try self.context.write(bytes);
+            }
+
+            pub fn print(self: Writer, comptime format: []const u8, args: anytype) !void {
+                const allocator = if (comptime buffer_type == .Dynamic)
+                    self.context.allocator
+                else
+                    std.heap.page_allocator;
+                const bytes = try std.fmt.allocPrint(allocator, format, args);
+                defer allocator.free(bytes);
+                try self.context.write(bytes);
+            }
+        };
 
         // Type of Self argument for slice operations.
         // If buffer is inline (Static) then we need to ensure we haven't
@@ -219,12 +258,6 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
             return dst.len - dst_left.len;
         }
 
-        /// Same as `read` except it returns an error union
-        /// The purpose of this function existing is to match `std.io.Reader` API.
-        fn readFn(self: *Self, dest: []u8) error{}!usize {
-            return self.read(dest);
-        }
-
         pub fn reader(self: *Self) Reader {
             return .{ .context = self };
         }
@@ -308,13 +341,6 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
             return self.writeAssumeCapacity(src);
         }
 
-        /// Same as `write` except it returns the number of bytes written, which is always the same
-        /// as `bytes.len`. The purpose of this function existing is to match `std.io.Writer` API.
-        fn appendWrite(self: *Self, bytes: []const u8) error{OutOfMemory}!usize {
-            try self.write(bytes);
-            return bytes.len;
-        }
-
         pub fn writer(self: *Self) Writer {
             return .{ .context = self };
         }
@@ -370,15 +396,19 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
             assert(self.buf.len > 0);
             while (true) {
                 if (self.writableLength() > 0) {
-                    const n = try src_reader.read(self.writableSlice(0));
+                    const n = src_reader.read(self.writableSlice(0));
                     if (n == 0) break; // EOF
                     self.update(n);
                 }
-                self.discard(try dest_writer.write(self.readableSlice(0)));
+                const readable = self.readableSlice(0);
+                try dest_writer.writeAll(readable);
+                self.discard(readable.len);
             }
             // flush remaining data
             while (self.readableLength() > 0) {
-                self.discard(try dest_writer.write(self.readableSlice(0)));
+                const readable = self.readableSlice(0);
+                try dest_writer.writeAll(readable);
+                self.discard(readable.len);
             }
         }
 

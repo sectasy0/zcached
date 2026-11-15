@@ -1,5 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const Address = @import("address.zig").Address;
 
 // Local modules
 const consts = @import("consts.zig");
@@ -16,7 +17,7 @@ pollfd: *std.posix.pollfd,
 /// Stream abstraction over the socket handle.
 stream: Stream,
 /// Remote address of the connected client.
-address: std.net.Address,
+address: Address,
 
 /// Static-sized buffer for reading incoming stream data.
 buffer: [consts.CLIENT_BUFFER]u8,
@@ -80,9 +81,27 @@ pub fn isClosed(self: *Self) bool {
     return self.stream.handle < 0;
 }
 
-pub fn out(self: *Self) @TypeOf(self.tx_accumulator).Writer {
-    return self.tx_accumulator.writer();
+pub fn out(self: *Self) OutWriter {
+    return .{ .list = &self.tx_accumulator };
 }
+
+pub const OutWriter = struct {
+    list: *std.array_list.Managed(u8),
+
+    pub fn writeAll(self: OutWriter, bytes: []const u8) !void {
+        try self.list.appendSlice(bytes);
+    }
+
+    pub fn writeByte(self: OutWriter, byte: u8) !void {
+        try self.list.append(byte);
+    }
+
+    pub fn print(self: OutWriter, comptime format: []const u8, args: anytype) !void {
+        const bytes = try std.fmt.allocPrint(self.list.allocator, format, args);
+        defer self.list.allocator.free(bytes);
+        try self.list.appendSlice(bytes);
+    }
+};
 
 // --- I/O Operations ---
 
