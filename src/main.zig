@@ -26,6 +26,7 @@ const TracingAllocator = @import("server/tracing.zig");
 pub const panic = std.debug.FullPanic(panicHandler);
 
 var running: std.atomic.Value(bool) = .init(true);
+const debug_allocator = builtin.mode == .debug or builtin.mode == .safe;
 
 fn appendAOFCommand(ptr: *anyopaque, command: []const @import("protocol/types.zig").ZType) anyerror!void {
     const aof: *AOF = @ptrCast(@alignCast(ptr));
@@ -87,10 +88,10 @@ pub fn main(init: std.process.Init) void {
         // .retain_metadata = true,
     }) = .init;
     defer {
-        if (gpa.deinit() == .leak) std.process.exit(255);
+        if (debug_allocator and gpa.deinit() == .leak) std.process.exit(255);
     }
 
-    const allocator = gpa.allocator();
+    const allocator = if (debug_allocator) gpa.allocator() else std.heap.smp_allocator;
 
     runtime_io.runtime = init.io;
 
@@ -168,9 +169,11 @@ pub fn main(init: std.process.Init) void {
         // .verbose_log = true,
         // .retain_metadata = true,
     }) = .init;
-    defer _ = dbgpa.deinit();
+    defer if (debug_allocator) {
+        _ = dbgpa.deinit();
+    };
 
-    var tracing = TracingAllocator.init(dbgpa.allocator());
+    var tracing = TracingAllocator.init(if (debug_allocator) dbgpa.allocator() else std.heap.smp_allocator);
     var memory = Memory.init(
         tracing.allocator(),
         config,
@@ -178,15 +181,18 @@ pub fn main(init: std.process.Init) void {
     );
     defer {
         memory.deinit();
-        if (dbgpa.detectLeaks() != 0) std.process.exit(255);
+        if (debug_allocator and dbgpa.detectLeaks() != 0) std.process.exit(255);
     }
 
     agent.kickoff() catch |err| {
         logger.err("# failed to initialize background agent: {any}", .{err});
         return;
     };
-    logger.agent = &agent;
     defer agent.stop();
+    logger.start(&agent) catch |err| {
+        std.log.err("# failed to schedule logger flush: {any}", .{err});
+        return;
+    };
 
     persister.load(&memory) catch |err| {
         if (err != error.FileNotFound) {

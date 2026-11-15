@@ -2,6 +2,23 @@ const std = @import("std");
 
 const types = @import("../../protocol/types.zig");
 
+test "snapshot copying releases partial nested values on allocation failure" {
+    var array = try types.ZType.Array.initCapacity(std.testing.allocator, 2);
+    defer array.deinit();
+    try array.appendSlice(&.{ .{ .str = "first" }, .{ .str = "second" } });
+    var map = types.ZType.Map.init(std.testing.allocator);
+    defer map.deinit();
+    try map.put("nested", .{ .array = array });
+    try map.put("other", .{ .str = "value" });
+    const Case = struct {
+        fn run(allocator: std.mem.Allocator, value: types.ZType) !void {
+            var copied = try types.ztype_copy(value, allocator);
+            defer types.ztype_free(&copied, allocator);
+        }
+    };
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, Case.run, .{types.ZType{ .map = map }});
+}
+
 test "test ztype_copy with int" {
     const original = types.ZType{ .int = 42 };
     var copied = try types.ztype_copy(original, std.testing.allocator);

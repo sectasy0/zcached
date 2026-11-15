@@ -50,6 +50,38 @@ test "delayed database tasks do not block immediate work or shutdown" {
     try std.testing.expect(start.untilNow(io, .awake).toMilliseconds() < 500);
 }
 
+test "due recurring tasks take priority over queued immediate work" {
+    var queue = try Agent.Queue.init(allocator);
+    defer queue.deinit(allocator);
+    const Work = struct {
+        fn run() void {}
+    };
+    try queue.enqueue(allocator, Work.run, .{}, .{ .interval = 60 });
+    try queue.enqueue(allocator, Work.run, .{}, .{});
+    queue.delayed.items[0].execute_at = runtime_io.timestamp() - 1;
+    var first = queue.dequeue();
+    defer first.executeAndDestroy(allocator);
+    try std.testing.expect(first.interval == 60);
+    var second = queue.dequeue();
+    defer second.executeAndDestroy(allocator);
+    try std.testing.expectEqual(@as(i64, 0), second.interval);
+}
+
+test "stop drains ready tasks even after the process running flag clears" {
+    var local_running: std.atomic.Value(bool) = .init(false);
+    var agent = try Agent.init(allocator, &local_running);
+    defer agent.deinit();
+    var count: usize = 0;
+    const Work = struct {
+        fn run(value: *usize) void {
+            value.* += 1;
+        }
+    };
+    for (0..100) |_| try agent.schedule(Work.run, .{&count}, .{});
+    try agent.kickoff();
+    agent.stop();
+    try std.testing.expectEqual(@as(usize, 100), count);
+}
 test "canceling a scheduled task waits for its running callback" {
     const io = runtime_io.get();
     var agent = try Agent.init(allocator, &running);

@@ -15,6 +15,7 @@ const commands = @import("commands.zig");
 const errors = @import("errors.zig");
 
 const consts = @import("../network/consts.zig");
+const Deserializer = @import("../../protocol/deserializer.zig").Deserializer;
 
 pub const Processor = @This();
 
@@ -66,10 +67,10 @@ pub fn deframe(self: *Processor, connection: *Connection) void {
 }
 
 pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
+    defer self.protocol.reset();
+    self.cmd_handler.allocator = self.protocol.serializer.arena.allocator();
     var stream = fixed_buffer_stream.fixedBufferStream(request);
     const reader = stream.reader();
-
-    const out_writer = connection.out();
 
     const result: ZType = self.protocol.serialize(reader) catch |err| {
         self.sendError(connection, err, .{});
@@ -100,19 +101,19 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
 
     defer self.cmd_handler.free(command_set, &cmd_result);
 
-    const response = self.protocol.deserialize(cmd_result.ok) catch |err| {
+    const start = connection.tx_accumulator.items.len;
+    Deserializer.write(&connection.tx_accumulator, cmd_result.ok) catch |err| {
+        connection.tx_accumulator.shrinkRetainingCapacity(start);
         self.sendError(connection, err, .{});
         return;
     };
-    out_writer.writeAll(response) catch |err| {
+    connection.tx_accumulator.append(consts.EXT_CHAR) catch |err| {
+        connection.tx_accumulator.shrinkRetainingCapacity(start);
         self.sendError(connection, err, .{});
-    };
-    // Write the end character to the outgoing data
-    out_writer.writeByte(consts.EXT_CHAR) catch |err| {
-        self.sendError(connection, err, .{});
+        return;
     };
 
-    self.context.resources.logger.logEvent(.Response, response);
+    self.context.resources.logger.logEvent(.Response, connection.tx_accumulator.items[start .. connection.tx_accumulator.items.len - 1]);
 }
 
 fn sendError(self: *Processor, connection: *Connection, err: anyerror, args: errors.Args) void {

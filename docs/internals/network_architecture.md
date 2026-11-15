@@ -144,6 +144,10 @@ accept/connect/read/write yield through the FIFO ready queue even when a
 syscall could complete immediately, allowing other fibers and deadlines to
 progress. Pure computation and synchronous filesystem calls can still delay
 that worker's reactor.
+The scheduler checks deadlines on each iteration but can run up to 32 ready
+fibers between kernel readiness polls. An empty ready queue polls immediately.
+This amortizes zero-timeout kernel waits while retaining FIFO scheduling and
+bounded opportunities to discover socket readiness.
 
 ### Native readiness and scheduling
 
@@ -233,10 +237,10 @@ is no fallback to Threaded network tasks or epoll.
 | Accepted socket and per-connection `SSL` / BIOs | The `accepted.stream` local in `serve`; closed on every exit path. |
 | Stream value inside `Connection` | A shallow handle/context copy used for I/O, not a second resource owner. `Connection.deinit` frees buffers only. |
 | Receive and transmit arrays | `Connection`; created after admission and TLS upgrade, freed when `serve` exits. |
-| Parsing and encoding arenas | The connection's `Processor.protocol`; destroyed with the processor. |
+| Parsing and snapshot arenas | The connection's `Processor.protocol`; reset after each command once encoding/log copies are complete, destroyed with the processor. |
 | Semaphore permit | Reserved before `accept`; held through access verification, handshake, processing, and teardown. |
 | Fiber stack / copied task closure | Evented backend; freed after task completion on the scheduler stack. |
-| Logger task arguments | Queue-owned copies; string slice arguments are duplicated by the scheduler's existing cloning path. |
+| Network logger records | A single aligned allocation contains metadata and the copied raw payload; ownership transfers to the queue only on successful enqueue, and its destructor also handles unexecuted tasks. Generic formatted logs retain the existing argument-cloning path. |
 | AOF scheduled callback | Non-owning AOF pointer protected by a cancelable task handle; cancellation waits for an executing callback. |
 
 Passing `Stream`, addresses, or `Context` by value copies metadata and pointers,
@@ -332,8 +336,8 @@ kernel TCP receive buffer
 
 OUT
 command result
-  -> protocol Deserializer arena                       [encode / allocate]
-  -> tx_accumulator.appendSlice + append(0x03)          [encoded-byte copy]
+  -> GET/MGET/KEYS owned snapshot under storage lock    [read-value copy]
+  -> Deserializer.write(tx_accumulator) + append(0x03) [direct encode]
   -> Stream.writeAll -> std.Io net_write
   -> kernel TCP send buffer                            [kernel boundary]
 ```
@@ -341,7 +345,10 @@ command result
 The protocol's naming is historical: `Protocol.serialize` parses incoming
 bytes; `Protocol.deserialize` encodes a response. Parsing allocates containers
 in the serializer arena but `takeLineSlice` borrows string bytes directly from
-the receive accumulator.
+the receive accumulator. The production encoder writes to the TX array in one
+pass; the allocating `Protocol.deserialize` API remains for other callers.
+Command cleanup frees snapshots and resets both protocol arenas after the
+request has been encoded and logging has taken ownership of its payload.
 
 ## Copy and allocation inventory
 
@@ -359,14 +366,14 @@ In particular, this is **not** an end-to-end zero-copy design.
 | Incomplete-tail compaction | `copyForwards` moves the unread suffix to offset zero. | Conditional in-place copy, only after consuming preceding frames. |
 | Protocol parsing | String/line slices borrow input; arrays/maps/sets allocate container storage in an arena. | Not a deep copy of every request value. |
 | Database `SET` | `Memory.put` deep-copies the value; a new key is duplicated. | Database allocator owns data independently of the network buffers. |
-| Database `GET` | `Memory.get` returns a `ZType` by value, with referenced payloads still storage-owned. | Not an owned snapshot; see concurrency constraints below. |
-| Response encoding | Scalars/strings are formatted into arena allocations; compound encoders repeatedly concatenate accumulated output. | Large collections can involve repeated copies of growing prefixes. |
-| Transmit accumulation | The encoded response is copied to the transmit array; the frame delimiter is appended. | Connection-owned heap array. |
+| Database `GET` / `MGET` / `KEYS` | Values or keys are copied while holding the storage read lock. | Command-owned snapshots; no storage-borrowed payload survives into network response encoding. |
+| Response encoding | The shared encoder appends scalars, strings, and compound elements directly to the TX array. | One-pass encoding; no repeated concatenation of growing prefixes or separate response-sized staging allocation. |
+| Transmit accumulation | Encoded bytes and delimiters are already in the transmit array. | Connection-owned heap array; growth may relocate its allocation. |
 | Plaintext transmission | `writeAll` passes successive slices to the backend until all bytes are accepted. | No additional full-response application staging buffer. |
 | TLS receive | Ciphertext is read into a 16 KiB local buffer, copied into an input memory BIO, then decrypted into the caller's buffer. | Additional TLS staging/BIO storage; see the TLS diagram. |
 | TLS transmission | OpenSSL encodes records into an output BIO; `BIO_read` copies them into a 16 KiB local buffer before socket writes. | Additional record staging; not direct fd-based TLS. |
-| Request/response logging | `utils.repr` allocates a CRLF-escaped representation; enqueue duplicates its string slice; the Agent formats it into the logger buffer. | Logging adds work and payload-sized copies even after zero-copy frame extraction. |
-| Mutation AOF append | A temporary array copies `ZType` descriptors; a local encoder allocates command bytes; `AOF.append` copies them into its buffer. | Separate persistence copy path, synchronous during command execution. |
+| Request/response logging | One queue-owned record copies raw payload bytes; the Agent escapes CRLF directly into its log buffer. | No intermediate escaped string or second payload clone; still a full payload copy and a queued task per event. |
+| Mutation AOF append | The shared encoder appends command elements directly to the mutex-protected AOF buffer. | No temporary descriptor array or encoded-command staging buffer; `.no` skips encoding entirely. |
 
 Protocol strings must not outlive the receive frame unless copied into a
 different owner. For example, `SET` performs its database copy before
@@ -379,11 +386,16 @@ At initialization, a `Connection` contains a 4 KiB fixed buffer and requests
 12 KiB of raw buffer capacity, **excluding** object metadata, allocator
 rounding, task/thread stacks, TLS state, and protocol arenas.
 
-Both arrays retain capacity after normal processing. Parsing/response arenas
-also belong to the connection. Although the protocol exposes `reset`, the
-current `Processor` does not call it between requests. Consequently, arena
-allocations can accumulate over a long-lived connection; neither receive
-length nor the nominal 12 KiB starting size bounds its total memory.
+Both arrays retain capacity after normal processing. Command parsing and
+snapshot arena capacity can reflect the largest command processed, but arenas
+are reset between requests rather than accumulating their histories. Neither
+receive length nor the nominal 12 KiB starting size bounds the connection's
+total memory, particularly large TX batches and retained capacities.
+
+ReleaseFast and ReleaseSmall use `std.heap.smp_allocator`; Debug and ReleaseSafe
+retain debug allocators and leak checks. Database allocation accounting still
+uses its synchronized tracing wrapper and tracks successful size changes even
+when a remap keeps the same address.
 
 Logging queues, database allocations, AOF buffers, and kernel socket buffers
 are additional memory consumers. `max_memory` is a database storage check, not
@@ -499,7 +511,8 @@ signal -> running = false
   -> AOF scheduled flush canceled; running callback awaited
        -> outstanding rewrite thread joined
        -> final buffer write attempted; AOF resources closed
-  -> Agent.stop wakes queue wait and joins the drain thread
+  -> Agent.stop rejects new work, drains ready tasks, and joins the drain thread
+  -> Logger cancels its periodic flush and writes any buffered tail
   -> remaining shared storage/config/logger resources released
   -> Agent.deinit frees queued task arguments
   -> Evented scheduler, stacks, native reactor, wake pipe, and synchronous services destroyed
@@ -523,25 +536,28 @@ The following points are important when interpreting the architecture:
    searches raw bytes for `0x03`; the current bulk-string parser also extracts
    newline-delimited slices rather than consuming a declared binary byte count.
    Do not infer arbitrary binary payload support from the RESP-like syntax.
-2. **Storage reads are not serialization snapshots.** `Memory.get` releases
-   its shared lock before response encoding and returns borrowed payload
-   references. Concurrent mutation can invalidate such references; the network
-   architecture does not itself provide lifetime-safe snapshots. Serial
-   network fiber execution reduces CPU-parallel access but does not change
-   storage ownership or eliminate access from background threads.
+2. **Network reads use owned snapshots.** `GET`/`MGET` copy values and `KEYS`
+   copies keys under the storage read lock before encoding. `SIZEOF` inspects
+   the value while locked. Low-level `Memory.get`/`keys` remain borrowed APIs
+   for callers that control storage lifetime; they are not used for network
+   response payloads. Multi-key reads are not transactional snapshots.
 3. **There is no transaction spanning database mutation and AOF append.**
    Commands mutate memory and then append their persistence representation.
    An AOF error does not imply that the memory change was rolled back.
 4. **`everysec` is best-effort scheduling, not a durability deadline.**
-   The recurring callback runs on the Agent queue and can wait behind other
-   work. Its `flushLocked` writes bytes to the file but does not issue `fsync`;
+   Due recurring work has priority over ready FIFO tasks, but a running callback
+   can still delay the Agent. Pending AOF bytes are never shortened to enforce
+   a retention threshold; oversized capacity is released only after a successful
+   flush. `flushLocked` writes bytes to the file but does not issue `fsync`;
    a successful response or flush must not be described as guaranteed
    stable-storage persistence. AOF rewrite still uses its separate thread.
 5. **Logging is on the data path.** Every complete request and successful
-   encoded response is represented for logging. Representation and queue
-   cloning happen in the connection task, even though normal file logging
-   runs later on the Agent. Queue shutdown can leave messages unexecuted;
-   `Logger.deinit` flushes its own buffer, not every pending queue task.
+   encoded response is copied into an owned record. The Agent escapes and
+   formats it, caching the second-resolution timestamp, and writes roughly
+   64 KiB batches. A cancelable one-second task flushes smaller batches on the
+   same queue. Generic/error logs flush immediately. Normal shutdown drains
+   ready tasks before the logger's final flush; enqueue/write failures are
+   explicit diagnostics, not guaranteed audit delivery.
 6. **Limits are local, not a complete process budget.** Per-loop permits,
    receive lengths, and database memory checks do not bound all fiber stacks,
    response arenas, log copies, or TLS allocations.
@@ -596,7 +612,7 @@ burst-admission guarantees; the configured listen backlog remains finite.
 The two-thread counts describe that earlier single-reactor configuration, not
 the current `workers + 2` threading model.
 
-### Native worker validation
+### Native worker validation before command-path optimization
 
 The native worker version passed 186 unit tests and 100 TCP/TLS E2E checks in
 ReleaseSafe, plus nine direct native-backend/reactor tests in Debug, ReleaseSafe,
@@ -623,6 +639,40 @@ establish maximum server capacity or a comparison against the old Threaded
 network backend. The existing client checks response framing; full logs were
 also audited for successful response statuses/shapes, and SET/GET probes
 checked exact payloads.
+
+### Command-path optimization validation
+
+An alternating baseline/optimized ReleaseFast benchmark on the same Apple M2
+used eight workers (ten OS threads), eight client connections, no pipeline,
+10-byte random keys, 20-byte values, TLS off, and full payload file logging.
+Each of three trials per profile completed 160,000 commands. The baseline was
+the native-worker version at commit `43fb6628221885ca23e2b6ac94729c333bd58838`.
+
+| Profile | Median commands/s | Highest sampled RSS |
+| --- | --- | --- |
+| Baseline, AOF off | 79,090 | 49.6 MiB |
+| Optimized, AOF off | 114,204 | 24.5 MiB |
+| Optimized, AOF everysec | 121,488 | 28.5 MiB |
+
+No-AOF median throughput increased approximately 44%, and maximum observed RSS
+fell approximately 51%. Every trial produced the same 27,122,820 log bytes and
+passed a successful-response status/shape audit; payload logging was not
+disabled to obtain the improvement. All everysec trials retained 80,001 AOF
+mutation records (80,000 SET operations plus the setup probe), totaling
+4,640,059 bytes, and passed clean restart/replay key-count and sampled-value
+checks. This is not crash-durability or fsync validation. Clock-seeded random
+keys can collide, so replay counts were compared with the parsed journal rather
+than assuming every SET creates a distinct key.
+
+These are client-inclusive, shared-host loopback observations, not an exclusive
+capacity measurement. The everysec profile ran after the alternating no-AOF
+trials; its higher median does not establish that enabling persistence improves
+performance. The final code passed 194 unit tests and nine native I/O tests in
+ReleaseSafe, nine native I/O tests in ReleaseFast, and 100 TCP/TLS E2E checks in
+ReleaseSafe. Focused regressions cover bounded per-command arenas,
+large collection encoding, owned read snapshots, large AOF/log payloads,
+partial-copy allocation failure cleanup, recurring queue priority, and draining
+ready tasks after the running flag clears.
 
 The backend tests cross-compiled for x86_64-linux-musl and
 aarch64-linux-musl. Linux runtime behavior was not exercised locally because

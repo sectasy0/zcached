@@ -30,7 +30,7 @@ pub fn SerializerT(comptime GenericReader: type) type {
         }
 
         pub fn reset(self: *Self) void {
-            self.arena.reset(.retain_capacity);
+            _ = self.arena.reset(.retain_capacity);
         }
 
         pub fn process(self: *Self, reader: GenericReader) SerializerError!types.ZType {

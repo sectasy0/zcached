@@ -78,7 +78,10 @@ test "should handle GET command" {
     try command_set.append(.{ .str = "GET" });
     try command_set.append(.{ .str = "key" });
 
-    const result = cmd_handler.process(&command_set);
+    var result = cmd_handler.process(&command_set);
+    defer cmd_handler.free(&command_set, &result);
+    try fixture.memory.?.put("key", .{ .str = "replacement" });
+    try std.testing.expect(fixture.memory.?.delete("key"));
     try std.testing.expectEqualStrings(result.ok.str, "value");
 }
 
@@ -229,7 +232,8 @@ test "should handle MGET command" {
     try command_set.append(.{ .str = "key3" });
 
     var result = cmd_handler.process(&command_set);
-    defer result.ok.map.deinit();
+    defer cmd_handler.free(&command_set, &result);
+    fixture.memory.?.flush();
 
     try std.testing.expectEqual(std.meta.activeTag(result.ok), .map);
     try std.testing.expectEqualStrings(result.ok.map.get("key").?.str, "value");
@@ -333,7 +337,8 @@ test "should handle KEYS command" {
     try expected.append(.{ .str = "key" });
 
     var result = cmd_handler.process(&command_set);
-    defer result.ok.array.deinit();
+    defer cmd_handler.free(&command_set, &result);
+    fixture.memory.?.flush();
 
     try helper.expectEqualZTypes(result.ok, .{ .array = expected });
 }
@@ -354,7 +359,7 @@ test "should handle KEYS command no data in storage" {
     defer expected.deinit();
 
     var result = cmd_handler.process(&command_set);
-    defer result.ok.array.deinit();
+    defer cmd_handler.free(&command_set, &result);
 
     try std.testing.expectEqual(result.ok.array.items.len, expected.items.len);
     try helper.expectEqualZTypes(result.ok, .{ .array = expected });

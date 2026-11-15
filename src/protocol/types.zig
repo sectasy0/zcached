@@ -37,16 +37,24 @@ pub fn ztype_copy(value: ZType, allocator: std.mem.Allocator) anyerror!ZType {
         .int, .float, .bool, .null => return value,
         .array => |array| {
             var result = try std.array_list.Managed(ZType).initCapacity(allocator, array.items.len);
+            errdefer {
+                var partial: ZType = .{ .array = result };
+                ztype_free(&partial, allocator);
+            }
 
             for (array.items) |item| {
                 const copied = try ztype_copy(item, allocator);
-                try result.append(copied);
+                result.appendAssumeCapacity(copied);
             }
 
             return .{ .array = result };
         },
         .map => |v| {
             var result = std.StringHashMap(ZType).init(allocator);
+            errdefer {
+                var partial: ZType = .{ .map = result };
+                ztype_free(&partial, allocator);
+            }
 
             var iter = v.iterator();
             while (iter.next()) |entry| {
@@ -54,7 +62,9 @@ pub fn ztype_copy(value: ZType, allocator: std.mem.Allocator) anyerror!ZType {
                     .{ .str = entry.key_ptr.* },
                     allocator,
                 );
-                const zvalue = try ztype_copy(entry.value_ptr.*, allocator);
+                errdefer allocator.free(zkey.str);
+                var zvalue = try ztype_copy(entry.value_ptr.*, allocator);
+                errdefer ztype_free(&zvalue, allocator);
 
                 try result.put(zkey.str, zvalue);
             }
@@ -63,13 +73,18 @@ pub fn ztype_copy(value: ZType, allocator: std.mem.Allocator) anyerror!ZType {
         },
         .set => {
             var result = ZType.Set.init(allocator);
+            errdefer {
+                var partial: ZType = .{ .set = result };
+                ztype_free(&partial, allocator);
+            }
 
             var iter = value.set.iterator();
             while (iter.next()) |item| {
-                const copied = try ztype_copy(
+                var copied = try ztype_copy(
                     item.key_ptr.*,
                     allocator,
                 );
+                errdefer ztype_free(&copied, allocator);
                 try result.insert(copied);
             }
 
@@ -77,13 +92,18 @@ pub fn ztype_copy(value: ZType, allocator: std.mem.Allocator) anyerror!ZType {
         },
         .uset => {
             var result = ZType.USet.init(allocator);
+            errdefer {
+                var partial: ZType = .{ .uset = result };
+                ztype_free(&partial, allocator);
+            }
 
             var iter = value.uset.iterator();
             while (iter.next()) |item| {
-                const copied = try ztype_copy(
+                var copied = try ztype_copy(
                     item.*,
                     allocator,
                 );
+                errdefer ztype_free(&copied, allocator);
                 try result.insert(copied);
             }
 
