@@ -5,7 +5,7 @@ const Address = @import("../../server/network/address.zig").Address;
 const fixtures = @import("../fixtures.zig");
 const ContextFixture = fixtures.ContextFixture;
 
-const AccessMiddleware = @import("../../server/middleware/access.zig");
+const access = @import("../../server/middleware/access.zig");
 
 test "should not return errors" {
     var fixture = try ContextFixture.init();
@@ -17,9 +17,8 @@ test "should not return errors" {
 
     fixture.config.whitelist = whitelist;
 
-    const access_control = AccessMiddleware.init(&fixture.config, &fixture.logger);
     const address = Address.initIp4(.{ 192, 168, 0, 2 }, 1234);
-    const result = access_control.verify(address);
+    const result = access.verify(&fixture.config, &fixture.logger, address);
     try std.testing.expectEqual(result, void{});
 }
 
@@ -35,9 +34,8 @@ test "should return error.NotPermitted" {
 
     fixture.config.whitelist = whitelist;
 
-    const access_control = AccessMiddleware.init(&fixture.config, &fixture.logger);
     const address = Address.initIp4(.{ 192, 168, 0, 1 }, 1234);
-    const result = access_control.verify(address);
+    const result = access.verify(&fixture.config, &fixture.logger, address);
     try std.testing.expectEqual(result, error.NotPermitted);
 
     // Yep, without this in the logs, there is still a log about the rejected connection.
@@ -54,6 +52,5 @@ test "whitelist matches IP regardless of client port" {
     defer previous_whitelist.deinit();
     fixture.config.whitelist = whitelist;
 
-    const access_control = AccessMiddleware.init(&fixture.config, &fixture.logger);
-    try access_control.verify(Address.initIp4(.{ 127, 0, 0, 1 }, 64550));
+    try access.verify(&fixture.config, &fixture.logger, Address.initIp4(.{ 127, 0, 0, 1 }, 64550));
 }

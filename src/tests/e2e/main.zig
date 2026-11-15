@@ -4,9 +4,8 @@ const runtime_io = @import("runtime_io");
 const consts = @import("consts.zig");
 
 const server = @import("server");
-const network = server.network;
-const SecureStream = network.Stream.StreamT(true);
-const Stream = network.Stream.StreamT(false);
+const SecureStream = server.Stream.StreamT(true);
+const Stream = server.Stream.StreamT(false);
 
 var passed: usize = 0;
 var failed: usize = 0;
@@ -137,7 +136,7 @@ pub fn connectSecure() !SecureStream {
     var socket = try connectUnsecure(SecureStream);
     errdefer socket.close();
 
-    socket.ctx = try network.secure.upgradeClient(socket.socket);
+    socket.ctx = try server.secure.upgradeClient(socket.socket);
     return socket;
 }
 

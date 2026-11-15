@@ -77,6 +77,12 @@ scoped with `defer`; background tasks stop before the resources they reference
 are released. The socket transport is shared by plaintext and TLS, and buffered
 stream reading uses `std.Io.Reader`.
 
+The network server owns supervision, accept loops, and connection tasks in one
+module, without separate listener objects. Each accept loop keeps its own
+`max_clients` semaphore, preserving the per-worker limit. Socket listening and
+TLS setup remain in the reusable `StreamServer` transport, while access checks
+are a stateless function.
+
 AOF's `everysec` flush is a recurring task on the database's background queue,
 not a dedicated flush thread. Its execution can be delayed by other queued work;
 shutdown cancels the recurring task and flushes the remaining buffer.
@@ -86,6 +92,8 @@ shutdown cancels the recurring task and flushes the remaining buffer.
 - For building/installation process please refer to the [installation.md](docs/installation.md)
 - For supported types and their encodings, see the [types.md](docs/internals/types.md)
 - For supported commands, see the [commands.md](docs/internals/commands.md)
+- For network tasks, buffer ownership, copy paths, TLS, and shutdown behavior,
+  see the [network architecture](docs/internals/network_architecture.md).
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.

@@ -2,6 +2,59 @@ const std = @import("std");
 const fs = @import("fs");
 
 const Logger = @import("../../server/logger.zig");
+const Agent = @import("../../server/background/agent.zig");
+
+test "queued logger dispatch preserves levels and owns event payloads" {
+    const allocator = std.testing.allocator;
+    const path = "./tmp/queued-network-payload.log";
+    fs.cwd().deleteFile(path) catch |err| switch (err) {
+        error.FileNotFound => {},
+        else => return err,
+    };
+    var logger = try Logger.init(allocator, null, path, false);
+    defer {
+        logger.deinit();
+        fs.cwd().deleteFile(path) catch |err| std.log.err("Failed to remove test log: {any}", .{err});
+    }
+    var running: std.atomic.Value(bool) = .init(true);
+    var agent = try Agent.init(allocator, &running);
+    defer agent.deinit();
+    logger.agent = &agent;
+    defer logger.agent = null;
+
+    const payload = try allocator.dupe(u8, "before\r\nafter");
+    defer allocator.free(payload);
+    logger.err("error value {d}", .{1});
+    logger.warn("warning value {d}", .{2});
+    logger.info("{s}", .{payload});
+    logger.debug("debug value {d}", .{3});
+    logger.logEvent(.Request, payload);
+    logger.logEvent(.Response, payload);
+    @memset(payload, 'x');
+
+    // Execute only after the caller has reused its input buffer.
+    for (0..6) |_| {
+        var task = agent.queue.dequeue();
+        task.executeAndDestroy(allocator);
+    }
+
+    var file = try fs.cwd().openFile(path, .{ .mode = .read_only });
+    defer file.close();
+    const bytes = try allocator.alloc(u8, (try file.stat()).size);
+    defer allocator.free(bytes);
+    try std.testing.expectEqual(bytes.len, try file.readAll(bytes));
+    try std.testing.expectStringStartsWith(bytes, "ERROR [");
+    for ([_][]const u8{
+        "] error value 1\nWARN [",
+        "] warning value 2\nINFO [",
+        "] before\r\nafter\nDEBUG [",
+        "] debug value 3\nINFO [",
+        "] > request: before\\r\\nafter\nINFO [",
+    }) |expected| {
+        try std.testing.expect(std.mem.indexOf(u8, bytes, expected) != null);
+    }
+    try std.testing.expectStringEndsWith(bytes, "] < response: before\\r\\nafter\n");
+}
 
 test "logger preserves network payloads larger than its initial buffer" {
     const path = "./tmp/network-payload.log";

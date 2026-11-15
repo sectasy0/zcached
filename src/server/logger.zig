@@ -71,75 +71,24 @@ pub fn init(
 }
 
 pub fn err(self: *Logger, comptime format: []const u8, args: anytype) void {
-    const level = .Error;
-    if (null != self.agent) {
-        self.agent.?.schedule(
-            logUnpack,
-            .{
-                .{
-                    .logger = self,
-                    .level = level,
-                    .format = format,
-                    .args = args,
-                },
-            },
-            .{},
-        ) catch |e| {
-            std.log.err("# failed to schedule log message: {any}", .{e});
-        };
-    } else {
-        self.log(level, format, args);
-    }
+    self.dispatch(.Error, format, args);
 }
 
 pub fn warn(self: *Logger, comptime format: []const u8, args: anytype) void {
-    const level = .Warning;
-    if (null != self.agent) {
-        self.agent.?.schedule(
-            logUnpack,
-            .{
-                .{
-                    .logger = self,
-                    .level = level,
-                    .format = format,
-                    .args = args,
-                },
-            },
-            .{},
-        ) catch |e| {
-            std.log.err("# failed to schedule log message: {any}", .{e});
-        };
-    } else {
-        self.log(level, format, args);
-    }
+    self.dispatch(.Warning, format, args);
 }
 
 pub fn info(self: *Logger, comptime format: []const u8, args: anytype) void {
-    const level = .Info;
-    if (null != self.agent) {
-        self.agent.?.schedule(
-            logUnpack,
-            .{
-                .{
-                    .logger = self,
-                    .level = level,
-                    .format = format,
-                    .args = args,
-                },
-            },
-            .{},
-        ) catch |e| {
-            std.log.err("# failed to schedule log message: {any}", .{e});
-        };
-    } else {
-        self.log(level, format, args);
-    }
+    self.dispatch(.Info, format, args);
 }
 
 pub fn debug(self: *Logger, comptime format: []const u8, args: anytype) void {
-    const level = .Debug;
-    if (null != self.agent) {
-        self.agent.?.schedule(
+    self.dispatch(.Debug, format, args);
+}
+
+fn dispatch(self: *Logger, level: LogLevel, comptime format: []const u8, args: anytype) void {
+    if (self.agent) |agent| {
+        agent.schedule(
             logUnpack,
             .{
                 .{
@@ -199,59 +148,9 @@ pub fn logEvent(self: *Logger, etype: EType, payload: []const u8) void {
     defer self.allocator.free(repr);
 
     switch (etype) {
-        .Request => {
-            const format = comptime "> request: {s}";
-            if (null != self.agent) {
-                self.agent.?.schedule(
-                    logEventUnpack,
-                    .{
-                        .{
-                            .logger = self,
-                            .level = .Info,
-                            .format = format,
-                            .args = .{repr},
-                        },
-                    },
-                    .{},
-                ) catch |e| {
-                    std.log.err("# failed to schedule log message: {any}", .{e});
-                };
-            } else {
-                self.log(
-                    .Info,
-                    "> request: {s}",
-                    .{repr},
-                );
-            }
-        },
-        .Response => {
-            const format = comptime "< response: {s}";
-            if (null != self.agent) {
-                self.agent.?.schedule(
-                    logEventUnpack,
-                    .{.{
-                        .logger = self,
-                        .level = .Info,
-                        .format = format,
-                        .args = .{repr},
-                    }},
-                    .{},
-                ) catch |e| {
-                    std.log.err("# failed to schedule log message: {any}", .{e});
-                };
-            } else {
-                self.log(
-                    .Info,
-                    format,
-                    .{repr},
-                );
-            }
-        },
+        .Request => self.info("> request: {s}", .{repr}),
+        .Response => self.info("< response: {s}", .{repr}),
     }
-}
-
-fn logEventUnpack(args: anytype) void {
-    args.logger.log(args.level, args.format, args.args);
 }
 
 pub fn flush(self: *Logger) void {

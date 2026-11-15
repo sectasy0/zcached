@@ -1,8 +1,7 @@
 const std = @import("std");
 const runtime_io = @import("runtime_io");
 const Address = @import("../../server/network/address.zig").Address;
-const Listener = @import("../../server/network/listener.zig");
-const StreamServer = @import("../../server/network/stream_server.zig");
+const Server = @import("../../server/network/server.zig");
 const ContextFixture = @import("../fixtures.zig").ContextFixture;
 
 const ping = "*1\r\n$4\r\nPING\r\n\x03";
@@ -32,7 +31,7 @@ fn expectResponseTimeout(client: std.Io.net.Stream, expected: []const u8, millis
     }
 }
 
-test "Listener handles fragmented and pipelined requests alongside an idle client" {
+test "Server handles fragmented and pipelined requests alongside an idle client" {
     const io = runtime_io.get();
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -43,18 +42,17 @@ test "Listener handles fragmented and pipelined requests alongside an idle clien
     var running: std.atomic.Value(bool) = .init(true);
     var context = fixture.context();
     context.running = &running;
-    var server = try StreamServer.init(.{});
+    var server = try Server.init(fixture.allocator, context);
     defer server.deinit();
-    try server.listen(Address.initIp4(.{ 127, 0, 0, 1 }, 0));
-    var listener = Listener.init(fixture.allocator, &server, context);
-    var task = try io.concurrent(Listener.listen, .{&listener});
+    try server.transport.listen(Address.initIp4(.{ 127, 0, 0, 1 }, 0));
+    var task = try io.concurrent(Server.acceptConnections, .{&server});
     defer task.cancel(io) catch |err| switch (err) {
         error.Canceled => {},
     };
 
-    const idle = try server.listen_address.ip.connect(io, .{ .mode = .stream });
+    const idle = try server.transport.listen_address.ip.connect(io, .{ .mode = .stream });
     defer idle.close(io);
-    const client = try server.listen_address.ip.connect(io, .{ .mode = .stream });
+    const client = try server.transport.listen_address.ip.connect(io, .{ .mode = .stream });
     defer client.close(io);
     var writer = client.writer(io, &.{});
     try writer.interface.writeAll(ping[0..8]);
@@ -67,7 +65,7 @@ test "Listener handles fragmented and pipelined requests alongside an idle clien
     };
 }
 
-test "Listener resumes accepting after its client limit is released" {
+test "Server resumes accepting after its client limit is released" {
     const io = runtime_io.get();
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -78,23 +76,22 @@ test "Listener resumes accepting after its client limit is released" {
     var running: std.atomic.Value(bool) = .init(true);
     var context = fixture.context();
     context.running = &running;
-    var server = try StreamServer.init(.{});
+    var server = try Server.init(fixture.allocator, context);
     defer server.deinit();
-    try server.listen(Address.initIp4(.{ 127, 0, 0, 1 }, 0));
-    var listener = Listener.init(fixture.allocator, &server, context);
-    var task = try io.concurrent(Listener.listen, .{&listener});
+    try server.transport.listen(Address.initIp4(.{ 127, 0, 0, 1 }, 0));
+    var task = try io.concurrent(Server.acceptConnections, .{&server});
     defer task.cancel(io) catch |err| switch (err) {
         error.Canceled => {},
     };
 
-    const first = try server.listen_address.ip.connect(io, .{ .mode = .stream });
+    const first = try server.transport.listen_address.ip.connect(io, .{ .mode = .stream });
     var first_open = true;
     defer if (first_open) first.close(io);
     var first_writer = first.writer(io, &.{});
     try first_writer.interface.writeAll(ping);
     try expectResponseTimeout(first, pong, 3000);
 
-    const second = try server.listen_address.ip.connect(io, .{ .mode = .stream });
+    const second = try server.transport.listen_address.ip.connect(io, .{ .mode = .stream });
     defer second.close(io);
     var second_writer = second.writer(io, &.{});
     try second_writer.interface.writeAll(ping);
