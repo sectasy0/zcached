@@ -1,6 +1,7 @@
 .{
     .name = .zcached,
     .version = "0.1.0",
+    .minimum_zig_version = "0.17.1",
     .fingerprint = 0xc2448bc4a2b8b999,
     .dependencies = .{},
     .paths = .{

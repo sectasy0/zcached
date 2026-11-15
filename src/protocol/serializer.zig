@@ -140,7 +140,7 @@ pub fn SerializerT(comptime GenericReader: type) type {
         fn serializeNull(self: *Self, reader: GenericReader) SerializerError!types.ZType {
             _ = self;
             reader.context.pos += 2; // we skip it, only one possible value
-            return .{ .null = void{} };
+            return .{ .null = {} };
         }
 
         // Only for client side, server should never receive an error

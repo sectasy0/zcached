@@ -182,7 +182,7 @@ test "ProtocolHandler handle null" {
     defer handler.deinit();
 
     const result = handler.process(reader);
-    try std.testing.expectEqual(result, types.ZType{ .null = void{} });
+    try std.testing.expectEqual(result, types.ZType{ .null = {} });
 }
 
 test "ProtocolHandler handle error" {
@@ -236,14 +236,14 @@ test "serialize map with various types" {
     var hash = std.StringHashMap(types.ZType).init(std.testing.allocator);
     defer hash.deinit();
 
-    try hash.put("pimpek", .{ .null = void{} });
+    try hash.put("pimpek", .{ .null = {} });
 
     var array = try std.array_list.Managed(types.ZType).initCapacity(std.testing.allocator, 3);
     defer array.deinit();
 
     try array.append(.{ .bool = true });
     try array.append(.{ .bool = false });
-    try array.append(.{ .null = void{} });
+    try array.append(.{ .null = {} });
     try hash.put("xd", .{ .array = array });
     try hash.put("someint", .{ .int = 50 });
     try hash.put("somefloat", .{ .float = 55.55 });
@@ -276,7 +276,7 @@ test "serialize array with various types" {
     const nfloat: types.ZType = .{ .float = -23.2 };
     const fbool: types.ZType = .{ .bool = false };
     const tbool: types.ZType = .{ .bool = true };
-    const vnull: types.ZType = .{ .null = void{} };
+    const vnull: types.ZType = .{ .null = {} };
 
     try array.append(int);
     try array.append(nint);

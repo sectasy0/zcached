@@ -1,10 +1,6 @@
 const std = @import("std");
 const fs = @import("fs");
-const ctime = @cImport(@cInclude("time.h"));
-
-const openssl = @cImport({
-    @cInclude("openssl/err.h");
-});
+const ctime = @import("c");
 
 /// Converts a string representation of an enum or union type to the corresponding enum value (Ignores case).
 ///
@@ -14,14 +10,14 @@ const openssl = @cImport({
 /// const value = enumTypeFromStr(MyEnum, "B"); // returns MyEnum.B
 ///
 pub inline fn enumTypeFromStr(comptime T: type, str: []const u8) ?T {
-    switch (@typeInfo(T)) {
-        .@"enum", .@"union" => {},
+    const tag = switch (@typeInfo(T)) {
+        .@"enum" => T,
+        .@"union" => |info| info.tag_type orelse @compileError("expected tagged union"),
         else => @compileError("expected type T to be union or enum"),
-    }
-    const fields = std.meta.fields(T);
-
-    inline for (fields) |field| {
-        if (std.ascii.eqlIgnoreCase(str, field.name)) return @enumFromInt(field.value);
+    };
+    const info = @typeInfo(tag).@"enum";
+    inline for (info.field_names, info.field_values) |name, value| {
+        if (std.ascii.eqlIgnoreCase(str, name)) return @fromBackingInt(@intCast(value));
     }
     return null;
 }

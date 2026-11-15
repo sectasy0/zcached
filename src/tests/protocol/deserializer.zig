@@ -62,7 +62,7 @@ test "deserialize null" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
 
-    const input = types.ZType{ .null = void{} };
+    const input = types.ZType{ .null = {} };
 
     const expected = "_\r\n";
     const result = try deserializer.process(input);

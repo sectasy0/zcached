@@ -38,7 +38,7 @@ test "Connection flushes responses larger than the old write chunk" {
     var connection = try Connection.init(std.testing.allocator, incoming);
     defer connection.deinit();
 
-    const response = [_]u8{'x'} ** 16384;
+    const response: [16384]u8 = @splat('x');
     try connection.out().writeAll(&response);
     try connection.writePending();
     var reader = client.reader(io, &.{});

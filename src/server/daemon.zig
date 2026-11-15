@@ -1,36 +1,33 @@
 const std = @import("std");
 const fs = @import("fs");
-const c = @cImport({
-    @cInclude("sys/stat.h");
-    @cInclude("unistd.h");
-});
+const c = @import("c");
 
 const EXIT = enum { SUCCESS, FAILURE, SETIDERR, SIGHERR, CHDERR, PIDERR };
 
 pub fn daemonize(pid_path: []const u8) void {
     const parent_pid = c.fork();
 
-    if (parent_pid < 0) std.process.exit(@intFromEnum(EXIT.FAILURE));
+    if (parent_pid < 0) std.process.exit(@backingInt(EXIT.FAILURE));
 
-    if (parent_pid > 0) std.process.exit(@intFromEnum(EXIT.SUCCESS));
+    if (parent_pid > 0) std.process.exit(@backingInt(EXIT.SUCCESS));
 
-    if (c.setsid() < 0) std.process.exit(@intFromEnum(EXIT.SETIDERR));
+    if (c.setsid() < 0) std.process.exit(@backingInt(EXIT.SETIDERR));
 
     const pid = c.fork();
 
-    if (pid < 0) std.process.exit(@intFromEnum(EXIT.FAILURE));
+    if (pid < 0) std.process.exit(@backingInt(EXIT.FAILURE));
 
-    if (pid > 0) std.process.exit(@intFromEnum(EXIT.SUCCESS));
+    if (pid > 0) std.process.exit(@backingInt(EXIT.SUCCESS));
 
     _ = c.umask(0x007);
 
-    if (c.chdir("/") < 0) std.process.exit(@intFromEnum(EXIT.CHDERR));
+    if (c.chdir("/") < 0) std.process.exit(@backingInt(EXIT.CHDERR));
 
     _ = c.close(std.posix.STDOUT_FILENO);
     _ = c.close(std.posix.STDERR_FILENO);
 
     createPidFile(pid_path, c.getpid()) catch {
-        std.process.exit(@intFromEnum(EXIT.PIDERR));
+        std.process.exit(@backingInt(EXIT.PIDERR));
     };
 }
 

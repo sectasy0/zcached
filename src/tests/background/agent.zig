@@ -7,6 +7,25 @@ var running: std.atomic.Value(bool) = .init(true);
 
 const allocator = std.testing.allocator;
 
+test "queue frees only cloned string arguments on allocation failure" {
+    const Payload = struct {
+        args: struct { first: []const u8, second: []const u8 },
+
+        fn run(_: @This()) void {}
+    };
+    const Case = struct {
+        fn run(alloc: std.mem.Allocator) !void {
+            var queue = try Agent.Queue.init(alloc);
+            defer queue.deinit(alloc);
+            const args: struct { Payload } = .{.{
+                .args = .{ .first = "first", .second = "second" },
+            }};
+            try queue.enqueue(alloc, Payload.run, args, null);
+        }
+    };
+    try std.testing.checkAllAllocationFailures(allocator, Case.run, .{});
+}
+
 test "delayed database tasks do not block immediate work or shutdown" {
     const io = runtime_io.get();
     var agent = try Agent.init(allocator, &running);
@@ -134,7 +153,7 @@ test "multiple tasks enqueued without drain thread" {
 
     agent.deinit();
     try std.testing.expectEqual(0, counter);
-    try std.testing.expectEqual(result, void{});
+    try std.testing.expectEqual(result, {});
 }
 
 test "multiple tasks enqueued not full" {

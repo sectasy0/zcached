@@ -1,7 +1,7 @@
 # Network architecture
 
 This document describes the implemented network path, not a proposed event-loop
-design. The runtime uses Zig 0.16 `std.Io.Threaded`; TLS is implemented with
+design. The runtime uses Zig 0.17.1 `std.Io.Threaded`; TLS is implemented with
 OpenSSL memory BIOs. All application-controlled socket reads and writes use the
 shared `std.Io` backend.
 
@@ -26,7 +26,7 @@ shared `std.Io` backend.
 | Network `Server` | Supervises accept tasks, owns their shared transport, checks access, and runs connection tasks. | [network/server.zig](../../src/server/network/server.zig) |
 | `StreamServer` | Owns the listening socket and optional shared TLS context; binds, accepts, and upgrades streams. | [stream_server.zig](../../src/server/network/stream_server.zig) |
 | `Stream` / `StreamT` | Presents the same read/write/close API for plaintext and TLS; also exposes a buffered `std.Io.Reader` adapter. | [stream.zig](../../src/server/network/stream.zig) |
-| Socket adapter | Bridges raw reads and writes to `std.Io`'s network vtable; handles partial writes. | [socket.zig](../../src/server/network/socket.zig) |
+| Socket adapter | Uses `std.Io.net.Stream.read` and `std.Io.operate` network operations; handles partial writes. | [socket.zig](../../src/server/network/socket.zig) |
 | TLS adapter | Drives handshakes, encryption, and decryption through OpenSSL input/output memory BIOs. | [secure.zig](../../src/server/network/secure.zig) |
 | `Connection` | Owns receive/transmit accumulators and a fixed read buffer. | [connection.zig](../../src/server/network/connection.zig) |
 | `Processor` | Extracts complete frames, parses commands, encodes responses, and compacts unread bytes. | [requests.zig](../../src/server/processing/requests.zig) |
@@ -212,7 +212,7 @@ extra server-side receive accumulator.
 ```text
 IN
 kernel TCP receive buffer
-  -> std.Io netRead -> Connection.buffer[4096]           [read destination]
+  -> std.Io net_read -> Connection.buffer[4096]          [read destination]
   -> accumulator.appendSlice                           [payload copy]
   -> request slice + FixedBufferStream                  [borrow, no frame copy]
   -> parsed ZType strings                              [borrow input slices]
@@ -222,7 +222,7 @@ OUT
 command result
   -> protocol Deserializer arena                       [encode / allocate]
   -> tx_accumulator.appendSlice + append(0x03)          [encoded-byte copy]
-  -> Stream.writeAll -> std.Io netWrite
+  -> Stream.writeAll -> std.Io net_write
   -> kernel TCP send buffer                            [kernel boundary]
 ```
 
@@ -285,7 +285,7 @@ releases that TLS state. The shared `SSL_CTX` is configured once by
 ```mermaid
 flowchart LR
     Peer["peer TCP socket"]
-    Receive["std.Io netRead -> local ciphertext buffer (16 KiB)"]
+    Receive["std.Io net_read -> local ciphertext buffer (16 KiB)"]
     InBIO["BIO_write -> input memory BIO"]
     SSLRead["SSL_read -> Connection.buffer (plaintext)"]
     RX["receive accumulator"]

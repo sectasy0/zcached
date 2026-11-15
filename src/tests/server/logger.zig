@@ -67,7 +67,7 @@ test "logger preserves network payloads larger than its initial buffer" {
         logger.deinit();
         fs.cwd().deleteFile(path) catch |err| std.log.err("Failed to remove test log: {any}", .{err});
     }
-    const payload = [_]u8{'x'} ** 16384;
+    const payload: [16384]u8 = @splat('x');
     logger.logEvent(.Response, &payload);
 
     var file = try fs.cwd().openFile(path, .{ .mode = .read_only });

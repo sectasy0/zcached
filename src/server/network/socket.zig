@@ -5,13 +5,17 @@ pub const Error = std.Io.net.Stream.Reader.Error || std.Io.net.Stream.Writer.Err
 pub fn read(io: std.Io, socket: std.Io.net.Stream, buffer: []u8) Error!usize {
     if (buffer.len == 0) return 0;
     var vectors = [_][]u8{buffer};
-    return io.vtable.netRead(io.userdata, socket.socket.handle, &vectors);
+    return socket.read(io, &vectors);
 }
 
 pub fn write(io: std.Io, socket: std.Io.net.Stream, bytes: []const u8) Error!usize {
     if (bytes.len == 0) return 0;
     const vectors = [_][]const u8{bytes};
-    const count = try io.vtable.netWrite(io.userdata, socket.socket.handle, &.{}, &vectors, 1);
+    const count = try (try io.operate(.{ .net_write = .{
+        .socket_handle = socket.socket.handle,
+        .data = &vectors,
+        .splat = 1,
+    } })).net_write;
     if (count == 0) return error.WriteZero;
     return count;
 }

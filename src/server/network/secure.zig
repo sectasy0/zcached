@@ -3,10 +3,7 @@ const runtime_io = @import("runtime_io");
 const socket_io = @import("socket.zig");
 const VerifyMode = @import("../config.zig").TLSConfig.VerifyMode;
 
-pub const openssl = @cImport({
-    @cInclude("openssl/ssl.h");
-    @cInclude("openssl/err.h");
-});
+pub const openssl = @import("openssl");
 
 pub const Error = socket_io.Error || error{
     TLSProtocolError,
@@ -25,8 +22,8 @@ pub const Context = struct {
 
         var cert_buffer: [std.posix.PATH_MAX]u8 = undefined;
         var key_buffer: [std.posix.PATH_MAX]u8 = undefined;
-        const certz = try std.fmt.bufPrintZ(&cert_buffer, "{s}", .{cert});
-        const keyz = try std.fmt.bufPrintZ(&key_buffer, "{s}", .{key});
+        const certz = try std.mem.printSentinel(&cert_buffer, "{s}", .{cert}, 0);
+        const keyz = try std.mem.printSentinel(&key_buffer, "{s}", .{key}, 0);
         const mode = switch (verify_mode) {
             .none => openssl.SSL_VERIFY_NONE,
             .peer => openssl.SSL_VERIFY_PEER,
@@ -36,7 +33,7 @@ pub const Context = struct {
         openssl.SSL_CTX_set_verify(ctx, mode, null);
         if (ca) |path| {
             var ca_buffer: [std.posix.PATH_MAX]u8 = undefined;
-            const caz = try std.fmt.bufPrintZ(&ca_buffer, "{s}", .{path});
+            const caz = try std.mem.printSentinel(&ca_buffer, "{s}", .{path}, 0);
             if (openssl.SSL_CTX_load_verify_locations(ctx, caz.ptr, null) != 1) return error.CALoadFailure;
         }
         if (openssl.SSL_CTX_use_certificate_file(ctx, certz.ptr, openssl.SSL_FILETYPE_PEM) != 1) return error.CertFailure;

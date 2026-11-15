@@ -18,7 +18,7 @@ test "should get existing and not get non-existing key" {
     try std.testing.expectEqual(fixture.memory.?.get("foo"), types.ZType{ .int = 42 });
     try std.testing.expectEqual(fixture.memory.?.get("foo2"), types.ZType{ .float = 123.45 });
     try std.testing.expectEqual(fixture.memory.?.get("foo3"), types.ZType{ .bool = true });
-    try std.testing.expectEqual(fixture.memory.?.get("foo4"), types.ZType{ .null = void{} });
+    try std.testing.expectEqual(fixture.memory.?.get("foo4"), types.ZType{ .null = {} });
     // we have to compare values cause it's not same place in memory
     try std.testing.expectEqualStrings((try fixture.memory.?.get("foo5")).sstr, helper.SIMPLE_STRING);
     try std.testing.expectEqualStrings((try fixture.memory.?.get("bar")).str, helper.STRING);
@@ -137,7 +137,7 @@ test "should not return error.MemoryLimitExceed when max but deleted some" {
 
     const result = fixture.memory.?.put("test key", value);
 
-    try std.testing.expectEqual(void{}, result);
+    try std.testing.expectEqual({}, result);
 }
 
 test "memory should not grow if key overriden with put" {
