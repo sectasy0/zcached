@@ -9,11 +9,11 @@ const cli = @import("server/cli.zig");
 const log = @import("server/logger.zig");
 
 // Networking
-const server = @import("server/network/listener.zig");
+const NetworkServer = @import("server/network/server.zig");
 
 // Processing / application logic
-const Employer = @import("server/processing/employer.zig");
-const Agent = @import("server/processing/agent.zig");
+const Context = @import("server/context.zig");
+const Agent = @import("server/background/agent.zig");
 
 // Storage / memory
 const Memory = @import("server/storage/memory.zig");
@@ -105,23 +105,22 @@ pub fn main(init: std.process.Init) void {
     };
     defer result.parser.deinit();
 
-    handleArguments(result.args) orelse return;
+    if (!handleArguments(result.args)) return;
 
     // Background worker
     var agent: Agent = try .init(allocator, &running);
-    agent.kickoff() catch |err| {
-        std.log.err("# failed to initialize background agent: {any}", .{err});
-    };
+    defer agent.deinit();
 
     var logger = log.Logger.init(
         allocator,
-        &agent,
+        null,
         result.args.@"log-path",
         result.args.sout,
     ) catch |err| {
         std.log.err("# failed to initialize logger: {any}", .{err});
         return;
     };
+    defer logger.deinit();
 
     var act: std.posix.Sigaction = .{
         .handler = .{ .handler = handleSig },
@@ -140,16 +139,18 @@ pub fn main(init: std.process.Init) void {
         logger.err("# failed to load config: {any}", .{err});
         return;
     };
+    defer config.deinit();
 
     var persister = persistance.Handler.init(
         allocator,
         config,
-        logger,
+        &logger,
         null,
     ) catch |err| {
         logger.err("# failed to init persistance.Handler: {any}", .{err});
         return;
     };
+    defer persister.deinit();
 
     // allocator for database inner database data purposes.
     // we don't need to wrap it in a thread-safe allocator because Memory struct is secured by mutex
@@ -171,13 +172,20 @@ pub fn main(init: std.process.Init) void {
         if (dbgpa.detectLeaks() != 0) std.process.exit(255);
     }
 
+    agent.kickoff() catch |err| {
+        logger.err("# failed to initialize background agent: {any}", .{err});
+        return;
+    };
+    logger.agent = &agent;
+    defer agent.stop();
+
     persister.load(&memory) catch |err| {
         if (err != error.FileNotFound) {
             logger.warn("# failed to restore data from latest .zcpf file: {any}", .{err});
         }
     };
 
-    var context = Employer.Context{
+    var context = Context{
         .config = &config,
         .resources = .{
             .memory = &memory,
@@ -192,6 +200,7 @@ pub fn main(init: std.process.Init) void {
         logger.err("# failed to initialize AOF: {any}", .{err});
         return;
     };
+    defer aof.deinit();
     context.resources.aof = .{
         .ptr = &aof,
         .append_command = appendAOFCommand,
@@ -202,60 +211,44 @@ pub fn main(init: std.process.Init) void {
     };
 
     aof.start() catch |err| {
-        logger.err("# failed to start AOF flush thread: {any}", .{err});
-        aof.deinit();
+        logger.err("# failed to schedule AOF flush: {any}", .{err});
         return;
     };
 
-    runSupervisor(allocator, context);
-
-    aof.deinit();
-    persister.deinit();
-    logger.deinit();
-    config.deinit();
-    agent.deinit();
+    {
+        var server = NetworkServer.init(allocator, context) catch |err| {
+            logger.err("# failed to initialize server: {any}", .{err});
+            return;
+        };
+        defer server.deinit();
+        server.run();
+    }
 }
 
-// null indicates that function should return from main
-fn handleArguments(args: cli.Args) ?void {
+fn handleArguments(args: cli.Args) bool {
     if (args.help) {
         cli.Parser.showHelp() catch |err| {
             std.log.err("# failed to show help: {any}", .{err});
-            return null;
+            return false;
         };
-        return null;
+        return false;
     }
 
     if (args.version) {
         cli.Parser.showVersion() catch |err| {
             std.log.err("# failed to show version: {any}", .{err});
-            return null;
+            return false;
         };
-        return null;
+        return false;
     }
 
     if (args.daemon) {
-        if (args.pid == null) {
+        const pid = args.pid orelse {
             std.log.err("# missing -pid file path", .{});
-            return null;
-        }
+            return false;
+        };
         const daemon = @import("server/daemon.zig");
-        daemon.daemonize(args.pid.?);
-        return void{};
+        daemon.daemonize(pid);
     }
-}
-
-fn runSupervisor(allocator: std.mem.Allocator, context: Employer.Context) void {
-    context.resources.logger.info("# starting zcached server on tcp://{any} | Workers {}", .{
-        context.config.address,
-        context.config.workers,
-    });
-
-    var employer = Employer.init(allocator, context) catch |err| {
-        context.resources.logger.err("# failed to initialize server: {any}", .{err});
-        return;
-    };
-    defer employer.deinit();
-
-    employer.supervise();
+    return true;
 }

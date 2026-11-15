@@ -1,11 +1,75 @@
 const std = @import("std");
 const runtime_io = @import("runtime_io");
 
-const Agent = @import("../../server/processing/agent.zig");
+const Agent = @import("../../server/background/agent.zig");
 
 var running: std.atomic.Value(bool) = .init(true);
 
 const allocator = std.testing.allocator;
+
+test "delayed database tasks do not block immediate work or shutdown" {
+    const io = runtime_io.get();
+    var agent = try Agent.init(allocator, &running);
+    defer agent.deinit();
+    var delayed = try agent.scheduleCancelable(struct {
+        fn run() void {}
+    }.run, .{}, 60);
+    defer delayed.deinit();
+    try agent.kickoff();
+    runtime_io.sleepNanoseconds(20 * std.time.ns_per_ms);
+
+    var completed: std.Io.Event = .unset;
+    const Marker = struct {
+        fn run(event: *std.Io.Event) void {
+            event.set(runtime_io.get());
+        }
+    };
+    try agent.schedule(Marker.run, .{&completed}, .{});
+    try completed.waitTimeout(io, .{ .duration = .{ .raw = .fromMilliseconds(500), .clock = .awake } });
+    const start = std.Io.Clock.awake.now(io);
+    agent.stop();
+    try std.testing.expect(start.untilNow(io, .awake).toMilliseconds() < 500);
+}
+
+test "canceling a scheduled task waits for its running callback" {
+    const io = runtime_io.get();
+    var agent = try Agent.init(allocator, &running);
+    defer agent.deinit();
+    var entered: std.Io.Event = .unset;
+    var release: std.Io.Event = .unset;
+    defer release.set(io);
+    const Blocker = struct {
+        fn run(started: *std.Io.Event, finish: *std.Io.Event) void {
+            started.set(runtime_io.get());
+            finish.waitUncancelable(runtime_io.get());
+        }
+    };
+    var scheduled = try agent.scheduleCancelable(Blocker.run, .{ &entered, &release }, 0);
+    defer {
+        release.set(io);
+        scheduled.deinit();
+    }
+    try agent.kickoff();
+    try entered.waitTimeout(io, .{ .duration = .{ .raw = .fromSeconds(1), .clock = .awake } });
+
+    var canceled: std.Io.Event = .unset;
+    const Cancel = struct {
+        fn run(task: *Agent.ScheduledTask, finished: *std.Io.Event) void {
+            task.cancel();
+            finished.set(runtime_io.get());
+        }
+    };
+    var cancel = try io.concurrent(Cancel.run, .{ &scheduled, &canceled });
+    defer {
+        release.set(io);
+        cancel.cancel(io);
+    }
+    try std.testing.expectError(error.Timeout, canceled.waitTimeout(io, .{
+        .duration = .{ .raw = .fromMilliseconds(100), .clock = .awake },
+    }));
+    release.set(io);
+    try canceled.waitTimeout(io, .{ .duration = .{ .raw = .fromSeconds(1), .clock = .awake } });
+}
 
 test "enqueue and dequeue works" {
     var q: Agent.Queue = try .init(allocator);
@@ -25,23 +89,24 @@ test "enqueue and dequeue works" {
     q.deinit(allocator);
 }
 
-test "deinit via poison pill" {
+test "stop drains queued tasks and rejects new tasks before deinit" {
     var agent: Agent = try .init(allocator, &running);
+    defer agent.deinit();
     var q = &agent.queue;
     try agent.kickoff();
 
-    const func_args = .{ .value = 42 };
-
+    var count: usize = 0;
     const Wrapper = struct {
         pub fn foo(args: anytype) void {
-            std.debug.print("Task executed with {d}\n", .{args.value});
+            args.count.* += 1;
         }
     };
 
-    try q.enqueue(allocator, Wrapper.foo, .{func_args}, .{});
-
-    // deinit should send poison pill and terminate thread
-    agent.deinit();
+    try q.enqueue(allocator, Wrapper.foo, .{.{ .count = &count }}, .{});
+    agent.stop();
+    agent.stop();
+    try std.testing.expectEqual(@as(usize, 1), count);
+    try std.testing.expectError(error.AgentStopped, q.enqueue(allocator, Wrapper.foo, .{.{ .count = &count }}, .{}));
 }
 
 test "multiple tasks enqueued without drain thread" {

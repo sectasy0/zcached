@@ -1,36 +1,28 @@
-const std = @import("std");
-
 comptime {
-    // protocol
     _ = @import("tests/protocol/handler.zig");
     _ = @import("tests/protocol/serializer.zig");
     _ = @import("tests/protocol/deserializer.zig");
     _ = @import("tests/protocol/types.zig");
     _ = @import("tests/protocol/set.zig");
 
-    // // server
     _ = @import("tests/server/config.zig");
     _ = @import("tests/server/cli.zig");
-    _ = @import("tests/server/fifo.zig");
     _ = @import("tests/server/logger.zig");
     _ = @import("server/tracing.zig");
     _ = @import("tests/server/utils.zig");
 
-    // server - network
-    _ = @import("tests/server/connection.zig");
-    _ = @import("tests/server/stream_server.zig");
-    // _ = @import("src/server/listener.zig");
+    _ = @import("tests/background/fifo.zig");
+    _ = @import("tests/background/agent.zig");
 
-    // server - processing
+    _ = @import("tests/network/connection.zig");
+    _ = @import("tests/network/stream_server.zig");
+    _ = @import("tests/network/listener.zig");
+
     _ = @import("tests/server/commands.zig");
     _ = @import("tests/server/errors.zig");
     _ = @import("tests/server/requests.zig");
-    _ = @import("tests/server/agent.zig");
-
-    // // // server - middleware
     _ = @import("tests/server/access.zig");
 
-    // // // server - storage
     _ = @import("tests/server/memory.zig");
     _ = @import("tests/server/persistance.zig");
     _ = @import("tests/server/aof.zig");

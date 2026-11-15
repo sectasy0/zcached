@@ -1,5 +1,5 @@
 const std = @import("std");
-const sync = @import("sync.zig");
+const sync = @import("sync");
 
 const ptrCast = @import("utils.zig").ptrCast;
 

@@ -5,10 +5,10 @@
     // IP address zcached will bind to
     .address = "127.0.0.1",
 
-    // Maximum number of concurrent clients
+    // Maximum number of concurrent clients per accept task
     .max_clients = 1024,
 
-    // Number of worker threads
+    // Number of concurrent accept tasks
     .workers = 4,
 
     // TCP port zcached will listen on

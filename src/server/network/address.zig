@@ -4,13 +4,8 @@ const IpAddress = std.Io.net.IpAddress;
 
 pub const Address = struct {
     ip: IpAddress,
-    any: std.posix.sockaddr,
-    sock_len: std.posix.socklen_t,
-
     pub fn fromIp(ip: IpAddress) Address {
-        var storage: std.Io.Threaded.PosixAddress = undefined;
-        const sock_len = std.Io.Threaded.addressToPosix(&ip, &storage);
-        return .{ .ip = ip, .any = storage.any, .sock_len = sock_len };
+        return .{ .ip = ip };
     }
 
     pub fn initIp4(bytes: [4]u8, port: u16) Address {
@@ -38,10 +33,6 @@ pub const Address = struct {
         var ip = self.ip;
         ip.setPort(port);
         self.* = fromIp(ip);
-    }
-
-    pub fn getOsSockLen(self: Address) std.posix.socklen_t {
-        return self.sock_len;
     }
 
     pub fn eql(a: Address, b: Address) bool {

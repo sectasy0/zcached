@@ -5,9 +5,8 @@ const consts = @import("consts.zig");
 
 const server = @import("server");
 const network = server.network;
-const openssl = network.secure.openssl;
-const SecureStream = network.Stream.StreamT(network.secure);
-const Stream = network.Stream.StreamT(network.unsecure);
+const SecureStream = network.Stream.StreamT(true);
+const Stream = network.Stream.StreamT(false);
 
 var passed: usize = 0;
 var failed: usize = 0;
@@ -25,23 +24,30 @@ fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
     return output;
 }
 
+fn readResponse(socket: anytype) ![]const u8 {
+    var buffer: [1025]u8 = undefined;
+    var reader = socket.reader(&buffer);
+    const response = reader.interface.takeDelimiterInclusive(consts.EXT_CHAR) catch |err| switch (err) {
+        error.ReadFailed => return reader.err.?,
+        else => return err,
+    };
+    return std.heap.page_allocator.dupe(u8, response[0 .. response.len - 1]);
+}
+
 fn sendAndExpect(socket: anytype, command: []const u8, label: []const u8, expected: []const u8, reverse: bool) !void {
-    _ = try socket.writeAll(@constCast(command));
-    // std.Thread.sleep(100_0000); // Give the server some time to respond
-    const response = try socket.reader().readUntilDelimiterAlloc(
-        std.heap.page_allocator,
-        consts.EXT_CHAR,
-        1024,
-    );
+    try socket.writeAll(command);
+    const response = try readResponse(socket);
     defer std.heap.page_allocator.free(response);
 
     const raw = try repr(std.heap.page_allocator, response);
+    defer std.heap.page_allocator.free(raw);
     const is_equal = !std.mem.eql(u8, response, expected);
 
     if (reverse != is_equal) {
         // reverse == true → expecting NOT equal → failed if is_equal == true
         // reverse == false → expecting equal → failed if is_equal == false
         const raw_expected = try repr(std.heap.page_allocator, expected);
+        defer std.heap.page_allocator.free(raw_expected);
         failed += 1;
 
         std.debug.print("{s}x{s}\r\n", .{ red, reset });
@@ -53,14 +59,64 @@ fn sendAndExpect(socket: anytype, command: []const u8, label: []const u8, expect
 }
 
 fn send(socket: anytype, command: []const u8) ![]const u8 {
-    _ = try socket.writeAll(@constCast(command));
-    const response = try socket.reader().readUntilDelimiterAlloc(
-        std.heap.page_allocator,
-        consts.EXT_CHAR,
-        1024,
-    );
+    try socket.writeAll(command);
+    return readResponse(socket);
+}
 
-    return response;
+fn expectBytes(socket: anytype, label: []const u8, expected: []const u8) !void {
+    const allocator = std.heap.page_allocator;
+    const response = try allocator.alloc(u8, expected.len);
+    defer allocator.free(response);
+
+    var received: usize = 0;
+    var frames: usize = 0;
+    const expected_frames = std.mem.count(u8, expected, &.{consts.EXT_CHAR});
+    while (received < response.len) {
+        const n = try socket.read(response[received..]);
+        if (n == 0) {
+            failed += 1;
+            std.debug.print("{s}x{s}\n[FAIL] {s}: EOF after {d} of {d} bytes\n", .{ red, reset, label, received, expected.len });
+            return error.UnexpectedResponseEof;
+        }
+        frames += std.mem.count(u8, response[received .. received + n], &.{consts.EXT_CHAR});
+        received += n;
+        if (frames >= expected_frames) break;
+    }
+
+    if (received != expected.len or !std.mem.eql(u8, response, expected)) {
+        failed += 1;
+        std.debug.print("{s}x{s}\n[FAIL] {s}: response differs ({d} bytes, expected {d})\n", .{ red, reset, label, received, expected.len });
+        return error.ResponseMismatch;
+    }
+    passed += 1;
+    std.debug.print("{s}.{s}", .{ green, reset });
+}
+
+fn testNetworkRegressions(socket: anytype) !void {
+    try socket.writeAll("*1\r\n$4\r\nPI");
+    runtime_io.sleepNanoseconds(50_000_000);
+    try socket.writeAll("NG\r\n\x03*1\r\n$4\r\nPING\r\n\x03");
+    try expectBytes(socket, "fragmented and pipelined PING", "+PONG\r\n\x03+PONG\r\n\x03");
+
+    const allocator = std.heap.page_allocator;
+    const payload = try allocator.alloc(u8, 64 * 1024);
+    defer allocator.free(payload);
+    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+    for (payload, 0..) |*byte, i| byte.* = alphabet[i % alphabet.len];
+
+    const set_command = try std.fmt.allocPrint(
+        allocator,
+        "*3\r\n$3\r\nSET\r\n$8\r\nlargekey\r\n${d}\r\n{s}\r\n\x03",
+        .{ payload.len, payload },
+    );
+    defer allocator.free(set_command);
+    try socket.writeAll(set_command);
+    try expectBytes(socket, "large SET", "+OK\r\n\x03");
+
+    const expected = try std.fmt.allocPrint(allocator, "${d}\r\n{s}\r\n\x03", .{ payload.len, payload });
+    defer allocator.free(expected);
+    try socket.writeAll("*2\r\n$3\r\nGET\r\n$8\r\nlargekey\r\n\x03");
+    try expectBytes(socket, "large GET", expected);
 }
 
 pub fn runServer(tls: bool) !std.process.Child {
@@ -81,47 +137,14 @@ pub fn connectSecure() !SecureStream {
     var socket = try connectUnsecure(SecureStream);
     errdefer socket.close();
 
-    const ctx = openssl.SSL_CTX_new(openssl.TLS_client_method());
-    if (ctx == null) return error.SSLContextCreationFailed;
-
-    _ = openssl.SSL_CTX_set_min_proto_version(ctx, openssl.TLS1_3_VERSION);
-    // openssl.SSL_CTX_set_info_callback(ctx, ssl_info_callback);
-
-    const ssl = openssl.SSL_new(ctx);
-    if (ssl == null) {
-        openssl.SSL_CTX_free(ctx);
-        return error.SSLCreationFailed;
-    }
-
-    _ = openssl.SSL_CTX_set_mode(ctx, openssl.SSL_MODE_AUTO_RETRY);
-    openssl.SSL_set_verify(ssl, openssl.SSL_VERIFY_NONE, null);
-
-    const return_code = openssl.SSL_set_fd(ssl, socket.handle);
-    if (return_code == 0) {
-        const rc: i32 = @intCast(openssl.SSL_get_error(ssl, return_code));
-        std.debug.print("SSL_set_fd failed with error code: {d}\n", .{rc});
-        openssl.SSL_free(ssl);
-        return error.SSLSetFdFailure;
-    }
-
-    if (openssl.SSL_connect(ssl) <= 0) {
-        openssl.SSL_free(ssl);
-        openssl.SSL_CTX_free(ctx);
-        return error.SSLConnectFailed;
-    }
-
-    socket.ctx = .{ .ctx = ssl };
-
+    socket.ctx = try network.secure.upgradeClient(socket.socket);
     return socket;
 }
 
 pub fn connectUnsecure(T: type) !T {
     const address = try std.Io.net.IpAddress.parse(consts.HOST, consts.PORT);
     const connected = try address.connect(runtime_io.get(), .{ .mode = .stream });
-    const sockfd = connected.socket.handle;
-    errdefer T.close(@constCast(&T{ .handle = sockfd, .ctx = null }));
-
-    return .{ .handle = sockfd, .ctx = null };
+    return .{ .socket = connected };
 }
 
 fn stopServer(child: *std.process.Child) !std.process.Child.Term {
@@ -136,14 +159,17 @@ pub fn main() !u8 {
     runtime_io.runtime = threaded_io.io();
 
     var server_process = try runServer(false);
-
-    var unsecure_stream = connectUnsecure(Stream) catch {
-        _ = try stopServer(&server_process);
-        return 1;
+    errdefer if (server_process.id != null) {
+        _ = stopServer(&server_process) catch |err| {
+            std.debug.print("Failed to stop server: {s}\n", .{@errorName(err)});
+        };
     };
+
+    var unsecure_stream = try connectUnsecure(Stream);
     defer unsecure_stream.close();
 
-    try runTests(unsecure_stream);
+    try runTests(&unsecure_stream);
+    try testNetworkRegressions(&unsecure_stream);
 
     var term = try stopServer(&server_process);
 
@@ -151,19 +177,26 @@ pub fn main() !u8 {
     if (term != .exited or term.exited != 0) std.process.exit(1);
 
     var secure_server_process = try runServer(true);
-    var secure_stream = connectSecure() catch {
-        _ = try stopServer(&secure_server_process);
-        return 1;
-    };
-    defer secure_stream.close();
-
-    errdefer {
+    errdefer if (secure_server_process.id != null) {
         _ = stopServer(&secure_server_process) catch |err| {
             std.debug.print("Failed to stop secure server: {s}\n", .{@errorName(err)});
         };
+    };
+
+    var idle_connections: [4]Stream = undefined;
+    var idle_count: usize = 0;
+    defer {
+        for (idle_connections[0..idle_count]) |*connection| connection.close();
+    }
+    while (idle_count < idle_connections.len) : (idle_count += 1) {
+        idle_connections[idle_count] = try connectUnsecure(Stream);
     }
 
-    try runTests(secure_stream);
+    var secure_stream = try connectSecure();
+    defer secure_stream.close();
+
+    try runTests(&secure_stream);
+    try testNetworkRegressions(&secure_stream);
 
     term = try stopServer(&secure_server_process);
     // For now it means memory leak or crash
@@ -616,27 +649,4 @@ fn testAdditionalTypes(socket: anytype) !void {
         "-ERR 'map' not found\r\n",
         false,
     );
-}
-
-export fn ssl_info_callback(ssl: ?*const openssl.SSL, t: c_int, v: c_int) callconv(.c) void {
-    const t_str = switch (t) {
-        openssl.SSL_CB_LOOP => "LOOP",
-        openssl.SSL_CB_EXIT => "EXIT",
-        openssl.SSL_CB_READ => "READ",
-        openssl.SSL_CB_WRITE => "WRITE",
-        openssl.SSL_CB_ALERT => "ALERT",
-        openssl.SSL_CB_READ_ALERT => "READ_ALERT",
-        openssl.SSL_CB_WRITE_ALERT => "WRITE_ALERT",
-        openssl.SSL_CB_HANDSHAKE_START => "HANDSHAKE_START",
-        openssl.SSL_CB_HANDSHAKE_DONE => "HANDSHAKE_DONE",
-        else => "UNKNOWN",
-    };
-
-    const v_str = if (v == 0) "0" else if (v == 1) "1" else "OTHER";
-
-    if (ssl) |ssl_ptr| {
-        std.debug.print("INFO [SSL {any}] SSL_info callback: type={s}, val={s}\n", .{ ssl_ptr, t_str, v_str });
-    } else {
-        std.debug.print("INFO [SSL NULL] SSL_info callback: type={s}, val={s}\n", .{ t_str, v_str });
-    }
 }

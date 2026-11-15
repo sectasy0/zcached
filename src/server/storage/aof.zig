@@ -1,12 +1,12 @@
 const std = @import("std");
-const runtime_io = @import("runtime_io");
-const sync = @import("../sync.zig");
+const sync = @import("sync");
 const fs = @import("fs");
 const Config = @import("../config.zig");
 
 const consts = @import("../network/consts.zig");
 
-const Context = @import("../processing/employer.zig").Context;
+const Context = @import("../context.zig");
+const Agent = @import("../background/agent.zig");
 
 const types = @import("../../protocol/types.zig");
 
@@ -52,8 +52,7 @@ const Protocol = protocol_handler.ProtocolHandlerT(fixed_buffer_stream.FixedBuff
 journal: fs.File,
 path: []const u8,
 mutex: sync.Mutex = .{},
-flush_thread: ?std.Thread = null,
-flush_running: std.atomic.Value(bool) = .init(false),
+flush_task: ?Agent.ScheduledTask = null,
 /// Normal buffer for new writes.
 buffer: std.array_list.Managed(u8),
 
@@ -151,7 +150,7 @@ pub fn append(self: *Self, command: []const u8) !void {
             }
         },
         .everysec => {
-            // Buffered data is flushed by the periodic background thread.
+            // Buffered data is flushed by the database task queue.
         },
         .no => return,
     }
@@ -191,22 +190,14 @@ pub fn appendCommand(self: *Self, command_items: []const types.ZType) !void {
 }
 
 pub fn start(self: *Self) !void {
-    if (self.strategy != .everysec) return;
-    self.flush_running.store(true, .seq_cst);
-    self.flush_thread = std.Thread.spawn(.{}, Self.flushLoop, .{self}) catch |err| {
-        self.flush_running.store(false, .seq_cst);
-        return err;
-    };
+    if (self.strategy != .everysec or self.flush_task != null) return;
+    self.flush_task = try self.context.resources.agent.scheduleCancelable(flushQueued, .{self}, 1);
 }
 
-fn flushLoop(self: *Self) void {
-    while (self.flush_running.load(.seq_cst)) {
-        runtime_io.sleepNanoseconds(std.time.ns_per_s);
-        if (!self.flush_running.load(.seq_cst)) break;
-        self.flush() catch |err| {
-            self.context.resources.logger.err("# failed to flush AOF file: {any}", .{err});
-        };
-    }
+fn flushQueued(self: *Self) void {
+    self.flush() catch |err| {
+        self.context.resources.logger.err("# failed to flush AOF file: {any}", .{err});
+    };
 }
 
 pub fn replay(self: *Self) !void {
@@ -563,10 +554,9 @@ fn rewriteNeeded(self: *Self) bool {
 }
 
 pub fn deinit(self: *Self) void {
-    self.flush_running.store(false, .seq_cst);
-    if (self.flush_thread) |thread| {
-        thread.join();
-        self.flush_thread = null;
+    if (self.flush_task) |*task| {
+        task.deinit();
+        self.flush_task = null;
     }
     self.mutex.lock();
     const rewrite_thread = self.rewrite_thread;

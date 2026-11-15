@@ -26,14 +26,14 @@ allocator: std.mem.Allocator,
 deserializer: Deserializer,
 
 config: Config,
-logger: Logger,
+logger: *Logger,
 
 path: ?[]const u8,
 
 pub fn init(
     allocator: std.mem.Allocator,
     config: Config,
-    logger: Logger,
+    logger: *Logger,
     path: ?[]const u8,
 ) !Handler {
     var persister = Handler{

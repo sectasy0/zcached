@@ -1,6 +1,6 @@
 const std = @import("std");
 const runtime_io = @import("runtime_io");
-const sync = @import("../sync.zig");
+const sync = @import("sync");
 
 const types = @import("../../protocol/types.zig");
 const TracingAllocator = @import("../tracing.zig");

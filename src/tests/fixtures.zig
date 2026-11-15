@@ -12,8 +12,8 @@ const Connection = @import("../server/network/connection.zig");
 
 const TracingAllocator = @import("../server/tracing.zig");
 
-const Employer = @import("../server/processing/employer.zig");
-const Agent = @import("../server/processing/agent.zig");
+const Context = @import("../server/context.zig");
+const Agent = @import("../server/background/agent.zig");
 
 const persistance = @import("../server/storage/persistance.zig");
 const Memory = @import("../server/storage/memory.zig");
@@ -62,12 +62,12 @@ pub const ContextFixture = struct {
         self.persistance = try persistance.Handler.init(
             self.allocator,
             self.config,
-            self.logger,
+            &self.logger,
             null,
         );
     }
 
-    pub fn context(self: *ContextFixture) Employer.Context {
+    pub fn context(self: *ContextFixture) Context {
         return .{
             .resources = .{
                 .memory = &self.memory.?,
@@ -174,19 +174,16 @@ pub const ConnectionFixture = struct {
 
     pub fn init(allocator: std.mem.Allocator) !ConnectionFixture {
         const incoming = server.Connection{
-            .stream = Stream{ .handle = 1 },
+            .stream = Stream{ .socket = .{ .socket = .{
+                .handle = 1,
+                .address = .{ .ip4 = .loopback(1234) },
+            } } },
             .address = @import("../server/network/address.zig").Address.initIp4(.{ 192, 168, 0, 1 }, 1234),
-        };
-
-        var pollfd = std.posix.pollfd{
-            .fd = incoming.stream.handle,
-            .events = std.posix.POLL.IN,
-            .revents = 0,
         };
 
         return .{
             .allocator = allocator,
-            .connection = try .init(allocator, incoming, &pollfd, 0),
+            .connection = try .init(allocator, incoming),
         };
     }
 };

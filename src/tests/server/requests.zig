@@ -16,7 +16,7 @@ test "should deframe" {
 
     const context = fixture.context();
 
-    var processor: Processor = .init(std.testing.allocator, context);
+    var processor: Processor = try .init(std.testing.allocator, context);
     defer processor.deinit();
 
     var connection = conn_fixture.connection;
