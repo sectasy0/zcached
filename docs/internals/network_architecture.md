@@ -1,9 +1,9 @@
 # Network architecture
 
-This document describes the implemented network path, not a proposed event-loop
-design. The runtime uses Zig 0.17.1 `std.Io.Threaded`; TLS is implemented with
-OpenSSL memory BIOs. All application-controlled socket reads and writes use the
-shared `std.Io` backend.
+This document describes the implemented network path, not a proposed design.
+The runtime uses a custom Zig 0.17.1 `std.Io` backend with cooperative fibers,
+kqueue on macOS, and io_uring on Linux. TLS uses OpenSSL memory BIOs; encrypted
+socket traffic goes through the same reactor as plaintext traffic.
 
 ## Contents
 
@@ -23,7 +23,9 @@ shared `std.Io` backend.
 | Component | Responsibility | Source |
 | --- | --- | --- |
 | Process entry point | Creates the I/O backend and shared resources; installs signal handlers; coordinates teardown. | [main.zig](../../src/main.zig) |
-| Network `Server` | Supervises accept tasks, owns their shared transport, checks access, and runs connection tasks. | [network/server.zig](../../src/server/network/server.zig) |
+| Evented `std.Io` adapter | Owns fiber stacks, ready queue, timers, futures, groups, cancellation, futex waiters, and TCP operations. | [evented.zig](../../src/runtime/evented.zig) |
+| Native reactor | One-shot descriptor readiness, bounded kernel waits, and stale-event suppression. | [reactor.zig](../../src/runtime/reactor.zig) |
+| Network `Server` | Supervises native worker threads and their accept tasks, owns their shared transport, checks access, and runs connection tasks. | [network/server.zig](../../src/server/network/server.zig) |
 | `StreamServer` | Owns the listening socket and optional shared TLS context; binds, accepts, and upgrades streams. | [stream_server.zig](../../src/server/network/stream_server.zig) |
 | `Stream` / `StreamT` | Presents the same read/write/close API for plaintext and TLS; also exposes a buffered `std.Io.Reader` adapter. | [stream.zig](../../src/server/network/stream.zig) |
 | Socket adapter | Uses `std.Io.net.Stream.read` and `std.Io.operate` network operations; handles partial writes. | [socket.zig](../../src/server/network/socket.zig) |
@@ -42,10 +44,10 @@ it does not copy the database, logger, or background queue.
 
 ```mermaid
 flowchart TD
-    Main["main: resource lifetime + std.Io.Threaded"]
+    Main["main: resource lifetime + Evented std.Io"]
     Server["Network Server"]
     Transport["StreamServer: one listening socket + optional SSL_CTX"]
-    Accept["workers accept tasks: local semaphore + connection Group"]
+    Accept["workers OS threads: own reactor + accept task + semaphore + connection Group"]
     Serve["one serve task per admitted connection"]
     Access["IP whitelist"]
     Stream["Stream: plaintext or TLS"]
@@ -53,7 +55,7 @@ flowchart TD
     DB["Command handler -> locked Memory methods"]
     AOF["AOF append in connection task"]
     Queue["Agent queue: logs + recurring everysec flush"]
-    Backend["shared std.Io backend"]
+    Backend["thread-local Evented std.Io: fibers + native reactor"]
     Main --> Server
     Server --> Transport
     Server --> Accept
@@ -74,45 +76,154 @@ arrow for AOF represents its scheduled flush, not command dispatch.
 
 ## Tasks, threads, and ownership
 
-`main` creates one `std.Io.Threaded` instance and publishes its `std.Io` through
-[runtime/io.zig](../../src/runtime/io.zig). Unit tests instead obtain
-`std.testing.io` from the same adapter.
+`main` uses `std.process.Init.io` for CLI/bootstrap work, then initializes
+`Evented` **after daemonization**, and publishes its `std.Io` through
+[runtime/io.zig](../../src/runtime/io.zig). Initializing after the final fork
+avoids inheriting an invalid kqueue or retaining the parent's thread identity.
+Daemon stdout/stderr are redirected to `/dev/null`, not left closed, so newly
+opened reactor descriptors cannot be accidentally used by diagnostic output.
+Daemon configurations still need absolute storage/certificate paths because
+the existing daemonization code changes its working directory to `/`.
+Each backend is initialized in place on its owner thread and must not be moved
+or migrated. Network workers publish their own backend through the thread-local
+runtime override; bootstrap and external background threads use the process
+backend. Worker backends are destroyed on their owner threads after all their
+connection tasks finish.
 
-`Server.run` binds once, then starts `config.workers` concurrent accept tasks
-using `std.Io.Group.concurrent`. These tasks accept from the **same** listening
-socket. Each accept task has a local `std.Io.Semaphore` and a local group of
+Existing unit tests use `std.testing.io` through the runtime adapter unless a
+server worker installs its explicit thread-local native backend. The
+separate `zcached-io-tests` executable directly constructs `Evented`, so native
+backend coverage cannot accidentally be replaced by the testing backend.
+
+`Server.run` binds once, then starts `config.workers` OS threads. Each thread
+initializes its own `Evented` backend and uses `std.Io.Group.concurrent` to run
+one accept task. These tasks accept from the **same** listening socket. Each
+accept task has a local `std.Io.Semaphore` and a local group of
 connection tasks. It cancels and waits for that group before returning, so the
 semaphore cannot disappear while a connection still references it.
 
 ```text
 main / Server.run
   owns StreamServer
-  owns workers Group
-    +-- acceptConnections #0
+  owns and joins worker threads
+    +-- worker thread #0 / Evented #0
+    |     acceptConnections #0
     |     owns semaphore #0
     |     owns connections Group #0
     |       +-- serve connection A
     |       +-- serve connection B
-    +-- acceptConnections #1
+    +-- worker thread #1 / Evented #1
+    |     acceptConnections #1
     |     owns semaphore #1
     |     owns connections Group #1
     |       +-- serve connection C
-    +-- ... up to config.workers accept tasks
+    +-- ... up to config.workers OS worker threads
 
 separate existing Agent drain thread
   consumes immediate log tasks and delayed AOF flush tasks
 ```
 
-This is task-based structured concurrency, **not** an `epoll`/`kqueue` reactor
-implemented by the application. With the currently selected threaded backend,
-blocked accepts, reads, writes, and TLS handshakes can occupy operating-system
-threads. `workers` counts accept tasks, not a fixed-size pool that bounds all
-network threads. There is no application-configured `Threaded` concurrency cap;
-do not infer scalability or throughput from the API shape alone.
+Accept, connection, and worker-supervisor tasks are fibers on their worker's
+owner OS thread. A pending accept/read/write/handshake parks its fiber, not an
+OS thread. Different workers can execute commands in parallel across CPU cores;
+shared storage, AOF buffers, and background queues retain their locking. The
+main supervisor, existing Agent drain thread, and optional AOF rewrite thread
+remain separate. Without a rewrite, the normal process has `workers + 2` OS
+threads, independent of the number of admitted connections.
 
-The database queue is also not a global serialization point for client
-commands. Different connections execute commands concurrently in their own
-tasks, calling storage methods directly.
+The adapter maintains a mutex-protected registry of live backends. A shared
+`std.Io` futex wake scans native waiters across those backends and notifies each
+affected reactor through its wake pipe; any remaining wake budget goes to OS
+waiters. Registration and wake checks use each backend's waiter mutex, so an
+unlock on one worker cannot lose a waiter parked on another worker. The registry
+also protects backend lifetime during cross-thread wakeups.
+
+Commands call storage directly from connection fibers, not through the Agent.
+Within each worker, task execution is cooperative, not preemptive. TCP
+accept/connect/read/write yield through the FIFO ready queue even when a
+syscall could complete immediately, allowing other fibers and deadlines to
+progress. Pure computation and synchronous filesystem calls can still delay
+that worker's reactor.
+
+### Native readiness and scheduling
+
+The design adopts the one-shot completion/readiness architecture of the
+[pinned Bun/TigerBeetle I/O code](https://github.com/oven-sh/bun/tree/e14a3af491ece8d1b0309e76ae3022b4fad91f16/src/io).
+It is an independent implementation for Zig 0.17.1, not a vendored Bun
+dependency or a claim of API/performance equivalence with TigerBeetle.
+
+```mermaid
+flowchart TD
+    Task["connection fiber: std.Io operation"]
+    FIFO["FIFO ready fibers"]
+    Call["nonblocking accept / connect / recvmsg / sendmsg"]
+    Park["EAGAIN or pending connect: register fd + interest; park fiber"]
+    Kernel["macOS: kqueue EV_ONESHOT<br/>Linux: io_uring POLL_ADD / POLL_REMOVE"]
+    Scheduler["scheduler: readiness + deadlines + queued wakeups"]
+    Cancel["cancel request / futex wake from Agent thread"]
+    Pipe["nonblocking wake pipe"]
+    Task --> FIFO --> Call
+    Call -->|"success / EOF / error"| Task
+    Call --> Park --> Kernel --> Scheduler
+    Cancel --> Pipe --> Kernel
+    Scheduler --> FIFO
+```
+
+The kernel watches descriptors, **not fiber pointers or application byte
+buffers**. Buffer reads/writes happen in the resumed fiber using nonblocking
+syscalls. On Linux, monotonically generated registration IDs reject stale
+completions after disarm/rearm; cancellation CQEs use a reserved ID. Read and
+write interests are independent, and multiple accept fibers may wait on the
+same listening descriptor.
+
+The scheduler polls readiness without blocking while fibers are ready.
+Otherwise it waits in the kernel until readiness, a wake-pipe event, or the
+nearest deadline. There is no timer thread. External queue-thread wakeups use
+the pipe; a full pipe already represents a pending wakeup. Futex value checking
+and fiber registration are serialized with wakeups to prevent lost wakes.
+
+Cancellation wakes a cancelable parked fiber and is delivered at its next
+cancellation check. Blocked cancellation protection retains the request until
+unblocked; delivery consumes it once, and `recancel` re-arms it. Future awaits
+and group cancellation wait for cleanup. A completed group member is destroyed
+immediately after switching off its stack; future result storage remains until
+await/cancel. Native batches use the same fiber scheduler and drain pending
+operations before returning a timeout/cancellation, so stack-owned operation
+buffers cannot outlive their caller.
+
+### Backend boundaries and memory
+
+| Facility | Implementation |
+| --- | --- |
+| TCP IPv4/IPv6 listen, accept, connect, read, write | Nonblocking sockets; native reactor readiness; cooperative fibers. |
+| Futures, groups, sleeps, native operation batches | Fiber scheduler and monotonic/selected-clock deadlines. |
+| Mutexes, events, semaphores on reactor fibers | `std.Io` futex callbacks park/wake fibers. |
+| Synchronization on the existing external threads | Synchronous OS futex/condition services; wake pipe notifies the reactor. |
+| Filesystem, processes, clocks, randomness, socket close/shutdown | Reused synchronous `std.Io.Threaded` platform services with `.concurrent_limit = .nothing`; its task scheduler is not used. |
+| DNS, UDP/datagram operations, Unix sockets, socketpair, sendfile | Not used by this server; explicitly logged and rejected rather than silently routed to a blocking network backend. |
+
+This is a **network-evented, synchronous-filesystem hybrid**, not an
+asynchronous disk engine or a complete implementation of every `std.Io`
+network facility. AOF `everysec` remains on the Agent queue; synchronous AOF
+append in a command can block the reactor.
+
+Each spawned fiber and the scheduler reserve a 4 MiB virtual stack plus one
+guard page. Page mappings are obtained without eager allocator poisoning:
+physical pages are committed as touched. Overflow hits the lower guard page.
+Context switches explicitly save/restore the C ABI's callee-saved registers and
+floating-point control state on the suspended stack. They do not rely on the
+inline standard-library switch that failed optimized Zig 0.17 tests. Native
+regressions are exercised in both Debug and ReleaseSafe.
+Task arguments/results are separate allocator-owned copies; their referenced
+payloads remain governed by the existing caller/queue ownership rules. Active
+groups do not retain stacks from completed connection tasks.
+
+Readiness dispatch and deadline selection currently scan parked fibers. This
+is not an O(1) per-event completion-pointer dispatcher; high connection counts
+still need measurement. The backend currently supports macOS/Linux on aarch64
+and x86_64. Linux requires usable io_uring with `NODROP` and `EXT_ARG` support;
+denial by seccomp or unsupported features is an explicit startup error. There
+is no fallback to Threaded network tasks or epoll.
 
 ### Ownership rules
 
@@ -124,6 +235,7 @@ tasks, calling storage methods directly.
 | Receive and transmit arrays | `Connection`; created after admission and TLS upgrade, freed when `serve` exits. |
 | Parsing and encoding arenas | The connection's `Processor.protocol`; destroyed with the processor. |
 | Semaphore permit | Reserved before `accept`; held through access verification, handshake, processing, and teardown. |
+| Fiber stack / copied task closure | Evented backend; freed after task completion on the scheduler stack. |
 | Logger task arguments | Queue-owned copies; string slice arguments are duplicated by the scheduler's existing cloning path. |
 | AOF scheduled callback | Non-owning AOF pointer protected by a cancelable task handle; cancellation waits for an executing callback. |
 
@@ -141,7 +253,7 @@ sequenceDiagram
     participant TLS as OpenSSL memory BIOs
     participant Proc as Processor / Memory
     Run->>IO: bind + listen once
-    Run->>Accept: Group.concurrent (workers times)
+    Run->>Accept: spawn worker thread; start local accept task
     Accept->>Accept: wait for local semaphore permit
     Accept->>IO: accept
     IO-->>Accept: stream + peer address
@@ -240,6 +352,8 @@ In particular, this is **not** an end-to-end zero-copy design.
 | Stage | What happens | Ownership / cost |
 | --- | --- | --- |
 | Socket receive, plaintext | The backend fills the fixed read buffer. | No intermediate application-owned socket buffer in this path. |
+| Reactor readiness | Descriptor/interest and registration metadata pass through the kernel event queue. | No application payload buffer submitted to kqueue/io_uring; readiness is not a payload copy. |
+| Fiber task arguments/results | Task argument bytes are copied into owned storage; a future result is copied out on await/cancel. | Pointer/slice arguments are shallow copies, not automatically duplicated payloads. |
 | Receive accumulation | `appendSlice` copies newly read bytes; growth may relocate existing bytes. | Connection-owned heap array. |
 | Frame extraction | `items[start..request_end]` borrows the frame. | No frame-sized allocation or copy. |
 | Incomplete-tail compaction | `copyForwards` moves the unread suffix to offset zero. | Conditional in-place copy, only after consuming preceding frames. |
@@ -320,7 +434,7 @@ security policy.
 
 | Control | Implemented meaning |
 | --- | --- |
-| `workers` | Number of concurrent accept loops on the shared listening socket; default 4. |
+| `workers` | Number of OS worker threads, each with its own reactor and one accept loop on the shared listening socket; default 4. |
 | `max_clients` | Permits **per accept loop**; default 512. Idle connections and unfinished handshakes retain permits. |
 | Aggregate admitted connections | At most `workers * max_clients` connection tasks, not a single global semaphore. Distribution among accept loops is not guaranteed fair. |
 | Listen backlog | Requested `StreamServer.Options.kernel_backlog` defaults to 128; the OS may apply its own limits. It is not the number of active application tasks. |
@@ -365,19 +479,22 @@ not an unconditional latency guarantee.
 
 ### Shutdown order
 
-SIGINT and SIGTERM only clear the atomic running flag. `Server.run` checks it
-with a 100 ms supervisor sleep, then its worker group cancellation interrupts
-blocked network operations. Each accept task cancels its connection group.
+SIGINT and SIGTERM only clear the atomic running flag. The main and worker
+supervisors check it with a 100 ms sleep. Each worker cancels its accept group,
+interrupting blocked network operations, and the accept task cancels its
+connection group. The main supervisor joins every started worker before
+destroying the shared listener or TLS context, including partial startup failure.
 
 ```text
 signal -> running = false
   -> Server.run leaves its supervisor loop
-  -> cancel/wait accept tasks
+  -> each worker cancels/waits its accept task
        -> each accept task cancels/waits its connection tasks
             -> Processor arenas freed
             -> Connection buffers freed
             -> TLS state freed + accepted socket closed
             -> semaphore permit returned
+  -> worker backends destroyed on their owner threads; worker threads joined
   -> StreamServer listening socket + shared TLS context destroyed
   -> AOF scheduled flush canceled; running callback awaited
        -> outstanding rewrite thread joined
@@ -385,7 +502,8 @@ signal -> running = false
   -> Agent.stop wakes queue wait and joins the drain thread
   -> remaining shared storage/config/logger resources released
   -> Agent.deinit frees queued task arguments
-  -> std.Io.Threaded and allocators destroyed
+  -> Evented scheduler, stacks, native reactor, wake pipe, and synchronous services destroyed
+  -> allocators destroyed
 ```
 
 The supervisor polling interval is not a maximum shutdown duration. Synchronous
@@ -408,7 +526,9 @@ The following points are important when interpreting the architecture:
 2. **Storage reads are not serialization snapshots.** `Memory.get` releases
    its shared lock before response encoding and returns borrowed payload
    references. Concurrent mutation can invalidate such references; the network
-   architecture does not itself provide lifetime-safe snapshots.
+   architecture does not itself provide lifetime-safe snapshots. Serial
+   network fiber execution reduces CPU-parallel access but does not change
+   storage ownership or eliminate access from background threads.
 3. **There is no transaction spanning database mutation and AOF append.**
    Commands mutate memory and then append their persistence representation.
    An AOF error does not imply that the memory change was rolled back.
@@ -423,7 +543,7 @@ The following points are important when interpreting the architecture:
    runs later on the Agent. Queue shutdown can leave messages unexecuted;
    `Logger.deinit` flushes its own buffer, not every pending queue task.
 6. **Limits are local, not a complete process budget.** Per-loop permits,
-   receive lengths, and database memory checks do not bound all thread stacks,
+   receive lengths, and database memory checks do not bound all fiber stacks,
    response arenas, log copies, or TLS allocations.
 
 These are descriptions of the current code, not guarantees added by this
@@ -435,6 +555,8 @@ Relevant automated coverage:
 
 | Behavior | Tests |
 | --- | --- |
+| Actual native scheduling, same-thread futures, protected cancellation/recancel, external futex wakeups, immediate group stack release, TCP connect/accept/read/write, backpressure cancellation, batch deadlines | [runtime/evented.zig](../../src/runtime/evented.zig), run with `zig build test-io` |
+| Native one-shot readiness, disarm/rearm, bounded waits | [runtime/reactor.zig](../../src/runtime/reactor.zig) |
 | Fragmented/pipelined requests, idle client cancellation, permit release | [tests/network/server.zig](../../src/tests/network/server.zig) |
 | Ephemeral-port binding, buffered reader behavior, transport errors | [tests/network/stream_server.zig](../../src/tests/network/stream_server.zig) |
 | Receive accumulation, pending writes, size checks | [tests/network/connection.zig](../../src/tests/network/connection.zig) |
@@ -446,6 +568,7 @@ Relevant automated coverage:
 
 ```sh
 zig build test --summary all
+zig build test-io
 zig build e2e
 zig build
 zig build -Dtls-enabled=true
@@ -457,3 +580,50 @@ memory under indefinitely long sessions, an exact shutdown deadline, or
 event-loop-scale performance. When changing the backend, frame ownership,
 TLS buffering, task grouping, or admission policy, update both this document
 and the corresponding regression tests.
+
+### Port validation
+
+Before native worker threads were added, on macOS/aarch64 the port passed the existing 186 unit tests, 100 TCP/TLS E2E
+checks, and eight direct native-backend/reactor tests. Unit/E2E checks ran in
+Debug and ReleaseSafe; native backend tests also passed in ReleaseFast. A paced idle-client check
+measured **2 OS threads before and after 512 TCP connections**, and likewise
+**2 threads with 128 incomplete TLS handshakes**. Separate clients still
+received PONG; SIGTERM with these clients open exited successfully in about
+0.13 s (TCP) and 0.07 s (TLS). RSS was approximately 16 MiB and 24 MiB
+respectively. Daemon-mode PONG and shutdown also passed with absolute storage
+paths. These are local ReleaseSafe-build observations, not capacity/SLA or
+burst-admission guarantees; the configured listen backlog remains finite.
+The two-thread counts describe that earlier single-reactor configuration, not
+the current `workers + 2` threading model.
+
+### Native worker validation
+
+The native worker version passed 186 unit tests and 100 TCP/TLS E2E checks in
+ReleaseSafe, plus nine direct native-backend/reactor tests in Debug, ReleaseSafe,
+and ReleaseFast. The additional test exchanges 2,000 semaphore request/response
+pairs between two owner threads with independent reactors and shared
+`std.Io` synchronization.
+
+A local Apple M2 loopback benchmark in ReleaseFast configured eight network
+workers and observed ten OS threads: eight workers, the main supervisor, and
+the Agent. With eight Zig client threads, no pipeline, 10-byte random keys,
+20-byte values, AOF disabled, TLS disabled, and full request/response file
+logging, each repeat completed 80,000 SET and 80,000 GET commands:
+
+| Repeat | Elapsed | Commands/s | Sampled maximum RSS |
+| --- | --- | --- | --- |
+| 1 | 1.851 s | 86,440 | 45.0 MiB |
+| 2 | 2.095 s | 76,372 | 47.0 MiB |
+| 3 | 2.089 s | 76,592 | 47.7 MiB |
+
+Median throughput was 76,592 commands/s, versus 27,421 commands/s in the earlier
+single-reactor, two-thread process under the same client workload. These
+same-host measurements were not taken on an exclusive machine and do not
+establish maximum server capacity or a comparison against the old Threaded
+network backend. The existing client checks response framing; full logs were
+also audited for successful response statuses/shapes, and SET/GET probes
+checked exact payloads.
+
+The backend tests cross-compiled for x86_64-linux-musl and
+aarch64-linux-musl. Linux runtime behavior was not exercised locally because
+Docker Desktop was paused; cross-compilation is not runtime validation.

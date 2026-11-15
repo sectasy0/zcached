@@ -43,23 +43,61 @@ pub fn run(self: *Server) void {
         return;
     };
 
-    const io = runtime_io.get();
-    var workers: std.Io.Group = .init;
-    defer workers.cancel(io);
+    const workers = self.allocator.alloc(std.Thread, self.context.config.workers) catch |err| {
+        self.context.resources.logger.err("# failed to allocate server workers: {any}", .{err});
+        return;
+    };
+    defer self.allocator.free(workers);
+    var started: usize = 0;
+    defer {
+        self.context.running.store(false, .seq_cst);
+        for (workers[0..started]) |worker| worker.join();
+    }
 
-    for (0..self.context.config.workers) |_| {
-        workers.concurrent(io, acceptConnections, .{self}) catch |err| {
+    for (workers) |*worker| {
+        worker.* = std.Thread.spawn(.{}, runWorker, .{self}) catch |err| {
             self.context.resources.logger.err(
-                "# failed to start listener task: {any}",
+                "# failed to start server worker thread: {any}",
                 .{err},
             );
             return;
         };
+        started += 1;
     }
 
+    const io = runtime_io.get();
     while (self.context.running.load(.seq_cst)) {
         io.sleep(.fromMilliseconds(100), .awake) catch |err| {
             self.context.resources.logger.err("# supervisor sleep failed: {any}", .{err});
+            return;
+        };
+    }
+}
+
+fn runWorker(self: *Server) void {
+    var backend: runtime_io.Evented = undefined;
+    backend.init(self.allocator) catch |err| {
+        self.context.resources.logger.err("# failed to initialize worker I/O: {any}", .{err});
+        self.context.running.store(false, .seq_cst);
+        return;
+    };
+    defer backend.deinit();
+    const previous_io = runtime_io.thread_runtime;
+    runtime_io.thread_runtime = backend.io();
+    defer runtime_io.thread_runtime = previous_io;
+
+    const io = runtime_io.get();
+    var listener: std.Io.Group = .init;
+    defer listener.cancel(io);
+    listener.concurrent(io, acceptConnections, .{self}) catch |err| {
+        self.context.resources.logger.err("# failed to start worker listener: {any}", .{err});
+        self.context.running.store(false, .seq_cst);
+        return;
+    };
+    while (self.context.running.load(.seq_cst)) {
+        io.sleep(.fromMilliseconds(100), .awake) catch |err| {
+            self.context.resources.logger.err("# worker supervisor sleep failed: {any}", .{err});
+            self.context.running.store(false, .seq_cst);
             return;
         };
     }

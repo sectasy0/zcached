@@ -3,6 +3,13 @@
 - [zig](https://ziglang.org/download/) (0.17.1)
 - Unix-based operating system (Linux, macOS). For Windows users, please refer to the `Docker` section below.
 
+The network reactor supports aarch64 and x86_64. Linux must allow `io_uring_setup`
+and provide the `IORING_FEAT_NODROP` and `IORING_FEAT_EXT_ARG` features. Containers
+may need a seccomp policy that allows io_uring syscalls. A denied or unsupported
+ring fails startup explicitly; there is no automatic threaded/epoll fallback.
+macOS uses kqueue. `zig build test-io` exercises the actual native backend;
+`zig build test` includes these tests alongside the existing unit suite.
+
 The build generates libc and OpenSSL bindings with Zig's `translate-c` build
 step; no checked-in generated bindings or additional Zig packages are required.
 OpenSSL headers and libraries must be available when building TLS or the E2E

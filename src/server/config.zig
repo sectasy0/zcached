@@ -83,7 +83,7 @@ address: Address = Address.initIp4(.{ 127, 0, 0, 1 }, 7556),
 
 loger_path: []const u8 = DEFAULT_PATH,
 
-// maximum connections per thread
+// maximum connections per worker thread
 // to calculate global max connctions: `workers` * `max_clients`
 max_clients: usize = 512,
 max_memory: usize = 0, // 0 means unlimited, value in bytes
