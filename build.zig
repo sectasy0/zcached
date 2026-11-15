@@ -94,6 +94,15 @@ pub fn build(b: *std.Build) void {
             .imports = &runtime_imports,
         }),
     });
+    const io_tests = b.addTest(.{
+        .name = "zcached-io-tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/runtime/evented.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
 
     for ([_]*std.Build.Module{ exe.root_module, e2e.root_module, unit_tests.root_module, server }) |module| {
         module.addOptions("build_options", options);
@@ -140,5 +149,12 @@ pub fn build(b: *std.Build) void {
     run_unit_tests.addArtifactArg(unit_tests);
     run_unit_tests.addPassthruArgs();
     run_unit_tests.stdio = .inherit;
-    b.step("test", "Run unit tests").dependOn(&run_unit_tests.step);
+    const run_io_tests = std.Build.Step.Run.create(b, "run zcached-io-tests");
+    run_io_tests.addArtifactArg(io_tests);
+    run_io_tests.addPassthruArgs();
+    run_io_tests.stdio = .inherit;
+    const test_step = b.step("test", "Run unit and native I/O tests");
+    test_step.dependOn(&run_unit_tests.step);
+    test_step.dependOn(&run_io_tests.step);
+    b.step("test-io", "Run native I/O backend tests").dependOn(&run_io_tests.step);
 }

@@ -19,9 +19,12 @@ Crafted using Zig, a versatile, modern, compiled programming language, `zcached`
 - **Concurrent I/O**: Networking uses Zig's `std.Io.net` interface with cancellable connection tasks and backpressure. TLS uses OpenSSL memory BIOs, so encrypted socket traffic also goes through `std.Io`.
 - **TLS Support**: Ensures secure data transmission with encryption, protecting data integrity and confidentiality during client-server communication.
 
-The current runtime is `std.Io.Threaded`: blocked connection tasks use OS threads,
-not an event-loop backend. `workers` controls the number of accept tasks and
-`max_clients` limits active connections per accept task.
+The runtime uses a custom Zig 0.17.1 `std.Io` reactor: kqueue on macOS and
+io_uring on Linux. Each `workers` entry creates an OS thread with its own
+reactor; its connections run as cooperative fibers, not individual OS threads.
+`max_clients` limits connections per worker. Filesystem/platform services
+remain synchronous; see [network architecture](docs/internals/network_architecture.md)
+for ownership, copying, cancellation, and platform requirements.
 
 ## Usage
 While `zcached` lacks a CLI, you can utilize nc (netcat) from the terminal to send commands to the server.

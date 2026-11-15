@@ -92,9 +92,7 @@ pub fn main(init: std.process.Init) void {
 
     const allocator = gpa.allocator();
 
-    var threaded_io = std.Io.Threaded.init(allocator, .{});
-    defer threaded_io.deinit();
-    runtime_io.runtime = threaded_io.io();
+    runtime_io.runtime = init.io;
 
     const result = cli.Parser.parse(allocator, init.minimal.args) catch {
         cli.Parser.showHelp() catch |err| {
@@ -106,6 +104,17 @@ pub fn main(init: std.process.Init) void {
     defer result.parser.deinit();
 
     if (!handleArguments(result.args)) return;
+
+    var evented_io: runtime_io.Evented = undefined;
+    evented_io.init(allocator) catch |err| {
+        std.log.err("# failed to initialize evented I/O: {s}", .{@errorName(err)});
+        std.process.exit(1);
+    };
+    defer {
+        runtime_io.runtime = init.io;
+        evented_io.deinit();
+    }
+    runtime_io.runtime = evented_io.io();
 
     // Background worker
     var agent: Agent = try .init(allocator, &running);
