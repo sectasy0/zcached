@@ -137,6 +137,18 @@ pub fn build(b: *std.Build) void {
     }
     b.step("run", "Run the app").dependOn(&run_cmd.step);
 
+    const benchmark = b.addExecutable(.{
+        .name = "benchmark",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/benchmark.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const run_benchmark = b.addRunArtifact(benchmark);
+    run_benchmark.addPassthruArgs();
+    b.step("benchmark", "Run the benchmark").dependOn(&run_benchmark.step);
+
     const install_exe = b.addInstallArtifact(exe, .{});
     const install_exe_tls = b.addInstallArtifact(exe_tls, .{});
     const e2e_step = b.step("e2e", "Run e2e tests");
