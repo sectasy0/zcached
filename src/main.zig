@@ -173,9 +173,10 @@ pub fn main(init: std.process.Init) void {
         _ = dbgpa.deinit();
     };
 
-    var tracing = TracingAllocator.init(if (debug_allocator) dbgpa.allocator() else std.heap.smp_allocator);
+    const storage_allocator = if (debug_allocator) dbgpa.allocator() else std.heap.smp_allocator;
+    var tracing = TracingAllocator.init(storage_allocator);
     var memory = Memory.init(
-        tracing.allocator(),
+        if (config.max_memory == 0) storage_allocator else tracing.allocator(),
         config,
         &persister,
     );

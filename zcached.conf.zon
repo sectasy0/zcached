@@ -23,6 +23,9 @@
     // Default per-client buffer size in bytes
     .client_buffer = 4096,
 
+    // Log request and response payloads
+    .log_network_payloads = true,
+
     // Maximum request size in bytes
     .max_request_size = 10485760, // 10 MB
 

@@ -23,8 +23,26 @@ test "config default values ipv4" {
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.client_buffer, 4096);
+    try std.testing.expect(config.log_network_payloads);
     try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
     try std.testing.expectEqual(config.max_memory, 0);
+}
+
+test "config can disable network payload logging" {
+    var config_file = try ConfigFile.init(testPath(@src().line));
+    const override: []const u8 =
+        \\ .{
+        \\     .log_network_payloads = false,
+        \\ }
+    ;
+
+    try config_file.create(std.testing.allocator, override);
+    defer config_file.deinit();
+
+    var config = try Config.load(std.testing.allocator, config_file.path, null);
+    defer config.deinit();
+
+    try std.testing.expect(!config.log_network_payloads);
 }
 
 test "config load custom values ipv4" {

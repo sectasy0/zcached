@@ -37,7 +37,7 @@ pub fn init(allocator: std.mem.Allocator, context: Context) !Processor {
 }
 
 pub fn deframe(self: *Processor, connection: *Connection) void {
-    var start: usize = 0;
+    var start = connection.receive_start;
 
     while (true) {
         const request_end = std.mem.indexOfScalarPos(
@@ -49,7 +49,9 @@ pub fn deframe(self: *Processor, connection: *Connection) void {
 
         const request = connection.accumulator.items[start..request_end];
 
-        self.context.resources.logger.logEvent(.Request, request);
+        if (self.context.config.log_network_payloads) {
+            self.context.resources.logger.logEvent(.Request, request);
+        }
 
         self.process(connection, request);
 
@@ -59,10 +61,9 @@ pub fn deframe(self: *Processor, connection: *Connection) void {
     if (start == connection.accumulator.items.len) {
         // all the data has been processed, clear the buffer
         connection.accumulator.clearRetainingCapacity();
-    } else if (start > 0) {
-        const remaining = connection.accumulator.items[start..];
-        std.mem.copyForwards(u8, connection.accumulator.items, remaining);
-        connection.accumulator.shrinkRetainingCapacity(remaining.len);
+        connection.receive_start = 0;
+    } else {
+        connection.receive_start = start;
     }
 }
 
@@ -85,17 +86,16 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
     const command_set = &result.array;
     defer command_set.deinit();
 
+    if (isGetCommand(command_set)) {
+        self.processGet(connection, command_set);
+        return;
+    }
+
     var cmd_result = self.cmd_handler.process(command_set);
     if (cmd_result != .ok) {
         const args = errors.buildArgs(command_set);
 
-        self.sendError(connection, cmd_result.err, args);
-
-        const command_str = command_set.items[0].str;
-        self.context.resources.logger.err(
-            "* failed to process command: {s}",
-            .{command_str},
-        );
+        self.failCommand(connection, command_set, cmd_result.err, args);
         return;
     }
 
@@ -113,7 +113,66 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
         return;
     };
 
-    self.context.resources.logger.logEvent(.Response, connection.tx_accumulator.items[start .. connection.tx_accumulator.items.len - 1]);
+    if (self.context.config.log_network_payloads) {
+        self.context.resources.logger.logEvent(.Response, connection.tx_accumulator.items[start .. connection.tx_accumulator.items.len - 1]);
+    }
+}
+
+fn processGet(self: *Processor, connection: *Connection, command_set: *const std.array_list.Managed(ZType)) void {
+    const output_start = connection.tx_accumulator.items.len;
+    const args = errors.buildArgs(command_set);
+    if (command_set.items.len < 2) {
+        self.failCommand(connection, command_set, error.InvalidCommand, args);
+        return;
+    }
+    if (command_set.items[1] != .str) {
+        self.failCommand(connection, command_set, error.KeyNotString, args);
+        return;
+    }
+
+    self.context.resources.memory.withValue(
+        command_set.items[1].str,
+        &connection.tx_accumulator,
+        appendSerializedValue,
+    ) catch |err| {
+        connection.tx_accumulator.shrinkRetainingCapacity(output_start);
+        self.failCommand(connection, command_set, err, args);
+        return;
+    };
+
+    connection.tx_accumulator.append(consts.EXT_CHAR) catch |err| {
+        connection.tx_accumulator.shrinkRetainingCapacity(output_start);
+        self.sendError(connection, err, .{});
+        return;
+    };
+
+    if (self.context.config.log_network_payloads) {
+        self.context.resources.logger.logEvent(.Response, connection.tx_accumulator.items[output_start .. connection.tx_accumulator.items.len - 1]);
+    }
+}
+
+fn failCommand(
+    self: *Processor,
+    connection: *Connection,
+    command_set: *const std.array_list.Managed(ZType),
+    err: anyerror,
+    args: errors.Args,
+) void {
+    self.sendError(connection, err, args);
+    self.context.resources.logger.err(
+        "* failed to process command: {s}",
+        .{command_set.items[0].str},
+    );
+}
+
+fn isGetCommand(command_set: *const std.array_list.Managed(ZType)) bool {
+    return command_set.items.len > 0 and
+        command_set.items[0] == .str and
+        std.ascii.eqlIgnoreCase(command_set.items[0].str, "GET");
+}
+
+fn appendSerializedValue(output: *std.array_list.Managed(u8), value: ZType) !void {
+    try Deserializer.write(output, value);
 }
 
 fn sendError(self: *Processor, connection: *Connection, err: anyerror, args: errors.Args) void {

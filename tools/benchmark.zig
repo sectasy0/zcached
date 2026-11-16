@@ -2,8 +2,6 @@ const std = @import("std");
 const consts = @import("consts.zig");
 
 const client_counts = [_]usize{ 1, 2, 4, 8, 16 };
-const value = "abcdefghijklmnopqrst";
-const get_response = "$20\r\n" ++ value ++ "\r\n\x03";
 const set_response = "+OK\r\n\x03";
 
 const Mode = enum { ram, persistence };
@@ -13,6 +11,9 @@ const Options = struct {
     host: []const u8 = consts.HOST,
     port: u16 = consts.PORT,
     requests: usize = 10000,
+    pipeline: usize = 1,
+    value_size: usize = 20,
+    clients: ?usize = null,
     mode: Mode,
 };
 
@@ -35,6 +36,15 @@ fn parseOptions(args: []const [:0]const u8) !Options {
         } else if (std.mem.eql(u8, name, "--requests")) {
             options.requests = try std.fmt.parseInt(usize, arg, 10);
             if (options.requests < 2 or options.requests % 2 != 0) return error.InvalidRequestCount;
+        } else if (std.mem.eql(u8, name, "--pipeline")) {
+            options.pipeline = try std.fmt.parseInt(usize, arg, 10);
+            if (options.pipeline == 0 or options.pipeline > 4096) return error.InvalidPipeline;
+        } else if (std.mem.eql(u8, name, "--value-size")) {
+            options.value_size = try std.fmt.parseInt(usize, arg, 10);
+            if (options.value_size == 0 or options.value_size > 1024 * 1024) return error.InvalidValueSize;
+        } else if (std.mem.eql(u8, name, "--clients")) {
+            options.clients = try std.fmt.parseInt(usize, arg, 10);
+            if (options.clients.? == 0 or options.clients.? > 128) return error.InvalidClientCount;
         } else return error.UnknownOption;
     }
     if (!has_mode) return error.MissingMode;
@@ -59,9 +69,13 @@ fn command(
 ) !void {
     try writer.interface.writeAll(request);
     try writer.interface.flush();
+    try expectResponse(reader, expected);
+}
+
+fn expectResponse(reader: *std.Io.net.Stream.Reader, expected: []const u8) !void {
     const response = try reader.interface.takeDelimiterInclusive(consts.EXT_CHAR);
     if (!std.mem.eql(u8, response, expected)) {
-        std.debug.print("Unexpected server response: {s}\n", .{response});
+        std.debug.print("Unexpected server response (first 256 bytes): {s}\n", .{response[0..@min(response.len, 256)]});
         return error.UnexpectedResponse;
     }
 }
@@ -71,6 +85,9 @@ const Shared = struct {
     address: std.Io.net.IpAddress,
     scenario: Scenario,
     count: usize,
+    options: Options,
+    value: []const u8,
+    get_response: []const u8,
     ready_count: std.atomic.Value(usize) = .init(0),
     ready: std.Io.Event = .unset,
     start: std.Io.Event = .unset,
@@ -96,29 +113,53 @@ const Worker = struct {
 
         const socket = try shared.address.connect(shared.io, .{ .mode = .stream });
         defer socket.close(shared.io);
-        var writer_buffer: [1024]u8 = undefined;
-        var reader_buffer: [1024]u8 = undefined;
+        const allocator = std.heap.page_allocator;
+        var writer_buffer: [65536]u8 = undefined;
+        const reader_buffer = try allocator.alloc(u8, @max(65536, shared.get_response.len));
+        defer allocator.free(reader_buffer);
         var writer = socket.writer(shared.io, &writer_buffer);
-        var reader = socket.reader(shared.io, &reader_buffer);
+        var reader = socket.reader(shared.io, reader_buffer);
 
         var key_buffer: [64]u8 = undefined;
         const key = try std.fmt.bufPrint(&key_buffer, "__zcached_benchmark_{d}__", .{self.id});
-        var set_buffer: [256]u8 = undefined;
-        const set_request = try std.fmt.bufPrint(&set_buffer, "*3\r\n$3\r\nSET\r\n${d}\r\n{s}\r\n$20\r\n{s}\r\n\x03", .{ key.len, key, value });
+        const set_request = try std.fmt.allocPrint(allocator, "*3\r\n$3\r\nSET\r\n${d}\r\n{s}\r\n${d}\r\n{s}\r\n\x03", .{ key.len, key, shared.value.len, shared.value });
+        defer allocator.free(set_request);
         var get_buffer: [256]u8 = undefined;
         const get_request = try std.fmt.bufPrint(&get_buffer, "*2\r\n$3\r\nGET\r\n${d}\r\n{s}\r\n\x03", .{ key.len, key });
 
         try command(&writer, &reader, set_request, set_response);
-        self.announceReady();
-        announced = true;
-        shared.start.waitUncancelable(shared.io);
 
-        for (self.samples, 0..) |*sample, i| {
-            const get = isGet(shared.scenario, i);
-            const before = std.Io.Clock.awake.now(shared.io).nanoseconds;
-            try command(&writer, &reader, if (get) get_request else set_request, if (get) get_response else set_response);
-            const after = std.Io.Clock.awake.now(shared.io).nanoseconds;
-            sample.* = @intCast(after - before);
+        if (shared.options.pipeline == 1) {
+            self.announceReady();
+            announced = true;
+            shared.start.waitUncancelable(shared.io);
+            for (self.samples, 0..) |*sample, i| {
+                const get = isGet(shared.scenario, i);
+                const before = std.Io.Clock.awake.now(shared.io).nanoseconds;
+                try command(&writer, &reader, if (get) get_request else set_request, if (get) shared.get_response else set_response);
+                const after = std.Io.Clock.awake.now(shared.io).nanoseconds;
+                sample.* = @intCast(after - before);
+            }
+        } else {
+            var pipeline = Pipeline{
+                .worker = self,
+                .writer = &writer,
+                .reader = &reader,
+                .get_request = get_request,
+                .set_request = set_request,
+            };
+            const Result = union(enum) { write: anyerror!void, read: anyerror!void };
+            var results: [2]Result = undefined;
+            var select = std.Io.Select(Result).init(shared.io, &results);
+            defer select.cancelDiscard();
+            try select.concurrent(.read, Pipeline.read, .{&pipeline});
+            try select.concurrent(.write, Pipeline.write, .{&pipeline});
+            self.announceReady();
+            announced = true;
+            for (0..2) |_| switch (try select.await()) {
+                .read => |result| try result,
+                .write => |result| try result,
+            };
         }
         self.finished_ns = std.Io.Clock.awake.now(shared.io).nanoseconds;
     }
@@ -130,27 +171,83 @@ const Worker = struct {
     }
 };
 
+const Pipeline = struct {
+    worker: *Worker,
+    writer: *std.Io.net.Stream.Writer,
+    reader: *std.Io.net.Stream.Reader,
+    get_request: []const u8,
+    set_request: []const u8,
+    started: std.Io.Event = .unset,
+    completed: std.Io.Event = .unset,
+    before: i96 = 0,
+
+    fn write(self: *Pipeline) !void {
+        const shared = self.worker.shared;
+        try shared.start.wait(shared.io);
+        var offset: usize = 0;
+        while (offset < shared.options.requests) {
+            const count = @min(shared.options.pipeline, shared.options.requests - offset);
+            self.before = std.Io.Clock.awake.now(shared.io).nanoseconds;
+            self.started.set(shared.io);
+            for (offset..offset + count) |i| {
+                try self.writer.interface.writeAll(if (isGet(shared.scenario, i)) self.get_request else self.set_request);
+            }
+            try self.writer.interface.flush();
+            try self.completed.wait(shared.io);
+            self.completed.reset();
+            offset += count;
+        }
+    }
+
+    fn read(self: *Pipeline) !void {
+        const shared = self.worker.shared;
+        var offset: usize = 0;
+        for (self.worker.samples) |*sample| {
+            try self.started.wait(shared.io);
+            self.started.reset();
+            const count = @min(shared.options.pipeline, shared.options.requests - offset);
+            for (offset..offset + count) |i| {
+                try expectResponse(self.reader, if (isGet(shared.scenario, i)) shared.get_response else set_response);
+            }
+            sample.* = @intCast(std.Io.Clock.awake.now(shared.io).nanoseconds - self.before);
+            self.completed.set(shared.io);
+            offset += count;
+        }
+    }
+};
+
 fn runScenario(io: std.Io, options: Options, scenario: Scenario, count: usize) !void {
     const allocator = std.heap.page_allocator;
     const total = try std.math.mul(usize, options.requests, count);
     if (total > std.math.maxInt(usize) / 100) return error.TooManyRequests;
-    const samples = try allocator.alloc(u64, total);
+    const batches_per_client = (options.requests - 1) / options.pipeline + 1;
+    const samples = try allocator.alloc(u64, try std.math.mul(usize, batches_per_client, count));
     defer allocator.free(samples);
+    const value = try allocator.alloc(u8, options.value_size);
+    defer allocator.free(value);
+    for (value, 0..) |*byte, i| byte.* = @as(u8, @intCast(i % 26)) + 'a';
+    const get_response = try std.fmt.allocPrint(allocator, "${d}\r\n{s}\r\n\x03", .{ value.len, value });
+    defer allocator.free(get_response);
     var shared = Shared{
         .io = io,
         .address = try std.Io.net.IpAddress.parse(options.host, options.port),
         .scenario = scenario,
         .count = count,
+        .options = options,
+        .value = value,
+        .get_response = get_response,
     };
-    var workers: [16]Worker = undefined;
-    var threads: [16]std.Thread = undefined;
+    const workers = try allocator.alloc(Worker, count);
+    defer allocator.free(workers);
+    const threads = try allocator.alloc(std.Thread, count);
+    defer allocator.free(threads);
     var spawned: usize = 0;
     errdefer {
         shared.start.set(io);
         for (threads[0..spawned]) |thread| thread.join();
     }
     for (0..count) |i| {
-        workers[i] = .{ .shared = &shared, .id = i, .samples = samples[i * options.requests ..][0..options.requests] };
+        workers[i] = .{ .shared = &shared, .id = i, .samples = samples[i * batches_per_client ..][0..batches_per_client] };
         threads[i] = try std.Thread.spawn(.{}, Worker.run, .{&workers[i]});
         spawned += 1;
     }
@@ -169,8 +266,9 @@ fn runScenario(io: std.Io, options: Options, scenario: Scenario, count: usize) !
     if (elapsed_ns <= 0) return error.InvalidElapsedTime;
     std.mem.sort(u64, samples, {}, std.sort.asc(u64));
     const throughput = @as(f64, @floatFromInt(total)) * 1_000_000_000.0 / @as(f64, @floatFromInt(elapsed_ns));
-    std.debug.print("| {s} | {d} | {d} | {d:.0} | {d:.2} | {d:.2} | {d:.2} |\n", .{
-        @tagName(scenario),                                        count,                                                     total,                                                     throughput,
+    const value_mib_per_second = throughput * @as(f64, @floatFromInt(options.value_size)) / (1024 * 1024);
+    std.debug.print("| {s} | {d} | {d} | {d} | {d} | {d:.0} | {d:.2} | {d:.2} | {d:.2} | {d:.2} |\n", .{
+        @tagName(scenario),                                        count,                                                     options.pipeline,                                          options.value_size, total, throughput, value_mib_per_second,
         @as(f64, @floatFromInt(percentile(samples, 50))) / 1000.0, @as(f64, @floatFromInt(percentile(samples, 95))) / 1000.0, @as(f64, @floatFromInt(percentile(samples, 99))) / 1000.0,
     });
 }
@@ -179,17 +277,39 @@ pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(std.heap.page_allocator);
     defer std.heap.page_allocator.free(args);
     const options = parseOptions(args) catch |err| {
-        std.debug.print("Usage: benchmark --mode ram|persistence [--host IP] [--port PORT] [--requests EVEN_PER_CLIENT]\n", .{});
+        std.debug.print("Usage: benchmark --mode ram|persistence [--host IP] [--port PORT] [--requests EVEN_PER_CLIENT] [--clients 1..128] [--pipeline 1..4096] [--value-size 1..1048576]\n", .{});
         return err;
     };
     var threaded_io = std.Io.Threaded.init(std.heap.page_allocator, .{});
     defer threaded_io.deinit();
     const io = threaded_io.io();
 
-    std.debug.print("| Scenario | Clients | Requests | ops/s | P50 us | P95 us | P99 us |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: |\n", .{});
+    std.debug.print("Latency measures a whole batch, not an individual pipelined request. Value MiB/s excludes protocol overhead.\n", .{});
+    std.debug.print("| Scenario | Clients | Pipeline | Value B | Requests | ops/s | Value MiB/s | Batch P50 us | Batch P95 us | Batch P99 us |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n", .{});
     const scenarios: []const Scenario = if (options.mode == .ram) &.{ .get, .set, .mixed } else &.{.persistence};
     for (scenarios) |scenario| {
-        for (client_counts) |count| try runScenario(io, options, scenario, count);
+        if (options.clients) |count| {
+            try runScenario(io, options, scenario, count);
+        } else {
+            for (client_counts) |count| try runScenario(io, options, scenario, count);
+        }
+    }
+}
+
+test "benchmark parses pipelining payload size and custom client count" {
+    const options = try parseOptions(&.{ "benchmark", "--mode", "ram", "--pipeline", "64", "--value-size", "16384", "--clients", "32", "--requests", "10002" });
+    try std.testing.expectEqual(@as(usize, 64), options.pipeline);
+    try std.testing.expectEqual(@as(usize, 16384), options.value_size);
+    try std.testing.expectEqual(@as(?usize, 32), options.clients);
+    try std.testing.expectEqual(@as(usize, 10002), options.requests);
+    for ([_][:0]const u8{ "0", "4097" }) |value| {
+        try std.testing.expectError(error.InvalidPipeline, parseOptions(&.{ "benchmark", "--mode", "ram", "--pipeline", value }));
+    }
+    for ([_][:0]const u8{ "0", "1048577" }) |value| {
+        try std.testing.expectError(error.InvalidValueSize, parseOptions(&.{ "benchmark", "--mode", "ram", "--value-size", value }));
+    }
+    for ([_][:0]const u8{ "0", "129" }) |value| {
+        try std.testing.expectError(error.InvalidClientCount, parseOptions(&.{ "benchmark", "--mode", "ram", "--clients", value }));
     }
 }
 

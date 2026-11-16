@@ -8,16 +8,17 @@ const server = @import("stream_server.zig");
 const Stream = @import("stream.zig").Stream;
 
 const Self = @This();
+const max_read_chunk: usize = 64 * 1024;
 
 /// Stream abstraction over the socket handle.
 stream: Stream,
 /// Remote address of the connected client.
 address: Address,
 
-/// Static-sized buffer for reading incoming stream data.
-buffer: [consts.CLIENT_BUFFER]u8,
 /// Accumulator for incoming data.
 accumulator: std.array_list.Managed(u8),
+receive_start: usize = 0,
+read_chunk: usize = consts.CLIENT_BUFFER,
 /// Accumulator for outgoing data.
 tx_accumulator: std.array_list.Managed(u8),
 
@@ -33,7 +34,6 @@ pub fn init(
     errdefer accumulator.deinit();
 
     return .{
-        .buffer = undefined,
         .stream = incoming.stream,
         .address = incoming.address,
         .accumulator = accumulator,
@@ -45,8 +45,6 @@ pub fn init(
 }
 
 pub fn deinit(self: *Self) void {
-    assert(self.buffer.len != 0);
-
     self.accumulator.deinit();
     self.tx_accumulator.deinit();
 }
@@ -74,17 +72,35 @@ pub const OutWriter = struct {
 // --- I/O Operations ---
 
 pub fn readPending(self: *Self, max_size: usize) !void {
-    const read_size = try self.stream.read(self.buffer[0..]);
-    if (read_size == 0) return error.ConnectionClosed;
+    const pending_len = self.accumulator.items.len - self.receive_start;
+    if (pending_len > max_size) return error.MessageTooLarge;
 
-    if (self.accumulator.items.len > max_size or read_size > max_size - self.accumulator.items.len) {
-        return error.MessageTooLarge;
+    const remaining = max_size - pending_len;
+    const read_capacity = if (remaining < self.read_chunk)
+        remaining + 1
+    else
+        self.read_chunk;
+
+    if (self.receive_start > 0 and self.accumulator.capacity - self.accumulator.items.len < read_capacity) {
+        std.mem.copyForwards(u8, self.accumulator.items, self.accumulator.items[self.receive_start..]);
+        self.accumulator.shrinkRetainingCapacity(pending_len);
+        self.receive_start = 0;
     }
 
-    try self.accumulator.appendSlice(self.buffer[0..read_size]);
+    try self.accumulator.ensureUnusedCapacity(read_capacity);
+    const old_len = self.accumulator.items.len;
+    const read_buffer = self.accumulator.items.ptr[old_len .. old_len + read_capacity];
+    const read_size = try self.stream.read(read_buffer);
+    if (read_size == 0) return error.ConnectionClosed;
+
+    if (read_size > remaining) return error.MessageTooLarge;
+    self.accumulator.items.len += read_size;
+    if (read_size == self.read_chunk) {
+        self.read_chunk = @min(self.read_chunk * 2, max_read_chunk);
+    }
 
     // The processor consumes complete frames before the next read.
-    _ = std.mem.indexOfScalar(u8, self.buffer[0..read_size], consts.EXT_CHAR) orelse {
+    _ = std.mem.indexOfScalar(u8, read_buffer[0..read_size], consts.EXT_CHAR) orelse {
         return error.IncompleteMessage;
     };
 }

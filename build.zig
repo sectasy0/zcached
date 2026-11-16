@@ -165,8 +165,14 @@ pub fn build(b: *std.Build) void {
     run_io_tests.addArtifactArg(io_tests);
     run_io_tests.addPassthruArgs();
     run_io_tests.stdio = .inherit;
-    const test_step = b.step("test", "Run unit and native I/O tests");
+    const benchmark_tests = b.addTest(.{ .root_module = benchmark.root_module });
+    const run_benchmark_tests = std.Build.Step.Run.create(b, "run benchmark-tests");
+    run_benchmark_tests.addArtifactArg(benchmark_tests);
+    run_benchmark_tests.addPassthruArgs();
+    run_benchmark_tests.stdio = .inherit;
+    const test_step = b.step("test", "Run unit, native I/O, and benchmark tests");
     test_step.dependOn(&run_unit_tests.step);
     test_step.dependOn(&run_io_tests.step);
+    test_step.dependOn(&run_benchmark_tests.step);
     b.step("test-io", "Run native I/O backend tests").dependOn(&run_io_tests.step);
 }

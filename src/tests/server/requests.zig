@@ -46,7 +46,9 @@ test "should deframe" {
     processor.deframe(&connection);
 
     try std.testing.expectEqual(43, (try fixture.memory.?.get("test1")).int);
-    try std.testing.expectEqual(16, connection.accumulator.items.len);
+    try std.testing.expectEqual(request1.len, connection.receive_start);
+    try std.testing.expectEqualStrings(request1, connection.accumulator.items[0..connection.receive_start]);
+    try std.testing.expectEqualStrings(partial_request, connection.accumulator.items[connection.receive_start..]);
 
     // now we append rest of the partial request
     try connection.accumulator.appendSlice("\ntest8\r\n:44\r\n\x03");
@@ -55,6 +57,7 @@ test "should deframe" {
     try std.testing.expectEqual(44, (try fixture.memory.?.get("test8")).int);
 
     try std.testing.expectEqual(0, connection.accumulator.items.len);
+    try std.testing.expectEqual(@as(usize, 0), connection.receive_start);
 }
 
 test "processing repeated commands bounds protocol arena memory" {
@@ -73,4 +76,21 @@ test "processing repeated commands bounds protocol arena memory" {
     }
     try std.testing.expect(processor.protocol.serializer.arena.queryCapacity() <= 4096);
     try std.testing.expect(processor.protocol.deserializer.arena.queryCapacity() <= 4096);
+}
+
+test "GET serializes stored values directly into the connection output" {
+    var fixture: ContextFixture = try .init();
+    try fixture.create_memory();
+    defer fixture.deinit();
+    try fixture.memory.?.put("key", .{ .str = "value" });
+
+    const conn_fixture: fixtures.ConnectionFixture = try .init(std.testing.allocator);
+    var connection = conn_fixture.connection;
+    defer connection.deinit();
+    var processor: Processor = try .init(std.testing.allocator, fixture.context());
+    defer processor.deinit();
+
+    processor.process(&connection, @constCast("*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n"));
+
+    try std.testing.expectEqualStrings("$5\r\nvalue\r\n\x03", connection.tx_accumulator.items);
 }

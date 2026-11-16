@@ -143,6 +143,7 @@ test "should not return error.MemoryLimitExceed when max but deleted some" {
 test "memory should not grow if key overriden with put" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
+    fixture.config.max_memory = std.math.maxInt(usize);
     try fixture.create_memory();
 
     try helper.setup_storage(&fixture.memory.?);
@@ -167,4 +168,24 @@ test "memory should not grow if key overriden with put" {
     try fixture.memory.?.put("key-2", value);
 
     try std.testing.expectEqual(before_put, tracking.real_size);
+}
+
+test "unlimited storage bypasses allocation tracking" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    fixture.config.max_memory = 0;
+    try fixture.create_memory();
+
+    try std.testing.expectEqual(fixture.allocator.ptr, fixture.memory.?.allocator.ptr);
+    try std.testing.expectEqual(fixture.allocator.vtable, fixture.memory.?.allocator.vtable);
+    try fixture.memory.?.put("key", .{ .str = "value" });
+    try fixture.memory.?.copy("key", "copy", false);
+    try fixture.memory.?.rename("copy", "longer-key");
+    try std.testing.expectEqualStrings("value", (try fixture.memory.?.get("longer-key")).str);
+    try std.testing.expect(fixture.memory.?.delete("key"));
+    fixture.memory.?.flush();
+
+    try std.testing.expectEqual(@as(u64, 0), fixture.tracing_allocator.count_allocs);
+    try std.testing.expectEqual(@as(u64, 0), fixture.tracing_allocator.count_frees);
+    try std.testing.expectEqual(@as(u64, 0), fixture.tracing_allocator.real_size);
 }

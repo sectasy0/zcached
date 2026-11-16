@@ -39,12 +39,10 @@ pub fn init(
 }
 
 fn isMemoryLimitReached(self: *Memory) bool {
-    const tracking = utils.ptrCast(TracingAllocator, self.allocator.ptr);
-    if (tracking.real_size >= self.config.max_memory and self.config.max_memory != 0) {
-        return true;
-    }
+    if (self.config.max_memory == 0) return false;
 
-    return false;
+    const tracking = utils.ptrCast(TracingAllocator, self.allocator.ptr);
+    return tracking.real_size >= self.config.max_memory;
 }
 
 pub fn put(self: *Memory, key: []const u8, value: types.ZType) !void {
@@ -87,6 +85,13 @@ pub fn getCopy(self: *Memory, key: []const u8, allocator: std.mem.Allocator) !ty
     defer self.lock.unlockShared();
     const value = self.internal.get(key) orelse return error.NotFound;
     return types.ztype_copy(value, allocator);
+}
+
+pub fn withValue(self: *Memory, key: []const u8, context: anytype, callback: anytype) !void {
+    self.lock.lockShared();
+    defer self.lock.unlockShared();
+    const value = self.internal.get(key) orelse return error.NotFound;
+    try callback(context, value);
 }
 
 pub fn valueSize(self: *Memory, key: []const u8) !usize {

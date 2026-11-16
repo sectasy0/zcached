@@ -89,6 +89,7 @@ max_clients: usize = 512,
 max_memory: usize = 0, // 0 means unlimited, value in bytes
 client_buffer: usize = 4096, // its resized if more space is requied
 workers: usize = 4,
+log_network_payloads: bool = true,
 
 aof: AOFConfig = .{},
 tls: TLSConfig = .{},
@@ -164,6 +165,7 @@ const ConfigField = enum {
     max_request_size,
     workers,
     client_buffer,
+    log_network_payloads,
     tls,
     aof,
     whitelist,
@@ -474,6 +476,10 @@ fn assignFieldValue(config: *Config, field_name: []const u8, value: anytype) !vo
         .client_buffer => {
             if (@TypeOf(value) != u64) return;
             config.client_buffer = value;
+        },
+        .log_network_payloads => {
+            if (@TypeOf(value) != bool) return;
+            config.log_network_payloads = value;
         },
         .aof => {
             var aof_config: AOFConfig = .{};

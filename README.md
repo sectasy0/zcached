@@ -71,13 +71,22 @@ arguments directly.
 ## Benchmark
 
 The benchmark runs GET-only, SET-only, and alternating GET/SET 50:50 workloads
-in RAM mode, or SET-only in persistence mode. Each workload is run with 1, 2, 4,
-8, and 16 concurrent clients. Each client uses one preloaded key and a fixed
-20-byte value, with one request in flight (no pipelining). The reported
+in RAM mode, or SET-only in persistence mode. By default, each workload is run
+with 1, 2, 4, 8, and 16 concurrent clients, 20-byte values, and one request in
+flight. Each client uses its own preloaded key. The reported
 throughput is total completed requests divided by the time from the start
 signal to the last client finishing. P50/P95/P99 are nearest-rank percentiles
-of individual client-observed request/response latencies in microseconds.
-Connection setup and preloading are excluded.
+of client-observed **whole-batch completion latencies** in microseconds:
+at pipeline depth 1 these are individual round trips, but a pipelined batch's
+latency is **not divided by its request count**. The final partial batch is
+included as one sample. Connection setup and preloading are excluded.
+
+To compare network payload logging on and off, set `.log_network_payloads` in
+the server config to `true` or `false` (the default is `true`). Restart the
+server and run the exact same benchmark for each setting. Keep the workload,
+build mode, worker count, AOF strategy, and storage paths the same; use a fresh
+log/data directory for each run. This setting only controls per-request and
+per-response payload logs; operational messages and errors remain enabled.
 
 Run against a **dedicated, plaintext** instance: the benchmark overwrites keys
 named `__zcached_benchmark_<client>__` and does not remove them. It does not
@@ -95,6 +104,7 @@ AOF files, and logs cannot affect the run. For example:
        .address = "127.0.0.1",
        .port = 17556,
        .workers = 8,
+       .log_network_payloads = true, // repeat with false for the comparison
        .tls = .{ .enabled = false },
        .aof = .{
            .flush_strategy = .no, // or .always for persistence
@@ -119,12 +129,97 @@ AOF files, and logs cannot affect the run. For example:
 10,000). Results are printed to stderr. Unexpected responses or connection
 errors fail the run rather than being included in results.
 
+Additional workload options:
+
+- `--clients N`: run only this concurrency, from 1 to 128.
+- `--pipeline N`: requests per batch, from 1 to 4096 (default 1). Each client
+  sends a batch, validates every ordered response, then starts the next batch.
+  Concurrent sending and receiving prevent bidirectional TCP buffer deadlock
+  for large mixed workloads. Pipelined clients use two additional I/O tasks,
+  so their scheduling overhead is included in the measurements.
+- `--value-size N`: value bytes, from 1 to 1,048,576 (default 20). Ensure the
+  server's request-size and memory limits accommodate the chosen workload.
+
+`Value MiB/s` counts one value per operation (received for GET, sent for SET),
+not full wire traffic or memory bandwidth. Protocol/key overhead is excluded.
+For pipelining, compare throughput and batch tail latency together.
+
+For a heavier matrix, use the dedicated 8-worker RAM instance described above
+with `.log_network_payloads = false` and `.max_memory = 0`:
+
+```bash
+for size in 20 1024 16384; do
+  for depth in 1 16 64; do
+    zig build benchmark -Doptimize=ReleaseFast -- \
+      --mode ram --port 17556 --requests 20000 \
+      --clients 32 --value-size "$size" --pipeline "$depth"
+  done
+done
+```
+
+Repeat the matrix at least three times, varying order, and compare medians.
+The load generator runs on the same host and competes with the server for CPU;
+this measures local end-to-end capacity, not isolated server capacity.
+
+### Pipelining stress results
+
+Measured on 2026-11-16, Apple M2 (8 cores, 24 GiB), macOS 27.0.1,
+Zig 0.17.1, ReleaseFast client/server, localhost TCP, 8 server workers,
+TLS off, payload logging off, `.max_memory = 0`, AOF `.no`.
+Each client used a separate key and 20,000 requests per workload.
+The tables show medians of three runs per configuration; the main matrix
+order was shuffled with seed 95617. A 2,000-request-per-client warmup at
+pipeline 16 for each value size was excluded. Including the 64-client
+trial, this covered 99 measured workload runs and 74,880,000 operations.
+This compares pipeline depths on the same server build, not before/after
+server optimizations.
+
+**32 clients: throughput in ops/s**
+
+| Workload | Value | Pipeline 1 | Pipeline 16 | Pipeline 64 | 64 vs 1 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| GET | 20 B | 204,306 | 2,113,790 | 5,517,224 | 27.00x |
+| SET | 20 B | 199,245 | 1,743,117 | 3,116,189 | 15.64x |
+| Mixed | 20 B | 180,281 | 1,399,882 | 3,113,672 | 17.27x |
+| GET | 1 KiB | 200,279 | 2,068,076 | 4,303,742 | 21.49x |
+| SET | 1 KiB | 194,747 | 1,384,021 | 2,079,200 | 10.68x |
+| Mixed | 1 KiB | 180,730 | 1,238,136 | 2,483,707 | 13.74x |
+| GET | 16 KiB | 170,974 | 642,889 | 665,172 | 3.89x |
+| SET | 16 KiB | 165,363 | 349,173 | 387,050 | 2.34x |
+| Mixed | 16 KiB | 153,040 | 308,058 | 367,082 | 2.40x |
+
+**16 KiB values, 32 clients: whole-batch P99 latency in milliseconds**
+
+| Workload | Pipeline 1 | Pipeline 16 | Pipeline 64 |
+| --- | ---: | ---: | ---: |
+| GET | 0.632 | 5.343 | 19.978 |
+| SET | 0.763 | 4.456 | 14.859 |
+| Mixed | 1.120 | 5.169 | 14.873 |
+
+For 16 KiB GET, increasing depth from 16 to 64 added only 3.5% throughput
+while increasing batch P99 from 5.34 to 19.98 ms. The depth-64 GET result
+represents 10,393 MiB/s of logical values, not full wire or memory bandwidth.
+Depth 16 is therefore a useful latency/throughput compromise for this case;
+the best depth depends on payload and latency requirements.
+
+**64 clients, 20-byte values: saturation trial**
+
+| Workload | Pipeline 1 ops/s | Pipeline 64 ops/s | 64 vs 1 | Batch P99, pipeline 64 (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| GET | 211,711 | 5,789,001 | 27.34x | 2.361 |
+| SET | 206,454 | 2,884,063 | 13.97x | 4.973 |
+| Mixed | 195,473 | 3,403,556 | 17.41x | 2.341 |
+
+Doubling clients did not double throughput. The 64-client, depth-64 SET
+runs varied from 2,645,778 to 3,568,016 ops/s, so small differences should
+not be treated as reliable improvements or regressions.
+
 ### Example results
 
 Measured on 2026-11-16 on an Apple M2, 8 cores, 24 GiB RAM, macOS 27.0.1,
 Zig 0.17.1, ReleaseFast server and benchmark, localhost TCP without TLS,
 8 server workers, 20,000 requests per client and workload. Each row is a single
-run; results include normal network payload logging and are not a cross-machine
+run with `.log_network_payloads = true`; results are not a cross-machine
 comparison. RAM used AOF `.no`; persistence used `.always` with AOF rewriting
 effectively disabled for this run. The latter writes each SET to the AOF file
 before replying, but does **not** call `fsync`, so it is not a measurement of
@@ -152,6 +247,33 @@ crash-durable disk sync.
 | persistence | 4 | 80000 | 65683 | 46.33 | 119.96 | 191.04 |
 | persistence | 8 | 160000 | 70820 | 72.04 | 232.13 | 426.67 |
 | persistence | 16 | 320000 | 68913 | 94.42 | 465.88 | 1386.96 |
+
+### Additional RAM run: direct GET serialization
+
+Measured on 2026-11-16 after changing GET to serialize stored values directly
+into the response buffer. ReleaseFast server and benchmark, localhost TCP
+without TLS, 8 server workers, 10,000 requests per client and workload,
+`.log_network_payloads = false`, and AOF `.no`. Each row is a single run; these
+results are not an apples-to-apples comparison with the example above because
+the logging setting and request count differ.
+
+| Scenario | Clients | Requests | ops/s | P50 us | P95 us | P99 us |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| get | 1 | 10000 | 48870 | 18.17 | 39.33 | 52.71 |
+| get | 2 | 20000 | 85704 | 21.29 | 41.33 | 64.08 |
+| get | 4 | 40000 | 141901 | 24.17 | 48.54 | 66.13 |
+| get | 8 | 80000 | 167771 | 42.04 | 78.25 | 109.67 |
+| get | 16 | 160000 | 201668 | 67.58 | 135.71 | 186.75 |
+| set | 1 | 10000 | 53354 | 18.00 | 23.00 | 33.63 |
+| set | 2 | 20000 | 90534 | 20.96 | 30.17 | 50.96 |
+| set | 4 | 40000 | 140143 | 24.46 | 49.13 | 68.13 |
+| set | 8 | 80000 | 170456 | 39.21 | 85.83 | 123.71 |
+| set | 16 | 160000 | 202904 | 68.88 | 142.83 | 208.08 |
+| mixed | 1 | 10000 | 53438 | 17.92 | 23.63 | 35.63 |
+| mixed | 2 | 20000 | 91107 | 20.96 | 30.04 | 49.08 |
+| mixed | 4 | 40000 | 140226 | 24.58 | 48.67 | 67.25 |
+| mixed | 8 | 80000 | 165236 | 39.75 | 85.54 | 120.67 |
+| mixed | 16 | 160000 | 202231 | 67.17 | 147.13 | 203.17 |
 
 ## Project Layout
 - `src/runtime/`: shared I/O, filesystem, and synchronization adapters.
@@ -183,11 +305,18 @@ Network payload logs remain enabled and are written in batches of approximately
 64 KiB or by a recurring one-second flush on that same queue. Shutdown drains
 ready log tasks before the logger's final flush.
 
+Socket reads go directly into the receive accumulator, with chunks growing
+from 4 KiB to 64 KiB after full reads. Partial frames retain an unread offset;
+consumed prefixes are reclaimed only when the next read needs tail space.
+
 Responses are encoded directly into the transmit buffer, and command arenas
 are reset after each request. Network reads copy storage values under the read
 lock before encoding, so concurrent mutations cannot invalidate their payloads.
 ReleaseFast/ReleaseSmall use Zig's SMP allocator; Debug/ReleaseSafe retain debug
 allocation and leak checks.
+When `.max_memory = 0` (unlimited), storage uses the base allocator directly,
+without allocation tracking or the tracing allocator's mutex. A nonzero limit
+enables allocation tracking and the existing memory-limit checks.
 
 ## Documentation
 - For release history, see the [release_history.md](docs/release_history.md)

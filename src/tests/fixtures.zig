@@ -50,7 +50,7 @@ pub const ContextFixture = struct {
         if (self.persistance == null) try self.create_persistance();
 
         self.memory = Memory.init(
-            self.tracing_allocator.allocator(),
+            if (self.config.max_memory == 0) self.allocator else self.tracing_allocator.allocator(),
             self.config,
             &self.persistance.?,
         );

@@ -31,7 +31,7 @@ socket traffic goes through the same reactor as plaintext traffic.
 | `Stream` / `StreamT` | Presents the same read/write/close API for plaintext and TLS; also exposes a buffered `std.Io.Reader` adapter. | [stream.zig](../../src/server/network/stream.zig) |
 | Socket adapter | Uses `std.Io.net.Stream.read` and `std.Io.operate` network operations; handles partial writes. | [socket.zig](../../src/server/network/socket.zig) |
 | TLS adapter | Drives handshakes, encryption, and decryption through OpenSSL input/output memory BIOs. | [secure.zig](../../src/server/network/secure.zig) |
-| `Connection` | Owns receive/transmit accumulators and a fixed read buffer. | [connection.zig](../../src/server/network/connection.zig) |
+| `Connection` | Owns receive/transmit accumulators, an unread offset, and an adaptive read chunk. | [connection.zig](../../src/server/network/connection.zig) |
 | `Processor` | Extracts complete frames, parses commands, encodes responses, and compacts unread bytes. | [requests.zig](../../src/server/processing/requests.zig) |
 | Command handler and storage | Execute commands synchronously in the connection task; storage methods provide their own locking. | [commands.zig](../../src/server/processing/commands.zig), [memory.zig](../../src/server/storage/memory.zig) |
 | Access policy | Stateless IP whitelist verification, including rejection logging. | [access.zig](../../src/server/middleware/access.zig) |
@@ -322,16 +322,18 @@ request:  *1\r\n$4\r\nPING\r\n\x03
 response: +PONG\r\n\x03
 ```
 
-1. `Connection.readPending` reads at most 4096 plaintext bytes per call into its
-   fixed buffer, checks the aggregate receive limit, then appends them to the
-   receive accumulator.
+1. `Connection.readPending` reads directly into spare receive-accumulator
+   capacity. The requested chunk starts at 4 KiB, doubles after full reads, and
+   is capped at 64 KiB. Near the receive limit it requests at most the remaining
+   allowance plus one byte, so an oversized request can still be detected.
 2. If that read contains no delimiter, it returns `IncompleteMessage`; `serve`
    keeps reading without discarding accumulated bytes.
 3. `Processor.deframe` scans the accumulator and processes all complete frames
    in order. Each frame is a borrowed slice, excluding `0x03`.
 4. Responses for those frames accumulate in the same transmit array.
 5. A fully consumed receive array is cleared without freeing capacity. A
-   trailing partial frame is copied to the start of the existing allocation.
+   trailing partial frame stays in place behind an unread offset. It is moved
+   to the start only when the next read lacks sufficient tail capacity.
 6. `Connection.writePending` sends the transmit array with `Stream.writeAll`,
    then clears its length only after successful transmission.
 
@@ -350,8 +352,7 @@ extra server-side receive accumulator.
 ```text
 IN
 kernel TCP receive buffer
-  -> std.Io net_read -> Connection.buffer[4096]          [read destination]
-  -> accumulator.appendSlice                           [payload copy]
+  -> std.Io net_read -> receive accumulator spare space [direct read]
   -> request slice + FixedBufferStream                  [borrow, no frame copy]
   -> parsed ZType strings                              [borrow input slices]
   -> Memory.put for stored keys / values                [owned database copy]
@@ -380,12 +381,12 @@ In particular, this is **not** an end-to-end zero-copy design.
 
 | Stage | What happens | Ownership / cost |
 | --- | --- | --- |
-| Socket receive, plaintext | The backend fills the fixed read buffer. | No intermediate application-owned socket buffer in this path. |
+| Socket receive, plaintext | The backend fills spare receive-accumulator capacity. | No intermediate application-owned socket buffer in this path. |
 | Reactor readiness | Descriptor/interest and registration metadata pass through the kernel event queue. | No application payload buffer submitted to kqueue/io_uring; readiness is not a payload copy. |
 | Fiber task arguments/results | Task argument bytes are copied into owned storage; a future result is copied out on await/cancel. | Pointer/slice arguments are shallow copies, not automatically duplicated payloads. |
-| Receive accumulation | `appendSlice` copies newly read bytes; growth may relocate existing bytes. | Connection-owned heap array. |
+| Receive accumulation | The receive array length advances after a successful, size-checked read; growth may relocate existing bytes. | Connection-owned heap array; no extra copy of newly received bytes. |
 | Frame extraction | `items[start..request_end]` borrows the frame. | No frame-sized allocation or copy. |
-| Incomplete-tail compaction | `copyForwards` moves the unread suffix to offset zero. | Conditional in-place copy, only after consuming preceding frames. |
+| Incomplete-tail compaction | `copyForwards` moves the unread suffix to offset zero. | Conditional in-place copy, only when tail capacity is insufficient for the next read. |
 | Protocol parsing | String/line slices borrow input; arrays/maps/sets allocate container storage in an arena. | Not a deep copy of every request value. |
 | Database `SET` | `Memory.put` deep-copies the value; a new key is duplicated. | Database allocator owns data independently of the network buffers. |
 | Database `GET` / `MGET` / `KEYS` | Values or keys are copied while holding the storage read lock. | Command-owned snapshots; no storage-borrowed payload survives into network response encoding. |
@@ -403,15 +404,15 @@ different owner. For example, `SET` performs its database copy before
 
 ### Memory budgeting
 
-At initialization, a `Connection` contains a 4 KiB fixed buffer and requests
-4 KiB initial capacity for each of its two dynamic arrays: approximately
-12 KiB of raw buffer capacity, **excluding** object metadata, allocator
+At initialization, a `Connection` requests 4 KiB initial capacity for each of
+its two dynamic arrays: approximately 8 KiB of raw buffer capacity,
+**excluding** object metadata, allocator
 rounding, task/thread stacks, TLS state, and protocol arenas.
 
 Both arrays retain capacity after normal processing. Command parsing and
 snapshot arena capacity can reflect the largest command processed, but arenas
 are reset between requests rather than accumulating their histories. Neither
-receive length nor the nominal 12 KiB starting size bounds the connection's
+receive length nor the nominal 8 KiB starting size bounds the connection's
 total memory, particularly large TX batches and retained capacities.
 
 ReleaseFast and ReleaseSmall use `std.heap.smp_allocator`; Debug and ReleaseSafe
@@ -472,14 +473,14 @@ security policy.
 | `max_clients` | Permits **per accept loop**; default 512. Idle connections and unfinished handshakes retain permits. |
 | Aggregate admitted connections | At most `workers * max_clients` connection tasks, not a single global semaphore. Distribution among accept loops is not guaranteed fair. |
 | Listen backlog | Requested `StreamServer.Options.kernel_backlog` defaults to 128; the OS may apply its own limits. It is not the number of active application tasks. |
-| Read chunk | Fixed `CLIENT_BUFFER = 4096`; `config.client_buffer` is not used to size this network read buffer. |
-| `max_request_size` | Caps the aggregate receive accumulator before append; default 10 MiB. Several pipelined frames can count against it together. |
+| Read chunk | Starts at `CLIENT_BUFFER = 4096`, doubles after full reads up to 64 KiB, and is retained for later reads. `config.client_buffer` is not used to size it. |
+| `max_request_size` | Caps unread receive bytes before committing a read; default 10 MiB. Consumed prefixes do not count. Several pipelined frames can count against it together. |
 | Transmit buffer | No corresponding hard response-byte limit in `Connection`. |
 | Timeouts | No application-level read, write, idle-client, or TLS-handshake deadline. |
 | Background queue | Dynamic immediate FIFO and delayed priority queue; its test capacity hook is not production admission control. |
 
 The actual receive-size check is
-`existing_len > max_size || read_size > max_size - existing_len`.
+`unread_len > max_size || read_size > max_size - unread_len`.
 Despite a configuration comment describing zero as unlimited,
 `max_request_size = 0` currently rejects any nonempty read. Operators should
 configure a positive limit rather than rely on that comment.
