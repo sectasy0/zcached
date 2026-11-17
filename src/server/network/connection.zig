@@ -1,3 +1,4 @@
+//! Buffered request and response I/O for one accepted client connection.
 const std = @import("std");
 const assert = std.debug.assert;
 const Address = @import("address.zig").Address;
@@ -7,23 +8,27 @@ const consts = @import("consts.zig");
 const server = @import("stream_server.zig");
 const Stream = @import("stream.zig").Stream;
 
+/// Current connection type, used by methods returning or mutating this value.
 const Self = @This();
+/// Upper bound for the adaptive size of a single socket read.
 const max_read_chunk: usize = 64 * 1024;
-
 /// Stream abstraction over the socket handle.
 stream: Stream,
 /// Remote address of the connected client.
 address: Address,
 
-/// Accumulator for incoming data.
+/// Accumulator holding received bytes until the request processor consumes them.
 accumulator: std.array_list.Managed(u8),
+/// Index of the first unread byte; earlier bytes may remain until compaction is needed.
 receive_start: usize = 0,
+/// Current read size, increased after full reads up to `max_read_chunk`.
 read_chunk: usize = consts.CLIENT_BUFFER,
-/// Accumulator for outgoing data.
+/// Accumulator containing response bytes awaiting transmission.
 tx_accumulator: std.array_list.Managed(u8),
 
 // --- Lifecycle ---
 
+/// Initializes per-connection buffers; the accepted stream remains owned by the caller.
 pub fn init(
     allocator: std.mem.Allocator,
     incoming: server.Connection,
@@ -44,26 +49,32 @@ pub fn init(
     };
 }
 
+/// Releases the request and response buffers; does not close the transport.
 pub fn deinit(self: *Self) void {
     self.accumulator.deinit();
     self.tx_accumulator.deinit();
 }
 
+/// Returns a writer that appends response bytes to this connection's output buffer.
 pub fn out(self: *Self) OutWriter {
     return .{ .list = &self.tx_accumulator };
 }
 
 pub const OutWriter = struct {
+    /// Destination buffer, valid only while the owning connection remains alive.
     list: *std.array_list.Managed(u8),
 
+    /// Appends all bytes, returning allocation failure if the buffer cannot grow.
     pub fn writeAll(self: OutWriter, bytes: []const u8) !void {
         try self.list.appendSlice(bytes);
     }
 
+    /// Appends one byte to the pending response.
     pub fn writeByte(self: OutWriter, byte: u8) !void {
         try self.list.append(byte);
     }
 
+    /// Formats and appends response data using Zig's formatting rules.
     pub fn print(self: OutWriter, comptime format: []const u8, args: anytype) !void {
         try self.list.print(format, args);
     }
@@ -71,6 +82,7 @@ pub const OutWriter = struct {
 
 // --- I/O Operations ---
 
+/// Reads more request bytes, enforcing the limit on unread data and requiring a frame terminator.
 pub fn readPending(self: *Self, max_size: usize) !void {
     const pending_len = self.accumulator.items.len - self.receive_start;
     if (pending_len > max_size) return error.MessageTooLarge;
@@ -105,6 +117,7 @@ pub fn readPending(self: *Self, max_size: usize) !void {
     };
 }
 
+/// Sends the full buffered response and retains buffer capacity for later writes.
 pub fn writePending(self: *Self) !void {
     try self.stream.writeAll(self.tx_accumulator.items);
     self.tx_accumulator.clearRetainingCapacity();

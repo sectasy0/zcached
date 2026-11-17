@@ -1,3 +1,4 @@
+//! Initializes zcached's runtime, storage, background services, and network server.
 const std = @import("std");
 const builtin = @import("builtin");
 const fs = @import("fs");
@@ -25,20 +26,25 @@ const TracingAllocator = @import("server/tracing.zig");
 
 pub const panic = std.debug.FullPanic(panicHandler);
 
+/// Indicates whether the server should continue accepting and serving work.
 var running: std.atomic.Value(bool) = .init(true);
+/// Selects leak-checking debug allocation in safety builds.
 const debug_allocator = builtin.mode == .debug or builtin.mode == .safe;
 
+/// Bridges the persistence callback to the active append-only-file handler.
 fn appendAOFCommand(ptr: *anyopaque, command: []const @import("protocol/types.zig").ZType) anyerror!void {
     const aof: *AOF = @ptrCast(@alignCast(ptr));
     try aof.appendCommand(command);
 }
 
+/// Requests graceful shutdown after a termination signal.
 fn handleSig(sig: std.posix.SIG) callconv(.c) void {
     _ = sig; // unused, but required by the signal handler signature
     // we want to stop the server gracefully, and also flush any pending logs
     running.store(false, .seq_cst);
 }
 
+/// Writes a panic message and stack trace to the configured log before exiting.
 fn panicHandler(msg: []const u8, first_trace_addr: ?usize) noreturn {
     @branchHint(.cold);
 
@@ -79,6 +85,7 @@ fn panicHandler(msg: []const u8, first_trace_addr: ?usize) noreturn {
     std.process.exit(1);
 }
 
+/// Builds the process runtime and starts the server using parsed CLI and config.
 pub fn main(init: std.process.Init) void {
     if (builtin.os.tag == .windows) @compileError("windows not supported");
 
@@ -241,6 +248,7 @@ pub fn main(init: std.process.Init) void {
     }
 }
 
+/// Handles early-exit CLI options before server resources are initialized.
 fn handleArguments(args: cli.Args) bool {
     if (args.help) {
         cli.Parser.showHelp() catch |err| {

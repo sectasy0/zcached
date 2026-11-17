@@ -1,14 +1,11 @@
+//! Provides small helpers for enum conversion, paths, timestamps, formatting, and AST literals.
+
 const std = @import("std");
 const fs = @import("fs");
 const ctime = @import("c");
 
-/// Converts a string representation of an enum or union type to the corresponding enum value (Ignores case).
-///
-/// Example usage:
-///
-/// const MyEnum = enum { A, B, C };
-/// const value = enumTypeFromStr(MyEnum, "B"); // returns MyEnum.B
-///
+/// Resolves an enum name or tagged-union tag name without regard to ASCII case.
+/// Returns `null` when the spelling is not a member; unsupported types fail compilation.
 pub inline fn enumTypeFromStr(comptime T: type, str: []const u8) ?T {
     const tag = switch (@typeInfo(T)) {
         .@"enum" => T,
@@ -22,13 +19,13 @@ pub inline fn enumTypeFromStr(comptime T: type, str: []const u8) ?T {
     return null;
 }
 
-// Performs a pointer cast from an opaque pointer to a typed pointer of type `T`.
+/// Casts an aligned opaque pointer to a pointer of the requested type.
 pub fn ptrCast(comptime T: type, ptr: *anyopaque) *T {
     if (@alignOf(T) == 0) @compileError(@typeName(T));
     return @ptrCast(@alignCast(ptr));
 }
 
-// Creates the directory path for the given file path if it does not already exist.
+/// Creates the parent directory of a file path; logs and suppresses other creation errors.
 pub fn createPath(file_path: []const u8) void {
     const path = std.fs.path.dirname(file_path) orelse return;
 
@@ -39,7 +36,7 @@ pub fn createPath(file_path: []const u8) void {
     };
 }
 
-// Formats the current time in a specific timestamp format and copies it to the `buff` byte array.
+/// Writes a local-time timestamp into the caller-provided buffer and returns its byte length.
 pub fn timestampf(buff: []u8) usize {
     var buffer: [40]u8 = undefined;
 
@@ -56,8 +53,8 @@ pub fn timestampf(buff: []u8) usize {
     return time_len;
 }
 
-// Converts the provided byte array representing protocol raw data to its string
-// representation by replacing occurrences of "\r\n" with "\\r\\n".
+/// Escapes each CRLF pair as the visible characters `\\r\\n` in an allocated result.
+/// The caller owns the returned slice and must free it with `allocator`.
 pub fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
     const size = std.mem.replacementSize(u8, value, "\r\n", "\\r\\n");
     const output = try allocator.alloc(u8, size);
@@ -65,14 +62,15 @@ pub fn repr(allocator: std.mem.Allocator, value: []const u8) ![]const u8 {
     return output;
 }
 
-// Parses a string literal from the AST and returns it as a byte slice.
+/// Decodes the string literal at an AST node into allocator-owned bytes.
+/// Parsing and allocation errors are propagated; the caller owns the result.
 pub fn parseString(alloc: std.mem.Allocator, ast: std.zig.Ast, idx: u32) ![]const u8 {
     return std.zig.string_literal.parseAlloc(alloc, ast.tokenSlice(
         ast.nodes.items(.main_token)[idx],
     ));
 }
 
-// Parses a numeric literal from the AST and returns it as a Result.
+/// Parses the numeric token at an AST node, returning the Zig literal parser's result.
 pub fn parseNumber(ast: std.zig.Ast, idx: u32) std.zig.number_literal.Result {
     return std.zig.number_literal.parseNumberLiteral(ast.tokenSlice(
         ast.nodes.items(.main_token)[idx],

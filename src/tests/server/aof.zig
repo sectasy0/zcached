@@ -56,6 +56,7 @@ fn processCommand(
     try std.testing.expect(result == .ok);
 }
 
+// Verifies successful mutations are journaled and replay restores the final key state.
 test "AOF stores successful mutations and replays them from configured path" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -120,6 +121,7 @@ test "AOF stores successful mutations and replays them from configured path" {
     try std.testing.expectEqual(@as(usize, 0), fixture.memory.?.internal.count());
 }
 
+// Checks the always policy writes each append to disk immediately.
 test "always strategy flushes each append immediately" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -138,6 +140,7 @@ test "always strategy flushes each append immediately" {
     try std.testing.expectEqual(@as(usize, 0), aof.buffer.items.len);
 }
 
+// Ensures large pending records are preserved until flush and buffer capacity is then bounded.
 test "everysec preserves pending bytes beyond the retained buffer threshold" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -172,6 +175,7 @@ test "everysec preserves pending bytes beyond the retained buffer threshold" {
     try std.testing.expectEqualStrings("\x03last\x03", bytes[6 + payload.len ..]);
 }
 
+// Checks automatic flushing occurs only when the configured buffer threshold is reached.
 test "auto strategy flushes when the buffer threshold is reached" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -197,6 +201,7 @@ test "auto strategy flushes when the buffer threshold is reached" {
     try std.testing.expectEqual(@as(usize, 0), aof.buffer.items.len);
 }
 
+// Blocks the database worker so the test can prove every-second flushing uses that queue.
 test "everysec flush waits for the database queue instead of a dedicated thread" {
     const io = runtime_io.get();
     var fixture = try ContextFixture.init();
@@ -207,7 +212,9 @@ test "everysec flush waits for the database queue instead of a dedicated thread"
     var entered: std.Io.Event = .unset;
     var release: std.Io.Event = .unset;
     defer release.set(io);
+    // Synchronizes the worker start with the test and holds it until explicitly released.
     const Blocker = struct {
+        // Signals entry, then waits without cancellation for the release event.
         fn run(started: *std.Io.Event, finish: *std.Io.Event) void {
             started.set(runtime_io.get());
             finish.waitUncancelable(runtime_io.get());
@@ -243,6 +250,7 @@ test "everysec flush waits for the database queue instead of a dedicated thread"
     try std.testing.expectEqual(@as(usize, 0), bufferedBytes(&aof));
 }
 
+// Ensures deinitialization cancels scheduled flushes before the handler's memory is freed.
 test "AOF deinit cancels pending flush before the AOF object is freed" {
     const io = runtime_io.get();
     var fixture = try ContextFixture.init();
@@ -272,7 +280,9 @@ test "AOF deinit cancels pending flush before the AOF object is freed" {
     try fixture.agent.kickoff();
     runtime_io.sleepNanoseconds(1200 * std.time.ns_per_ms);
     var completed: std.Io.Event = .unset;
+    // Marks that work scheduled after the cancelled flush has completed.
     const Marker = struct {
+        // Signals completion to the waiting test thread.
         fn run(event: *std.Io.Event) void {
             event.set(runtime_io.get());
         }
@@ -282,6 +292,7 @@ test "AOF deinit cancels pending flush before the AOF object is freed" {
     try std.testing.expectEqual(@as(u64, 2), try fileSize(path));
 }
 
+// Checks the disabled policy leaves the journal and memory unchanged.
 test "no strategy neither appends nor replays commands" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();

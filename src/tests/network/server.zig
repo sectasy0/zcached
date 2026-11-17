@@ -41,7 +41,10 @@ fn expectResponse(client: std.Io.net.Stream, expected: []const u8) !void {
 
 fn expectResponseTimeout(client: std.Io.net.Stream, expected: []const u8, milliseconds: i64) !void {
     const io = runtime_io.get();
-    const Result = union(enum) { response: anyerror!void, timeout: std.Io.Cancelable!void };
+    const Result = union(enum) {
+        response: anyerror!void,
+        timeout: std.Io.Cancelable!void,
+    };
     var buffer: [2]Result = undefined;
     var select = std.Io.Select(Result).init(io, &buffer);
     defer select.cancelDiscard();

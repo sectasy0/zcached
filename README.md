@@ -161,6 +161,50 @@ Repeat the matrix at least three times, varying order, and compare medians.
 The load generator runs on the same host and competes with the server for CPU;
 this measures local end-to-end capacity, not isolated server capacity.
 
+### Profiling on macOS
+
+[tools/profile.zig](tools/profile.zig) runs the benchmark together with
+Apple Instruments **Time Profiler**. It requires macOS and Xcode with a working
+`xcrun xctrace` (check with `xcrun xctrace list templates`).
+
+```bash
+zig build profile -Doptimize=ReleaseFast -- --duration 30 --clients 32 --requests 2000000 --pipeline 64 --value-size 20
+```
+
+The build step compiles the server, benchmark, and profiling tool before
+recording. The tool starts its own isolated RAM server: 8 workers by default,
+an automatically selected localhost port, unlimited memory, TLS off, payload
+logging off, and AOF `.no`. It waits for server readiness, attaches to that
+server's PID, and waits for the profiler's Darwin recording-start notification
+before launching the benchmark. It never attaches to an existing server.
+
+Results are retained in a new `zig-out/profile-<timestamp>/` directory:
+
+- `profile.trace`: open with `open /path/to/profile.trace` in Instruments.
+- `benchmark.txt`: throughput and whole-batch latency results.
+- `profiler.log`, `server.log`, `server-output.log`: diagnostic logs.
+- `config.zon`: the generated server configuration.
+
+After both profiling and benchmarking finish successfully, the profiler
+automatically opens `profile.trace` in Instruments.
+
+Use `--output /path/to/new-directory` to choose another destination; existing
+directories are rejected, not overwritten. `--workers` and `--port` override
+server settings; an occupied port fails without stopping its existing owner.
+`--timeout` sets the whole-run deadline in seconds (default 600, must exceed
+`--duration`). Run `zig build profile -- --help` for all options.
+The tool cleans up only its own child processes on completion, failure,
+timeout, or handled SIGINT/SIGTERM; diagnostic files are retained.
+
+`--duration` controls recording time, not benchmark duration. The tool waits
+for both to finish; short workloads can leave an idle recording tail, while
+long workloads can continue after profiling stops. The benchmark runs GET,
+SET, then mixed: select the corresponding active time interval in Instruments
+rather than treating the entire trace as a GET-only profile. In Call Tree,
+enable **Separate by Thread** and **Invert Call Tree**; initially leave system
+libraries visible to see `recvmsg`, `sendmsg`, and `kevent`. Profiler overhead
+can affect throughput, so compare clean benchmark runs separately.
+
 ### Pipelining stress results
 
 Measured on 2026-11-16, Apple M2 (8 cores, 24 GiB), macOS 27.0.1,

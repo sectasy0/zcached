@@ -1,3 +1,6 @@
+//! Dispatches decoded protocol commands to storage and persistence operations.
+//! Returned values may own allocator-backed data; callers release them with `Handler.free`.
+
 const std = @import("std");
 
 // Protocol types
@@ -18,35 +21,65 @@ const Config = @import("../config.zig");
 const Logger = @import("../logger.zig");
 const utils = @import("../utils.zig");
 
+/// Commands recognized by the dispatcher; names are matched case-insensitively.
 const CommandType = enum {
+    /// Return the server's liveness response.
     PING,
+    /// Return a copy of the value stored at a key.
     GET,
+    /// Store a value at a key.
     SET,
+    /// Remove a key from storage.
     DELETE,
+    /// Remove all stored entries.
     FLUSH,
+    /// Return values for multiple keys, using null for absent keys.
     MGET,
+    /// Store multiple key/value pairs.
     MSET,
+    /// Return the number of stored keys.
     DBSIZE,
+    /// Persist the current in-memory state.
     SAVE,
+    /// Return a snapshot of all keys.
     KEYS,
+    /// Return the timestamp of the last persistence save.
     LASTSAVE,
+    /// Return the encoded size of a stored value.
     SIZEOF,
+    /// Move a value from one key to another.
     RENAME,
+    /// Return the supplied string unchanged.
     ECHO,
+    /// Copy a value to another key, optionally replacing its contents.
     COPY,
 };
+
+/// Executes commands against the shared application context.
 pub const Handler = struct {
+    /// Allocator used for result copies and temporary collections; `free` must use it too.
     allocator: std.mem.Allocator,
 
+    /// Storage, persistence, logging, and configuration dependencies.
     context: Context,
+    /// Command currently being processed, borrowed only until `process` returns.
     pending_command: ?[]const ZType = null,
 
-    pub const Result = union(enum) { ok: ZType, err: anyerror };
+    /// Either a successful protocol value or the error that prevented execution.
+    pub const Result = union(enum) {
+        /// Successful result; some aggregate values own memory allocated by `allocator`.
+        ok: ZType,
+        /// Failure from validation, storage, serialization, or persistence.
+        err: anyerror,
+    };
 
+    /// Creates a handler that borrows the supplied context and uses `allocator` for results.
     pub fn init(allocator: std.mem.Allocator, context: Context) Handler {
         return Handler{ .allocator = allocator, .context = context };
     }
 
+    /// Validates and dispatches a command array, borrowing it temporarily for AOF mutation logging.
+    /// The input is borrowed; returned owned results must be released with `free`.
     pub fn process(self: *Handler, command_set: *const std.array_list.Managed(ZType)) Result {
         self.pending_command = command_set.items;
         defer self.pending_command = null;
@@ -108,6 +141,7 @@ pub const Handler = struct {
         };
     }
 
+    /// Returns an owned copy of a string-keyed value, or a key/type/storage error.
     fn get(self: *Handler, key: ZType) Result {
         if (key != .str) return .{ .err = error.KeyNotString };
         const value = self.context.resources.memory.getCopy(key.str, self.allocator) catch |err| {
@@ -117,6 +151,7 @@ pub const Handler = struct {
         return .{ .ok = value };
     }
 
+    /// Stores the value for a string key and records the successful mutation in the AOF.
     fn set(self: *Handler, key: ZType, value: ZType) Result {
         // second element in command_set is key and should be always str
         if (key != .str) return .{ .err = error.KeyNotString };
@@ -129,6 +164,7 @@ pub const Handler = struct {
         return .{ .ok = .{ .sstr = "OK" } };
     }
 
+    /// Deletes an existing key and records the mutation; returns `NotFound` if absent.
     fn delete(self: *Handler, key: ZType) Result {
         const result = self.context.resources.memory.delete(key.str);
 
@@ -140,12 +176,14 @@ pub const Handler = struct {
         }
     }
 
+    /// Clears storage and records the flush operation for replay.
     fn flush(self: *Handler) Result {
         self.context.resources.memory.flush();
         self.appendMutation() catch |err| return .{ .err = err };
         return .{ .ok = .{ .sstr = "OK" } };
     }
 
+    /// Saves non-empty in-memory data through the configured persistence handler.
     fn save(self: *Handler) Result {
         if (self.context.resources.memory.size() == 0) return .{ .err = error.SaveFailure };
 
@@ -162,6 +200,8 @@ pub const Handler = struct {
         return .{ .err = error.SaveFailure };
     }
 
+    /// Builds an owned map of requested values, substituting null for missing keys.
+    /// On failure, frees all values accumulated before returning the error.
     fn mget(self: *Handler, keys: []ZType) Result {
         for (keys) |key| {
             if (key != .str) return .{ .err = error.KeyNotString };
@@ -188,6 +228,8 @@ pub const Handler = struct {
         return .{ .ok = .{ .map = result } };
     }
 
+    /// Stores alternating key/value arguments and appends each successful pair as a SET.
+    /// Requires at least one pair and an even number of entries.
     fn mset(self: *Handler, entries: []ZType) Result {
         if (entries.len == 0 or entries.len & 1 == 1) return .{ .err = error.InvalidArgs };
 
@@ -208,6 +250,7 @@ pub const Handler = struct {
         return .{ .ok = .{ .sstr = "OK" } };
     }
 
+    /// Returns an owned array containing copies of all storage keys.
     fn zkeys(self: *Handler) Result {
         const result = self.context.resources.memory.keysCopy(self.allocator) catch |err| {
             return .{ .err = err };
@@ -215,6 +258,7 @@ pub const Handler = struct {
         return .{ .ok = .{ .array = result } };
     }
 
+    /// Returns the encoded size of the value at a string key.
     fn sizeof(self: *Handler, key: ZType) Result {
         if (key != .str) return .{ .err = error.KeyNotString };
         const value_size = self.context.resources.memory.valueSize(key.str) catch |err| {
@@ -224,6 +268,7 @@ pub const Handler = struct {
         return .{ .ok = .{ .int = @intCast(value_size) } };
     }
 
+    /// Renames a string key and records the mutation; both arguments must be strings.
     fn rename(self: *Handler, key: ZType, value: ZType) Result {
         if (key != .str or value != .str) return .{ .err = error.KeyNotString };
 
@@ -235,6 +280,7 @@ pub const Handler = struct {
         return .{ .ok = .{ .sstr = "OK" } };
     }
 
+    /// Copies a key to a destination, accepting only the optional `REPLACE` modifier.
     fn copy(self: *Handler, entries: []ZType) Result {
         const CopyArgs = enum { REPLACE };
 
@@ -256,18 +302,20 @@ pub const Handler = struct {
         return .{ .ok = .{ .str = "OK" } };
     }
 
+    /// Appends the currently processed command to AOF, if one is configured.
     fn appendMutation(self: *Handler) !void {
         const command = self.pending_command orelse return error.InvalidCommand;
         try self.appendCommand(command);
     }
 
+    /// Serializes and appends a command to AOF; a disabled or absent AOF is a no-op.
     fn appendCommand(self: *Handler, command: []const ZType) !void {
         const aof = self.context.resources.aof orelse return;
         try aof.appendCommand(command);
     }
 
-    // method to free data needs to be freeded, for example keys command
-    // is creating std.array_list.Managed so it have to be freed after
+    /// Releases allocator-owned data in a successful result according to its command kind.
+    /// Does not free the borrowed command arguments; call only for successful results.
     pub fn free(self: *Handler, command_set: *const std.array_list.Managed(ZType), result: *Result) void {
         const command_type = utils.enumTypeFromStr(CommandType, command_set.items[0].str) orelse return;
 
@@ -278,6 +326,7 @@ pub const Handler = struct {
         }
     }
 
+    /// Frees every owned map value and then the map's backing storage.
     fn freeMapValues(self: *Handler, map: *ZType.Map) void {
         var iterator = map.valueIterator();
         while (iterator.next()) |value| types.ztype_free(value, self.allocator);

@@ -3,6 +3,7 @@ const std = @import("std");
 const Deserializer = @import("../../protocol/deserializer.zig").Deserializer;
 const types = @import("../../protocol/types.zig");
 
+// Verifies bulk-string length framing and payload bytes in the encoded result.
 test "deserialize string" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
@@ -14,6 +15,7 @@ test "deserialize string" {
     try std.testing.expectEqualStrings(expected, result);
 }
 
+// Checks that empty bulk strings are encoded with a zero length and empty payload.
 test "deserialize empty string" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
@@ -25,6 +27,7 @@ test "deserialize empty string" {
     try std.testing.expectEqualStrings(expected, result);
 }
 
+// Checks the integer marker and decimal representation for a scalar value.
 test "deserialize int" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
@@ -36,6 +39,7 @@ test "deserialize int" {
     try std.testing.expectEqualStrings(expected, result);
 }
 
+// Checks that true uses the protocol true marker.
 test "deserialize bool true" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
@@ -47,6 +51,7 @@ test "deserialize bool true" {
     try std.testing.expectEqualStrings(expected, result);
 }
 
+// Checks that false uses the protocol false marker.
 test "deserialize bool false" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
@@ -58,6 +63,7 @@ test "deserialize bool false" {
     try std.testing.expectEqualStrings(expected, result);
 }
 
+// Checks the protocol null marker and its line ending.
 test "deserialize null" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
@@ -69,6 +75,7 @@ test "deserialize null" {
     try std.testing.expectEqualStrings(expected, result);
 }
 
+// Checks that a floating-point scalar is encoded with its numeric value.
 test "deserialize float" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
@@ -80,6 +87,7 @@ test "deserialize float" {
     try std.testing.expectEqualStrings(expected, result);
 }
 
+// Checks that simple strings use their distinct response marker.
 test "deserialize simple string" {
     var deserializer = Deserializer.init(std.testing.allocator);
     defer deserializer.deinit();
@@ -91,6 +99,7 @@ test "deserialize simple string" {
     try std.testing.expectEqualStrings(expected, result);
 }
 
+// Verifies an array header and recursively encoded elements preserve sequence order.
 test "deserialize array" {
     var array = try std.array_list.Managed(types.ZType).initCapacity(std.testing.allocator, 3);
     defer array.deinit();
@@ -109,6 +118,7 @@ test "deserialize array" {
     try std.testing.expectEqualStrings(expected, result);
 }
 
+// Guards against excessive temporary allocations by encoding a large array with a bounded allocator.
 test "large array encoding uses linear output storage" {
     var backing: [128 * 1024]u8 = undefined;
     var buffer_allocator = std.heap.FixedBufferAllocator.init(&backing);
@@ -123,6 +133,7 @@ test "large array encoding uses linear output storage" {
     try std.testing.expectEqual(@as(usize, 512), std.mem.count(u8, bytes, "$20\r\nabcdefghijklmnopqrst\r\n"));
     try std.testing.expectEqual(@as(usize, 6 + 512 * 27), bytes.len);
 }
+// Checks map entry framing and key/value encoding for the populated map.
 test "serialize map" {
     var map = std.StringHashMap(types.ZType).init(std.testing.allocator);
     defer map.deinit();
@@ -142,6 +153,7 @@ test "serialize map" {
     try std.testing.expectEqualStrings(expected, result);
 }
 
+// Verifies ordered-set entries are emitted in insertion order.
 test "serialize set" {
     var set = types.sets.Set(types.ZType).init(std.testing.allocator);
     defer set.deinit();
@@ -161,6 +173,7 @@ test "serialize set" {
     try std.testing.expectEqualStrings(expected, result);
 }
 
+// Checks unordered-set framing and its entries without assuming iteration order.
 test "serialize uset" {
     var uset = types.sets.SetUnordered(types.ZType).init(std.testing.allocator);
     defer uset.deinit();

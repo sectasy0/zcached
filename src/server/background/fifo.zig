@@ -1,3 +1,4 @@
+//! Ring-buffer FIFO with fixed, caller-provided, or allocator-managed storage.
 const std = @import("std");
 const math = std.math;
 const mem = std.mem;
@@ -13,6 +14,7 @@ pub const LinearFifoBufferType = union(enum) {
     Dynamic,
 };
 
+/// Generates a typed FIFO whose storage strategy is selected at compile time.
 pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) type {
     const autoalign = false;
 
@@ -23,19 +25,28 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
     };
 
     return struct {
+        /// Allocator retained only by dynamically growing instances.
         allocator: if (buffer_type == .Dynamic) Allocator else void,
+        /// Ring storage; statically embedded, borrowed, or dynamically owned.
         buf: if (buffer_type == .Static) [buffer_type.Static]T else []T,
+        /// Index of the first readable item in the ring.
         head: usize,
+        /// Number of initialized items currently queued.
         count: usize,
 
+        /// Concrete FIFO type produced by this generic specialization.
         const Self = @This();
+        /// Reader convenience wrapper borrowing a FIFO for incremental reads.
         pub const Reader = struct {
+            /// FIFO accessed by this reader; must outlive the wrapper.
             context: *Self,
 
+            /// Copies available FIFO items into `destination`, returning the count.
             pub fn read(self: Reader, destination: []u8) error{}!usize {
                 return self.context.read(destination);
             }
 
+            /// Reads through a delimiter, returning null only when EOF occurs before any data.
             pub fn readUntilDelimiterOrEof(self: Reader, buffer: []u8, delimiter: u8) !?[]u8 {
                 var index: usize = 0;
                 while (index < buffer.len) : (index += 1) {
@@ -48,18 +59,23 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
             }
         };
 
+        /// Writer convenience wrapper borrowing a FIFO for append operations.
         pub const Writer = struct {
+            /// FIFO receiving output; must outlive the wrapper.
             context: *Self,
 
+            /// Appends all bytes and reports their length, or allocation failure.
             pub fn write(self: Writer, bytes: []const u8) error{OutOfMemory}!usize {
                 try self.context.write(bytes);
                 return bytes.len;
             }
 
+            /// Appends all bytes, propagating capacity-allocation failure.
             pub fn writeAll(self: Writer, bytes: []const u8) error{OutOfMemory}!void {
                 try self.context.write(bytes);
             }
 
+            /// Formats into a temporary allocation and appends the result.
             pub fn print(self: Writer, comptime format: []const u8, args: anytype) !void {
                 const allocator = if (comptime buffer_type == .Dynamic)
                     self.context.allocator
@@ -74,14 +90,17 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
         // Type of Self argument for slice operations.
         // If buffer is inline (Static) then we need to ensure we haven't
         // returned a slice into a copy on the stack
+        /// Receiver form required to keep returned slices tied to static storage.
         const SliceSelfArg = if (buffer_type == .Static) *Self else Self;
 
+        /// Buffer-type-specific initializer selected at compile time.
         pub const init = switch (buffer_type) {
             .Static => initStatic,
             .Slice => initSlice,
             .Dynamic => initDynamic,
         };
 
+        /// Initializes an empty FIFO with embedded static storage.
         fn initStatic() Self {
             comptime assert(buffer_type == .Static);
             return .{
@@ -91,6 +110,7 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
                 .count = 0,
             };
         }
+        /// Initializes an empty FIFO borrowing the caller's slice without owning it.
         fn initSlice(buf: []T) Self {
             comptime assert(buffer_type == .Slice);
             return .{
@@ -100,6 +120,7 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
                 .count = 0,
             };
         }
+        /// Initializes an empty FIFO that grows using the supplied allocator.
         fn initDynamic(allocator: Allocator) Self {
             comptime assert(buffer_type == .Dynamic);
             return .{
@@ -110,10 +131,12 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
             };
         }
 
+        /// Frees dynamic storage; static and caller-owned slice storage are untouched.
         pub fn deinit(self: Self) void {
             if (buffer_type == .Dynamic) self.allocator.free(self.buf);
         }
 
+        /// Moves queued items to the start of storage, preserving FIFO order.
         pub fn realign(self: *Self) void {
             if (self.buf.len - self.head >= self.count) {
                 mem.copyForwards(T, self.buf[0..self.count], self.buf[self.head..][0..self.count]);
@@ -137,6 +160,7 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
         }
 
         /// Reduce allocated capacity to `size`.
+        /// Dynamic realloc failure is ignored, leaving the previous capacity intact.
         pub fn shrink(self: *Self, size: usize) void {
             assert(size >= self.count);
             if (buffer_type == .Dynamic) {
@@ -148,6 +172,7 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
         }
 
         /// Ensure that the buffer can fit at least `size` items
+        /// Dynamic storage may grow; fixed storage returns `OutOfMemory` if too small.
         pub fn ensureTotalCapacity(self: *Self, size: usize) !void {
             if (self.buf.len >= size) return;
             if (buffer_type == .Dynamic) {
@@ -160,6 +185,7 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
         }
 
         /// Makes sure at least `size` items are unused
+        /// Grows dynamic storage as needed and reports failure for fixed-capacity buffers.
         pub fn ensureUnusedCapacity(self: *Self, size: usize) error{OutOfMemory}!void {
             if (self.writableLength() >= size) return;
 
@@ -167,11 +193,13 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
         }
 
         /// Returns number of items currently in fifo
+        /// Does not mutate the queue.
         pub fn readableLength(self: Self) usize {
             return self.count;
         }
 
         /// Returns a writable slice from the 'read' end of the fifo
+        /// This mutable internal view may be empty when `offset` exceeds the queue length.
         fn readableSliceMut(self: SliceSelfArg, offset: usize) []T {
             if (offset > self.count) return &[_]T{};
 
@@ -186,10 +214,12 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
         }
 
         /// Returns a readable slice from `offset`
+        /// The returned slice is contiguous and does not include wrapped items beyond it.
         pub fn readableSlice(self: SliceSelfArg, offset: usize) []const T {
             return self.readableSliceMut(offset);
         }
 
+        /// Returns `len` contiguous readable items, realigning the ring if it wraps.
         pub fn readableSliceOfLen(self: *Self, len: usize) []const T {
             assert(len <= self.count);
             const buf = self.readableSlice(0);
@@ -202,6 +232,7 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
         }
 
         /// Discard first `count` items in the fifo
+        /// Asserts that the requested count does not exceed the current queue length.
         pub fn discard(self: *Self, count: usize) void {
             assert(count <= self.count);
             { // set old range to undefined. Note: may be wrapped around
@@ -234,6 +265,7 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
         }
 
         /// Read the next item from the fifo
+        /// Returns null when empty, otherwise removes and returns the head item.
         pub fn readItem(self: *Self) ?T {
             if (self.count == 0) return null;
 
@@ -243,6 +275,7 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
         }
 
         /// Read data from the fifo into `dst`, returns number of items copied.
+        /// Removes every copied item and stops when the queue or destination is exhausted.
         pub fn read(self: *Self, dst: []T) usize {
             var dst_left = dst;
 
@@ -258,17 +291,20 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
             return dst.len - dst_left.len;
         }
 
+        /// Returns a lightweight reader borrowing this FIFO.
         pub fn reader(self: *Self) Reader {
             return .{ .context = self };
         }
 
         /// Returns number of items available in fifo
+        /// Capacity is storage length minus the number of queued items.
         pub fn writableLength(self: Self) usize {
             return self.buf.len - self.count;
         }
 
         /// Returns the first section of writable buffer.
         /// Note that this may be of length 0
+        /// The returned mutable slice is the first contiguous free region.
         pub fn writableSlice(self: SliceSelfArg, offset: usize) []T {
             if (offset > self.buf.len) return &[_]T{};
 
@@ -282,6 +318,7 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
 
         /// Returns a writable buffer of at least `size` items, allocating memory as needed.
         /// Use `fifo.update` once you've written data to it.
+        /// The returned slice is contiguous; only the written prefix should be committed.
         pub fn writableWithSize(self: *Self, size: usize) ![]T {
             try self.ensureUnusedCapacity(size);
 
@@ -295,6 +332,7 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
         }
 
         /// Update the tail location of the buffer (usually follows use of writable/writableWithSize)
+        /// Marks `count` previously writable items as initialized and queued.
         pub fn update(self: *Self, count: usize) void {
             assert(self.count + count <= self.buf.len);
             self.count += count;
@@ -302,6 +340,7 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
 
         /// Appends the data in `src` to the fifo.
         /// You must have ensured there is enough space.
+        /// Does not allocate; asserts sufficient free capacity.
         pub fn writeAssumeCapacity(self: *Self, src: []const T) void {
             assert(self.writableLength() >= src.len);
 
@@ -317,11 +356,13 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
         }
 
         /// Write a single item to the fifo
+        /// Ensures one free slot first, allocating only for dynamic storage.
         pub fn writeItem(self: *Self, item: T) !void {
             try self.ensureUnusedCapacity(1);
             return self.writeItemAssumeCapacity(item);
         }
 
+        /// Appends one item without checking capacity; caller must reserve a slot.
         pub fn writeItemAssumeCapacity(self: *Self, item: T) void {
             var tail = self.head + self.count;
             if (powers_of_two) {
@@ -335,17 +376,20 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
 
         /// Appends the data in `src` to the fifo.
         /// Allocates more memory as necessary
+        /// Returns `OutOfMemory` if dynamic growth fails or fixed storage is full.
         pub fn write(self: *Self, src: []const T) !void {
             try self.ensureUnusedCapacity(src.len);
 
             return self.writeAssumeCapacity(src);
         }
 
+        /// Returns a lightweight writer borrowing this FIFO.
         pub fn writer(self: *Self) Writer {
             return .{ .context = self };
         }
 
         /// Make `count` items available before the current read location
+        /// Moves the head backward to reserve slots before existing data.
         fn rewind(self: *Self, count: usize) void {
             assert(self.writableLength() >= count);
 
@@ -360,6 +404,7 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
         }
 
         /// Place data back into the read stream
+        /// Prepends a copy of `src` in its original order, growing dynamic storage if needed.
         pub fn unget(self: *Self, src: []const T) !void {
             try self.ensureUnusedCapacity(src.len);
 
@@ -377,6 +422,7 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
 
         /// Returns the item at `offset`.
         /// Asserts offset is within bounds.
+        /// Does not remove or otherwise modify the item.
         pub fn peekItem(self: Self, offset: usize) T {
             assert(offset < self.count);
 
@@ -392,6 +438,7 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
         /// Pump data from a reader into a writer.
         /// Stops when reader returns 0 bytes (EOF).
         /// Buffer size must be set before calling; a buffer length of 0 is invalid.
+        /// Writes all buffered data before reading further and propagates writer errors.
         pub fn pump(self: *Self, src_reader: anytype, dest_writer: anytype) !void {
             assert(self.buf.len > 0);
             while (true) {
@@ -412,6 +459,8 @@ pub fn LinearFifo(comptime T: type, comptime buffer_type: LinearFifoBufferType) 
             }
         }
 
+        /// Transfers queued items to a newly owned allocation and resets this FIFO.
+        /// Dynamic FIFOs transfer or duplicate storage; use is unsupported for fixed storage.
         pub fn toOwnedSlice(self: *Self) Allocator.Error![]T {
             if (self.head != 0) self.realign();
             assert(self.head == 0);

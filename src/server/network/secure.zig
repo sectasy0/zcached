@@ -1,9 +1,11 @@
+//! TLS context setup and encrypted stream operations backed by OpenSSL.
 const std = @import("std");
 const socket_io = @import("socket.zig");
 const VerifyMode = @import("../config.zig").TLSConfig.VerifyMode;
 
 pub const openssl = @import("openssl");
 
+/// Errors surfaced by TLS and its underlying socket operations.
 pub const Error = socket_io.Error || error{
     TLSProtocolError,
     TLSUnexpectedEof,
@@ -11,9 +13,12 @@ pub const Error = socket_io.Error || error{
     TLSBioFailure,
 };
 
+/// Owns an OpenSSL server context configured with credentials and verification policy.
 pub const Context = struct {
+    /// OpenSSL context retained until `deinit`.
     ctx: *openssl.SSL_CTX,
 
+    /// Loads TLS 1.3 server credentials and optional client-certificate trust settings.
     pub fn init(key: []const u8, cert: []const u8, ca: ?[]const u8, verify_mode: VerifyMode) !Context {
         const ctx = openssl.SSL_CTX_new(openssl.TLS_server_method()) orelse return error.SSLContextFailure;
         errdefer openssl.SSL_CTX_free(ctx);
@@ -41,16 +46,19 @@ pub const Context = struct {
         return .{ .ctx = ctx };
     }
 
+    /// Performs a server-side TLS handshake and attaches TLS state to a socket stream.
     pub fn upgrade(self: *const Context, io: std.Io, socket: std.Io.net.Stream) !StreamContext {
         return upgradeWithContext(io, self.ctx, socket, false);
     }
 
+    /// Releases the context; existing upgraded streams own separate SSL sessions.
     pub fn deinit(self: *Context) void {
         openssl.SSL_CTX_free(self.ctx);
     }
 };
 
 /// E2E client helper; certificate verification is intentionally disabled.
+/// Creates a temporary client context, completes negotiation, and returns stream state.
 pub fn upgradeClient(io: std.Io, socket: std.Io.net.Stream) !StreamContext {
     const ctx = openssl.SSL_CTX_new(openssl.TLS_client_method()) orelse return error.SSLContextFailure;
     defer openssl.SSL_CTX_free(ctx);
@@ -59,6 +67,7 @@ pub fn upgradeClient(io: std.Io, socket: std.Io.net.Stream) !StreamContext {
     return upgradeWithContext(io, ctx, socket, true);
 }
 
+/// Builds SSL/BIO state, selects the handshake role, and completes negotiation.
 fn upgradeWithContext(io: std.Io, ctx: *openssl.SSL_CTX, socket: std.Io.net.Stream, client: bool) !StreamContext {
     const ssl = openssl.SSL_new(ctx) orelse return error.SSLInitFailure;
     errdefer openssl.SSL_free(ssl);
@@ -75,17 +84,24 @@ fn upgradeWithContext(io: std.Io, ctx: *openssl.SSL_CTX, socket: std.Io.net.Stre
     return state;
 }
 
+/// Owns TLS session state and translates encrypted socket data to application bytes.
 pub const StreamContext = struct {
+    /// I/O implementation used for all socket operations during TLS.
     io: std.Io,
+    /// OpenSSL session state for this encrypted connection.
     ssl: *openssl.SSL,
+    /// Memory BIO receiving encrypted bytes from the socket.
     input: *openssl.BIO,
+    /// Memory BIO holding encrypted bytes to be sent to the socket.
     output: *openssl.BIO,
 
+    /// Frees TLS state without sending a close-notify exchange.
     pub fn deinit(self: *StreamContext) void {
         // Closing the socket is nonblocking; no TLS close_notify exchange is attempted.
         openssl.SSL_free(self.ssl);
     }
 
+    /// Drains pending encrypted output to the socket and returns the byte count.
     fn flush(self: *StreamContext, socket: std.Io.net.Stream) Error!usize {
         var buffer: [16384]u8 = undefined;
         var total: usize = 0;
@@ -99,6 +115,7 @@ pub const StreamContext = struct {
         return total;
     }
 
+    /// Reads encrypted socket bytes into the input BIO; EOF is a TLS truncation error.
     fn receive(self: *StreamContext, socket: std.Io.net.Stream) Error!void {
         var buffer: [16384]u8 = undefined;
         const count = try socket_io.read(self.io, socket, &buffer);
@@ -111,6 +128,7 @@ pub const StreamContext = struct {
         }
     }
 
+    /// Flushes generated records and satisfies OpenSSL's request for I/O progress.
     fn proceed(self: *StreamContext, socket: std.Io.net.Stream, status: c_int) Error!void {
         const flushed = try self.flush(socket);
         switch (status) {
@@ -120,6 +138,7 @@ pub const StreamContext = struct {
         }
     }
 
+    /// Drives negotiation until OpenSSL reports completion or an I/O/protocol error.
     fn handshake(self: *StreamContext, socket: std.Io.net.Stream) Error!void {
         while (true) {
             openssl.ERR_clear_error();
@@ -133,6 +152,7 @@ pub const StreamContext = struct {
         }
     }
 
+    /// Reads decrypted application data; zero indicates a clean TLS close-notify.
     pub fn read(self: *StreamContext, socket: std.Io.net.Stream, buffer: []u8) Error!usize {
         while (true) {
             openssl.ERR_clear_error();
@@ -150,6 +170,7 @@ pub const StreamContext = struct {
         }
     }
 
+    /// Writes up to the requested application bytes and flushes generated TLS records.
     pub fn write(self: *StreamContext, socket: std.Io.net.Stream, bytes: []const u8) Error!usize {
         while (true) {
             openssl.ERR_clear_error();

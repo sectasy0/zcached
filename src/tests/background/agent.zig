@@ -82,6 +82,7 @@ test "stop drains ready tasks even after the process running flag clears" {
     agent.stop();
     try std.testing.expectEqual(@as(usize, 100), count);
 }
+
 test "canceling a scheduled task waits for its running callback" {
     const io = runtime_io.get();
     var agent = try Agent.init(allocator, &running);

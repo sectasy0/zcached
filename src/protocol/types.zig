@@ -1,33 +1,56 @@
+//! Protocol value types and helpers for copying and releasing nested values.
+
 const std = @import("std");
+/// Set implementations available to protocol data structures.
 pub const sets = @import("set.zig");
 
+/// Tagged values supported by the protocol parser and encoder.
 pub const ZType = union(enum) {
+    /// Bulk string bytes, borrowed or owned according to the containing value's lifetime.
     str: []const u8,
     // sstring (simple string) is rather response format than data
+    /// Simple-string bytes, used for protocol responses.
     sstr: []const u8,
+    /// Signed integer value.
     int: i64,
+    /// Floating-point value.
     float: f64,
+    /// String-keyed collection of recursively typed values.
     map: Map,
+    /// Boolean value.
     bool: bool,
+    /// Ordered sequence of recursively typed values.
     array: Array,
+    /// Insertion-ordered collection of unique values.
     set: Set,
+    /// Collection of unique values with unspecified iteration order.
     uset: USet,
+    /// Protocol null value, represented without payload.
     null: void,
     // ClientError only for compatibility with ProtocolHandler
     // and it will not be stored in Memory but will be returned
+    /// Client error payload retained for handler compatibility, not storage.
     err: ClientError,
 
+    /// Managed list type used by the array variant.
     pub const Array = std.array_list.Managed(ZType);
+    /// String-keyed map type used by the map variant.
     pub const Map = std.StringHashMap(ZType);
 
+    /// Ordered set type used by the set variant.
     pub const Set = sets.Set(ZType);
+    /// Unordered set type used by the uset variant.
     pub const USet = sets.SetUnordered(ZType);
 };
 
+/// Error response data returned to protocol clients.
 pub const ClientError = struct {
+    /// Message bytes whose storage remains owned by the caller.
     message: []const u8,
 };
 
+/// Recursively duplicates dynamically stored data into `allocator`.
+/// Scalar values are copied directly; unsupported error values return an error.
 pub fn ztype_copy(value: ZType, allocator: std.mem.Allocator) anyerror!ZType {
     switch (value) {
         .str => return .{ .str = try allocator.dupe(u8, value.str) },
@@ -114,6 +137,8 @@ pub fn ztype_copy(value: ZType, allocator: std.mem.Allocator) anyerror!ZType {
     }
 }
 
+/// Frees dynamically owned strings and nested containers in supported variants.
+/// The allocator must match the one used to create those allocations.
 pub fn ztype_free(value: *ZType, allocator: std.mem.Allocator) void {
     switch (value.*) {
         .str, .sstr => |str| allocator.free(str),

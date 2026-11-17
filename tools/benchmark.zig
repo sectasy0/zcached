@@ -1,22 +1,51 @@
+//! Runs concurrent Redis-like request workloads and reports throughput and batch latency.
+
 const std = @import("std");
 const consts = @import("consts.zig");
 
+/// Client counts exercised by default when the caller does not choose one.
 const client_counts = [_]usize{ 1, 2, 4, 8, 16 };
+/// Wire response expected for a successful SET operation.
 const set_response = "+OK\r\n\x03";
 
-const Mode = enum { ram, persistence };
-const Scenario = enum { get, set, mixed, persistence };
+/// Selects whether the benchmark targets an in-memory or persistence workload.
+const Mode = enum {
+    /// Runs GET, SET, and balanced mixed workloads against memory storage.
+    ram,
+    /// Runs persistence-specific traffic against the configured server.
+    persistence,
+};
+/// Selects the command mix sent by each client.
+const Scenario = enum {
+    /// Sends only GET requests after initializing each worker's key.
+    get,
+    /// Sends only SET requests.
+    set,
+    /// Alternates GET and SET requests, beginning with GET.
+    mixed,
+    /// Labels the persistence-mode workload in output.
+    persistence,
+};
 
+/// Validated workload settings, including connection and payload parameters.
 const Options = struct {
+    /// Server address used to open worker connections.
     host: []const u8 = consts.HOST,
+    /// TCP port to which each worker connects.
     port: u16 = consts.PORT,
+    /// Number of requests issued by each worker; must be even.
     requests: usize = 10000,
+    /// Requests grouped into one write/read batch; one records per-command latency.
     pipeline: usize = 1,
+    /// Number of bytes stored and fetched in each value.
     value_size: usize = 20,
+    /// Explicit number of simultaneous clients, or null to use the standard series.
     clients: ?usize = null,
+    /// Workload class; required on the command line.
     mode: Mode,
 };
 
+/// Parses paired command-line options and rejects missing, unknown, or out-of-range values.
 fn parseOptions(args: []const [:0]const u8) !Options {
     var options = Options{ .mode = undefined };
     var has_mode = false;
@@ -51,16 +80,20 @@ fn parseOptions(args: []const [:0]const u8) !Options {
     return options;
 }
 
+/// Reports whether request `index` is a read in the selected command mix.
 fn isGet(scenario: Scenario, index: usize) bool {
     return scenario == .get or (scenario == .mixed and index % 2 == 0);
 }
 
+/// Computes a nearest-rank percentile from ascending latency samples.
+/// The caller must provide a non-empty sorted slice and a percentile in 1...100.
 fn percentile(sorted: []const u64, percent: usize) u64 {
     // Nearest-rank percentile, with one-based ranks.
     const rank = (sorted.len * percent + 99) / 100;
     return sorted[rank - 1];
 }
 
+/// Writes one complete request, flushes it, then verifies its matching response.
 fn command(
     writer: *std.Io.net.Stream.Writer,
     reader: *std.Io.net.Stream.Reader,
@@ -72,6 +105,7 @@ fn command(
     try expectResponse(reader, expected);
 }
 
+/// Reads through the frame terminator and fails when the response differs.
 fn expectResponse(reader: *std.Io.net.Stream.Reader, expected: []const u8) !void {
     const response = try reader.interface.takeDelimiterInclusive(consts.EXT_CHAR);
     if (!std.mem.eql(u8, response, expected)) {
@@ -80,32 +114,52 @@ fn expectResponse(reader: *std.Io.net.Stream.Reader, expected: []const u8) !void
     }
 }
 
+/// Immutable workload data and synchronization shared by all client workers.
 const Shared = struct {
+    /// I/O interface used for socket operations and events.
     io: std.Io,
+    /// Resolved server endpoint used by every worker.
     address: std.Io.net.IpAddress,
+    /// Request pattern currently being measured.
     scenario: Scenario,
+    /// Number of workers participating in the run.
     count: usize,
+    /// Parsed configuration shared with each client.
     options: Options,
+    /// Deterministic payload written by SET requests.
     value: []const u8,
+    /// Expected framed response to GET requests.
     get_response: []const u8,
+    /// Counts workers that reached readiness, including workers that failed early.
     ready_count: std.atomic.Value(usize) = .init(0),
+    /// Opens once all workers have reached their start barrier.
     ready: std.Io.Event = .unset,
+    /// Releases the workers together so elapsed time covers the workload.
     start: std.Io.Event = .unset,
 };
 
+/// Owns one client connection and its latency samples for a scenario run.
 const Worker = struct {
+    /// Shared endpoint, workload, and barrier state.
     shared: *Shared,
+    /// Stable worker index used to create a private key.
     id: usize,
+    /// Per-command or per-pipeline-batch elapsed times in nanoseconds.
     samples: []u64,
+    /// Captures the worker's first execution error for the parent thread.
     result: ?anyerror = null,
+    /// Awake-clock timestamp taken after the worker finishes its requests.
     finished_ns: i96 = 0,
 
+    /// Thread entry point; stores execution errors instead of unwinding across threads.
     fn run(self: *Worker) void {
         self.execute() catch |err| {
             self.result = err;
         };
     }
 
+    /// Connects, primes its key, waits for the coordinated start, and records requests.
+    /// Socket, buffers, and pending I/O selection are released on completion or failure.
     fn execute(self: *Worker) !void {
         const shared = self.shared;
         var announced = false;
@@ -148,7 +202,13 @@ const Worker = struct {
                 .get_request = get_request,
                 .set_request = set_request,
             };
-            const Result = union(enum) { write: anyerror!void, read: anyerror!void };
+            // Carries completion or failure from each concurrently running pipeline side.
+            const Result = union(enum) {
+                // Result from writing and flushing the current request batches.
+                write: anyerror!void,
+                // Result from consuming and validating the corresponding responses.
+                read: anyerror!void,
+            };
             var results: [2]Result = undefined;
             var select = std.Io.Select(Result).init(shared.io, &results);
             defer select.cancelDiscard();
@@ -164,6 +224,7 @@ const Worker = struct {
         self.finished_ns = std.Io.Clock.awake.now(shared.io).nanoseconds;
     }
 
+    /// Adds this worker to the readiness barrier and opens it for the final participant.
     fn announceReady(self: *Worker) void {
         if (self.shared.ready_count.fetchAdd(1, .acq_rel) + 1 == self.shared.count) {
             self.shared.ready.set(self.shared.io);
@@ -171,16 +232,26 @@ const Worker = struct {
     }
 };
 
+/// Drives the write and read sides of one client's pipelined workload.
 const Pipeline = struct {
+    /// Client that owns the connection and sample storage.
     worker: *Worker,
+    /// Buffered socket writer shared by the write task.
     writer: *std.Io.net.Stream.Writer,
+    /// Buffered socket reader shared by the read task.
     reader: *std.Io.net.Stream.Reader,
+    /// Encoded GET command used for selected requests.
     get_request: []const u8,
+    /// Encoded SET command used for selected requests.
     set_request: []const u8,
+    /// Signals that a batch's timing window and response reads may begin.
     started: std.Io.Event = .unset,
+    /// Signals that the current batch has been consumed and the next may be sent.
     completed: std.Io.Event = .unset,
+    /// Awake-clock start timestamp for the current batch.
     before: i96 = 0,
 
+    /// Emits each bounded batch, measuring from before its first write.
     fn write(self: *Pipeline) !void {
         const shared = self.worker.shared;
         try shared.start.wait(shared.io);
@@ -199,6 +270,7 @@ const Pipeline = struct {
         }
     }
 
+    /// Consumes each batch's responses and stores whole-batch elapsed nanoseconds.
     fn read(self: *Pipeline) !void {
         const shared = self.worker.shared;
         var offset: usize = 0;
@@ -216,6 +288,8 @@ const Pipeline = struct {
     }
 };
 
+/// Runs one scenario across the requested client count and prints its measurements.
+/// Setup, arithmetic overflow, connection, protocol, and timing failures are returned.
 fn runScenario(io: std.Io, options: Options, scenario: Scenario, count: usize) !void {
     const allocator = std.heap.page_allocator;
     const total = try std.math.mul(usize, options.requests, count);
@@ -273,6 +347,7 @@ fn runScenario(io: std.Io, options: Options, scenario: Scenario, count: usize) !
     });
 }
 
+/// Parses arguments, selects scenarios, and prints the benchmark results table.
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(std.heap.page_allocator);
     defer std.heap.page_allocator.free(args);

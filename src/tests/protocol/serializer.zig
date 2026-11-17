@@ -13,6 +13,7 @@ const types = @import("../../protocol/types.zig");
 const helpers = @import("../helper.zig");
 const fixed_buffer_stream = @import("../../protocol/fixed_buffer_stream.zig");
 
+// Checks that a command array and its nested scalar arguments are parsed in order.
 test "ProtocolHandler handle simple command" {
     var stream = fixed_buffer_stream.fixedBufferStream("*3\r\n$3\r\nSET\r\n$9\r\nmycounter\r\n:42\r\n");
 
@@ -29,6 +30,7 @@ test "ProtocolHandler handle simple command" {
     try std.testing.expectEqual(42, result_array[2].int);
 }
 
+// Ensures an empty input reports end-of-stream rather than producing a value.
 test "ProtocolHandler handle empty bufferr" {
     var stream = std.io.fixedBufferStream("");
 
@@ -42,6 +44,7 @@ test "ProtocolHandler handle empty bufferr" {
     try std.testing.expectEqual(result, error.EndOfStream);
 }
 
+// Checks that a simple-string marker yields the expected string payload.
 test "ProtocolHandler handle simple string" {
     var stream = std.io.fixedBufferStream("+OK\r\n");
 
@@ -55,6 +58,7 @@ test "ProtocolHandler handle simple string" {
     try std.testing.expectEqualStrings("OK", result.sstr);
 }
 
+// Checks parsing a valid signed integer scalar.
 test "ProtocolHandler handle integer" {
     var stream = std.io.fixedBufferStream(":42\r\n");
 
@@ -68,6 +72,7 @@ test "ProtocolHandler handle integer" {
     try std.testing.expectEqual(types.ZType{ .int = 42 }, result);
 }
 
+// Ensures an empty integer payload is rejected as malformed input.
 test "ProtocolHandler handle integer without value" {
     var stream = std.io.fixedBufferStream(":\r\n");
 
@@ -81,6 +86,7 @@ test "ProtocolHandler handle integer without value" {
     try std.testing.expectEqual(result, error.Unprocessable);
 }
 
+// Ensures non-decimal integer payloads return a type error.
 test "ProtocolHandler handle integer with non-integer value" {
     var stream = std.io.fixedBufferStream(":kk\r\n");
 
@@ -94,6 +100,7 @@ test "ProtocolHandler handle integer with non-integer value" {
     try std.testing.expectEqual(result, error.InvalidType);
 }
 
+// Checks parsing a bulk string with a declared payload length.
 test "ProtocolHandler handle string" {
     var stream = std.io.fixedBufferStream("$9\r\nmycounter\r\n");
 
@@ -107,6 +114,7 @@ test "ProtocolHandler handle string" {
     try std.testing.expectEqualStrings("mycounter", result.str);
 }
 
+// Ensures a bulk string missing its payload terminator is rejected.
 test "ProtocolHandler handle string invalid length" {
     var stream = std.io.fixedBufferStream("$2\r\nmycounter");
 
@@ -120,6 +128,7 @@ test "ProtocolHandler handle string invalid length" {
     try std.testing.expectEqual(result, error.Unprocessable);
 }
 
+// Ensures a declared bulk string with no payload is rejected.
 test "ProtocolHandler handle string lenght passed but value not" {
     var stream = std.io.fixedBufferStream("$9\r\n");
 
@@ -133,6 +142,7 @@ test "ProtocolHandler handle string lenght passed but value not" {
     try std.testing.expectEqual(result, error.Unprocessable);
 }
 
+// Checks parsing the false boolean marker.
 test "ProtocolHandler handle boolean f value" {
     var stream = std.io.fixedBufferStream("#f\r\n");
 
@@ -146,6 +156,7 @@ test "ProtocolHandler handle boolean f value" {
     try std.testing.expectEqual(result, types.ZType{ .bool = false });
 }
 
+// Checks parsing the true boolean marker.
 test "ProtocolHandler handle boolean t value" {
     var stream = std.io.fixedBufferStream("#t\r\n");
 
@@ -159,6 +170,7 @@ test "ProtocolHandler handle boolean t value" {
     try std.testing.expectEqual(result, types.ZType{ .bool = true });
 }
 
+// Ensures an unrecognized boolean payload returns a type error.
 test "ProtocolHandler handle boolean invalid value" {
     var stream = std.io.fixedBufferStream("#a\r\n");
 
@@ -172,6 +184,7 @@ test "ProtocolHandler handle boolean invalid value" {
     try std.testing.expectEqual(result, error.InvalidType);
 }
 
+// Checks that the null marker produces the null variant.
 test "ProtocolHandler handle null" {
     var stream = std.io.fixedBufferStream("_\r\n");
 
@@ -185,6 +198,7 @@ test "ProtocolHandler handle null" {
     try std.testing.expectEqual(result, types.ZType{ .null = {} });
 }
 
+// Checks that a client error line is retained as an error message.
 test "ProtocolHandler handle error" {
     var stream = std.io.fixedBufferStream("-unknown command 'foobar'\r\n");
 
@@ -198,6 +212,7 @@ test "ProtocolHandler handle error" {
     try std.testing.expectEqualStrings("unknown command 'foobar'", result.err.message);
 }
 
+// Checks parsing a floating-point scalar from its protocol line.
 test "serialize float" {
     var stream = std.io.fixedBufferStream(",3.14\r\n");
 
@@ -211,6 +226,7 @@ test "serialize float" {
     try std.testing.expectEqual(types.ZType{ .float = 3.14 }, result);
 }
 
+// Ensures a payload exceeding the configured bulk limit is rejected.
 test "not serialize too large bulk" {
     serializer.MAX_BULK_LEN = 10;
     var stream = std.io.fixedBufferStream("$80\r\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
@@ -223,6 +239,7 @@ test "not serialize too large bulk" {
     try std.testing.expectEqual(handler.process(reader), error.PayloadExceeded);
 }
 
+// Exercises nested map parsing across null, array, boolean, integer, and float values.
 test "serialize map with various types" {
     serializer.MAX_BULK_LEN = 0;
     var stream = std.io.fixedBufferStream("*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n%6\r\n$6\r\npimpek\r\n_\r\n$2\r\nxd\r\n*3\r\n#t\r\n#f\r\n_\r\n$7\r\nsomeint\r\n:50\r\n$9\r\nsomefloat\r\n,55.55\r\n$15\r\nsomenegativeint\r\n:-120\r\n$17\r\nsomenegativefloat\r\n,-50.123\r\n");
@@ -257,6 +274,7 @@ test "serialize map with various types" {
     try helpers.expectEqualZTypes(.{ .map = hash }, result_array[2]);
 }
 
+// Exercises recursive array parsing with scalar, nested array, and map values.
 test "serialize array with various types" {
     serializer.MAX_BULK_LEN = 0;
     var stream = std.io.fixedBufferStream("*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n*9\r\n:124\r\n:-500\r\n,55.123\r\n,-23.2\r\n#t\r\n#f\r\n_\r\n*7\r\n:124\r\n:-500\r\n,55.123\r\n,-23.2\r\n#t\r\n#f\r\n_\r\n%8\r\n$15\r\nsomenegativeint\r\n:-500\r\n$9\r\nsomefalse\r\n#f\r\n$9\r\nsomefloat\r\n,55.123\r\n$9\r\nsomearray\r\n*7\r\n:124\r\n:-500\r\n,55.123\r\n,-23.2\r\n#t\r\n#f\r\n_\r\n$7\r\nsomeint\r\n:124\r\n$17\r\nsomenegativefloat\r\n,-23.2\r\n$8\r\nsomenull\r\n_\r\n$8\r\nsometrue\r\n#t\r\n");

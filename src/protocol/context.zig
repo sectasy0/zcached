@@ -1,9 +1,19 @@
+//! Hashing and equality policies for protocol values stored in sets.
+
 const std = @import("std");
 const activeTag = std.meta.activeTag;
 
 const ZType = @import("types.zig").ZType;
 
-const ContextType = enum { ordered, unordered };
+/// Selects whether set operations preserve insertion order.
+const ContextType = enum {
+    /// Use a context suitable for insertion-ordered sets.
+    ordered,
+    /// Use a context suitable for hash sets with arbitrary iteration order.
+    unordered,
+};
+
+/// Returns the hash-map context matching the requested set ordering policy.
 pub fn ZTypeContext(comptime ctype: anytype) type {
     switch (ctype) {
         .ordered => return ArrayContext,
@@ -12,28 +22,35 @@ pub fn ZTypeContext(comptime ctype: anytype) type {
     }
 }
 
+/// Uses recursive content hashing for unordered protocol-value collections.
 const Context = struct {
+    /// Hashes a protocol value for use as a hash-map key.
     pub fn hash(ctx: Context, key: ZType) u64 {
         return ztypeHash(ctx, key);
     }
 
+    /// Compares protocol values by their contents rather than their storage identity.
     pub fn eql(ctx: Context, a: ZType, b: ZType) bool {
         _ = ctx;
         return ztypeEql(a, b);
     }
 };
 
+/// Adapts the recursive content policy to the ordered map's hash interface.
 const ArrayContext = struct {
+    /// Produces the truncated hash required by the ordered map implementation.
     pub fn hash(ctx: ArrayContext, key: ZType) u32 {
         return @truncate(ztypeHash(ctx, key));
     }
 
+    /// Compares values by content; the map's requested key length is unused.
     pub fn eql(ctx: ArrayContext, a: ZType, b: ZType, _: usize) bool {
         _ = ctx;
         return ztypeEql(a, b);
     }
 };
 
+/// Computes a recursive hash while using the selected context for nested values.
 fn ztypeHash(ctx: anytype, key: ZType) u64 {
     var hasher: std.hash.Wyhash = .init(0);
 
@@ -74,6 +91,7 @@ fn ztypeHash(ctx: anytype, key: ZType) u64 {
     return hasher.final();
 }
 
+/// Tests whether two tagged values have equal contents.
 fn ztypeEql(a: ZType, b: ZType) bool {
     if (activeTag(a) != activeTag(b)) return false;
 

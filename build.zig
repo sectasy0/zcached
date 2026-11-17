@@ -1,3 +1,5 @@
+//! Defines executable, test, install, benchmark, and profiling steps for zcached.
+
 const std = @import("std");
 
 comptime {
@@ -6,6 +8,9 @@ comptime {
     }
 }
 
+/// Configures all build targets and exposes the project's run and test steps.
+/// Target and optimization settings are shared where appropriate; TLS variants
+/// are installed only when `-Dtls-enabled` is selected.
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -149,6 +154,23 @@ pub fn build(b: *std.Build) void {
     run_benchmark.addPassthruArgs();
     b.step("benchmark", "Run the benchmark").dependOn(&run_benchmark.step);
 
+    const profile = b.addExecutable(.{
+        .name = "profile",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/profile.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    const run_profile = b.addRunArtifact(profile);
+    run_profile.addArg("--server");
+    run_profile.addArtifactArg(exe);
+    run_profile.addArg("--benchmark");
+    run_profile.addArtifactArg(benchmark);
+    run_profile.addPassthruArgs();
+    b.step("profile", "Benchmark an isolated server with macOS Time Profiler").dependOn(&run_profile.step);
+
     const install_exe = b.addInstallArtifact(exe, .{});
     const install_exe_tls = b.addInstallArtifact(exe_tls, .{});
     const e2e_step = b.step("e2e", "Run e2e tests");
@@ -170,9 +192,15 @@ pub fn build(b: *std.Build) void {
     run_benchmark_tests.addArtifactArg(benchmark_tests);
     run_benchmark_tests.addPassthruArgs();
     run_benchmark_tests.stdio = .inherit;
+    const profile_tests = b.addTest(.{ .root_module = profile.root_module });
+    const run_profile_tests = std.Build.Step.Run.create(b, "run profile-tests");
+    run_profile_tests.addArtifactArg(profile_tests);
+    run_profile_tests.addPassthruArgs();
+    run_profile_tests.stdio = .inherit;
     const test_step = b.step("test", "Run unit, native I/O, and benchmark tests");
     test_step.dependOn(&run_unit_tests.step);
     test_step.dependOn(&run_io_tests.step);
     test_step.dependOn(&run_benchmark_tests.step);
+    test_step.dependOn(&run_profile_tests.step);
     b.step("test-io", "Run native I/O backend tests").dependOn(&run_io_tests.step);
 }

@@ -1,3 +1,4 @@
+//! Supervises worker threads and serves framed client requests over TCP.
 const std = @import("std");
 const runtime_io = @import("runtime_io");
 const build_options = @import("build_options");
@@ -7,12 +8,17 @@ const StreamServer = @import("stream_server.zig");
 const Context = @import("../context.zig");
 const Processor = @import("../processing/requests.zig").Processor;
 
+/// Current server type, used by lifecycle and worker methods.
 const Server = @This();
 
+/// Listening transport, including its listener and optional TLS context.
 transport: StreamServer,
+/// Shared application configuration, resources, and shutdown state.
 context: Context,
+/// Allocator used for workers, connections, and request processors.
 allocator: std.mem.Allocator,
 
+/// Validates worker limits and initializes the TCP/TLS transport.
 pub fn init(allocator: std.mem.Allocator, io: std.Io, context: Context) !Server {
     if (context.config.workers == 0 or context.config.max_clients == 0) return error.InvalidWorkerConfig;
 
@@ -30,6 +36,7 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io, context: Context) !Server 
     };
 }
 
+/// Starts the listener and worker runtimes, then joins started workers on shutdown.
 pub fn run(self: *Server, io: std.Io) void {
     self.context.resources.logger.info("# starting zcached server on tcp://{any} | Workers {}", .{
         self.context.config.address,
@@ -74,6 +81,7 @@ pub fn run(self: *Server, io: std.Io) void {
     }
 }
 
+/// Runs the per-worker accept task and supervises it until shutdown.
 fn runWorker(io: std.Io, self: *Server) void {
     var listener: std.Io.Group = .init;
     defer listener.cancel(io);
@@ -91,6 +99,7 @@ fn runWorker(io: std.Io, self: *Server) void {
     }
 }
 
+/// Accepts clients concurrently while limiting active connections with a semaphore.
 pub fn acceptConnections(self: *Server, io: std.Io) std.Io.Cancelable!void {
     var slots: std.Io.Semaphore = .{ .permits = self.context.config.max_clients };
     var connections: std.Io.Group = .init;
@@ -117,6 +126,7 @@ pub fn acceptConnections(self: *Server, io: std.Io) std.Io.Cancelable!void {
     }
 }
 
+/// Applies access and TLS checks, then processes framed requests until the client closes.
 fn serve(self: *Server, io: std.Io, incoming: StreamServer.Connection, slots: *std.Io.Semaphore) std.Io.Cancelable!void {
     defer slots.post(io);
     var accepted = incoming;
@@ -165,6 +175,7 @@ fn serve(self: *Server, io: std.Io, incoming: StreamServer.Connection, slots: *s
     }
 }
 
+/// Closes the listener and releases any transport-owned TLS context.
 pub fn deinit(self: *Server) void {
     self.transport.deinit();
 }

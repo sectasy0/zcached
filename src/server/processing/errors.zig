@@ -1,14 +1,21 @@
+//! Converts command-processing errors into the server's wire-format error replies.
+//! Diagnostic arguments borrow slices from the decoded request only for the duration of handling.
+
 const std = @import("std");
 const Logger = @import("../logger.zig");
 const consts = @import("../network/consts.zig");
 
 const ZType = @import("../../protocol/types.zig").ZType;
 
+/// Optional command and key context used to make selected error replies more specific.
 pub const Args = struct {
+    /// Borrowed command name, absent when the request has no string command token.
     command: ?[]const u8 = null,
+    /// Borrowed first argument when it is a string, typically the relevant key.
     key: ?[]const u8 = null,
 };
 
+/// Extracts string command/key context without allocating or taking ownership.
 pub fn buildArgs(command_set: *const std.array_list.Managed(ZType)) Args {
     var args: Args = Args{};
 
@@ -20,6 +27,7 @@ pub fn buildArgs(command_set: *const std.array_list.Managed(ZType)) Args {
     return args;
 }
 
+/// Logs `err`, writes its protocol error body and terminator to `out`, and propagates I/O failures.
 pub fn handle(out: anytype, err: anyerror, args: Args, logger: *Logger) !void {
     logger.debug("handling error: {}", .{err});
 
@@ -41,6 +49,7 @@ pub fn handle(out: anytype, err: anyerror, args: Args, logger: *Logger) !void {
     try out.writeByte(consts.EXT_CHAR);
 }
 
+/// Writes an unknown-command reply, including the command name when available.
 fn handleUnknownCommand(out: anytype, args: Args) !void {
     if (args.command) |command| {
         try out.print("-ERR unknown command '{s}'\r\n", .{command});
@@ -49,6 +58,7 @@ fn handleUnknownCommand(out: anytype, args: Args) !void {
     }
 }
 
+/// Writes a not-found reply, including the key when available.
 fn handleNotFound(out: anytype, args: Args) !void {
     if (args.key) |key| {
         try out.print("-ERR '{s}' not found\r\n", .{key});

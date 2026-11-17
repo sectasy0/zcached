@@ -13,6 +13,7 @@ const BUFF_SIZE: u8 = 150;
 
 const errors = @import("../../server/processing/errors.zig");
 
+// Checks the unprocessable error reply and protocol terminator.
 test "Unprocessable" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
@@ -26,6 +27,7 @@ test "Unprocessable" {
     try std.testing.expectEqualStrings("-ERR unprocessable\r\n\x03", stream.getWritten());
 }
 
+// Checks an unknown-command reply when command context is absent.
 test "UnknownCommand" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
@@ -42,6 +44,7 @@ test "UnknownCommand" {
     try std.testing.expectEqualStrings("-ERR unknown command\r\n\x03", stream.getWritten());
 }
 
+// Checks the unknown-command reply includes the supplied command name.
 test "UnknownCommand with command name" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
@@ -66,6 +69,7 @@ test "UnknownCommand with command name" {
     );
 }
 
+// Checks unmapped errors use the generic error reply.
 test "unexpected error" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
@@ -78,6 +82,7 @@ test "unexpected error" {
     try std.testing.expectEqualStrings("-ERR unexpected\r\n\x03", stream.getWritten());
 }
 
+// Checks the client-limit error maps to its expected reply.
 test "max clients reached" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
@@ -90,6 +95,7 @@ test "max clients reached" {
     try std.testing.expectEqualStrings("-ERR max number of clients reached\r\n\x03", stream.getWritten());
 }
 
+// Checks a not-found reply includes the supplied key.
 test "NotFound with key name" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
@@ -115,6 +121,7 @@ test "NotFound with key name" {
     );
 }
 
+// Checks the destination-exists error maps to its expected reply.
 test "BusyKey" {
     var buffer: [BUFF_SIZE]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);

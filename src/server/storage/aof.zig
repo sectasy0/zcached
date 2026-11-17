@@ -1,3 +1,6 @@
+//! Implements the append-only journal used to record and replay successful mutations.
+//! Buffered writes are serialized under `mutex`; rewrite snapshots compact the journal.
+
 const std = @import("std");
 const sync = @import("sync");
 const fs = @import("fs");
@@ -15,6 +18,7 @@ const builtin = @import("builtin");
 const protocol_handler = @import("../../protocol/handler.zig");
 const Deserializer = @import("../../protocol/deserializer.zig").Deserializer;
 const Commands = @import("../processing/commands.zig");
+/// Alias for this module's journal handler.
 const Self = @This();
 
 /// Path to the AOF (Append Only File).
@@ -45,13 +49,19 @@ const REWRITE_BUFFER_MAX_SIZE = 262144; // 256 KiB
 /// only applicable for `.auto` strategy.
 const AUTO_FLUSH_THRESHOLD = 4096; // 4 KiB
 
+/// Configurable policy controlling when buffered journal entries reach disk.
 pub const Strategy = Config.AOFConfig.FlushStrategy;
 const fixed_buffer_stream = @import("../../protocol/fixed_buffer_stream.zig");
+/// Protocol handler specialized for reading journal records from a fixed buffer.
 const Protocol = protocol_handler.ProtocolHandlerT(fixed_buffer_stream.FixedBufferStream.Reader);
 
+/// Open journal file; ownership is held until `deinit`.
 journal: fs.File,
+/// Path of the journal file; borrowed from configuration or the static default.
 path: []const u8,
+/// Serializes mutations to the write buffers and journal.
 mutex: sync.Mutex = .{},
+/// Scheduled periodic flush task for the `.everysec` strategy.
 flush_task: ?Agent.ScheduledTask = null,
 /// Normal buffer for new writes.
 buffer: std.array_list.Managed(u8),
@@ -60,22 +70,31 @@ buffer: std.array_list.Managed(u8),
 rewrite_buffer: std.array_list.Managed(u8),
 /// Flag indicating if rewrite is active, if set flushes are disabled.
 rewrite_in_progress: std.atomic.Value(bool) = .init(false),
+/// Size of the last successfully installed rewrite, used for rewrite-growth checks.
 last_rewrite_size: std.atomic.Value(usize) = .init(0),
+/// Prevents overlapping rewrite operations.
 rewrite_mutex: sync.Mutex = .{},
+/// Thread performing a rewrite, joined before the handler is destroyed.
 rewrite_thread: ?std.Thread = null,
-// Queue for snapshot the data before rewrite.
+/// Concurrently appended commands queued for merging into the rewrite snapshot.
 queue: Queue,
 
+/// Approximate journal byte count used to decide when compaction is needed.
 size: std.atomic.Value(usize) = .init(0),
 
+/// Test-only synchronization hook used to pause a rewrite deterministically.
 test_event: ?sync.Event = null,
 
+/// Flush policy captured from configuration at initialization.
 strategy: Strategy,
 /// Execution context or environment.
 context: Context,
 
+/// Allocator for buffers, protocol state, queued records, and temporary paths.
 allocator: std.mem.Allocator,
 
+/// Opens or creates the configured journal, positions it at EOF, and initializes buffers.
+/// Returned state owns the file and allocated buffers; errors propagate from filesystem/allocation.
 pub fn init(allocator: std.mem.Allocator, context: Context) !Self {
     const path = context.config.aof.path orelse AOF_PATH;
     @import("../utils.zig").createPath(path);
@@ -111,6 +130,8 @@ pub fn init(allocator: std.mem.Allocator, context: Context) !Self {
     return aof;
 }
 
+/// Adds raw command bytes to the journal buffer, appending the record terminator if needed.
+/// Empty commands and the disabled strategy are ignored; allocation and flush errors propagate.
 pub fn append(self: *Self, command: []const u8) !void {
     if (command.len == 0 or self.strategy == .no) return;
 
@@ -126,6 +147,7 @@ pub fn append(self: *Self, command: []const u8) !void {
     try self.finishAppendLocked(self.buffer.items.len - offset);
 }
 
+/// Updates size accounting and applies the configured flush/rewrite policy while locked.
 fn finishAppendLocked(self: *Self, appended_size: usize) !void {
     _ = self.size.fetchAdd(appended_size, .seq_cst);
 
@@ -169,6 +191,8 @@ fn finishAppendLocked(self: *Self, appended_size: usize) !void {
     }
 }
 
+/// Encodes protocol values as one terminated command and appends them to the journal.
+/// Serialization errors leave the buffer unchanged; disabled journaling is a no-op.
 pub fn appendCommand(self: *Self, command_items: []const types.ZType) !void {
     if (command_items.len == 0 or self.strategy == .no) return;
     self.mutex.lock();
@@ -185,17 +209,21 @@ pub fn appendCommand(self: *Self, command_items: []const types.ZType) !void {
     try self.finishAppendLocked(self.buffer.items.len - offset);
 }
 
+/// Schedules the recurring flush task once, and only for the `.everysec` strategy.
 pub fn start(self: *Self) !void {
     if (self.strategy != .everysec or self.flush_task != null) return;
     self.flush_task = try self.context.resources.agent.scheduleCancelable(flushQueued, .{self}, 1);
 }
 
+/// Scheduled callback that flushes pending bytes and logs failures.
 fn flushQueued(self: *Self) void {
     self.flush() catch |err| {
         self.context.resources.logger.err("# failed to flush AOF file: {any}", .{err});
     };
 }
 
+/// Replays terminated journal records into memory without recursively journaling them.
+/// Malformed records are skipped; file, allocation, and protocol initialization failures propagate.
 pub fn replay(self: *Self) !void {
     if (self.strategy == .no) return;
 
@@ -266,6 +294,8 @@ pub fn replay(self: *Self) !void {
     );
 }
 
+/// Replaces the journal with a compact snapshot plus queued writes made during the rewrite.
+/// Rewrite failures are logged and may leave the current journal unmodified or the rewrite incomplete.
 pub fn rewrite(self: *Self) void {
     self.rewrite_in_progress.store(true, .seq_cst);
     self.mutex.lock();
@@ -440,6 +470,8 @@ pub fn rewrite(self: *Self) void {
     self.buffer.clearRetainingCapacity();
 }
 
+/// Writes a command into bounded buffer chunks, ensuring the final record has a terminator.
+/// Returns the remaining buffer position (zero after successful chunk writes).
 fn writeInChunks(self: *Self, command: []u8, available: usize, start_pos: usize) !usize {
     const chunks = try std.math.divCeil(usize, command.len, available);
 
@@ -469,6 +501,8 @@ fn writeInChunks(self: *Self, command: []u8, available: usize, start_pos: usize)
     return position;
 }
 
+/// Flushes pending bytes while holding the journal mutex.
+/// File seek/write failures propagate and pending bytes are retained until a successful write.
 pub fn flush(self: *Self) !void {
     self.mutex.lock();
     defer self.mutex.unlock();
@@ -476,6 +510,7 @@ pub fn flush(self: *Self) !void {
     try self.flushLocked();
 }
 
+/// Writes buffered bytes to disk; caller must hold `mutex`.
 fn flushLocked(self: *Self) !void {
     if (self.buffer.items.len == 0) return;
 
@@ -498,6 +533,7 @@ fn flushLocked(self: *Self) !void {
     }
 }
 
+/// Determines whether accumulated journal growth meets the configured rewrite threshold.
 fn rewriteNeeded(self: *Self) bool {
     const current_size = self.size.load(.seq_cst);
     const last_size = self.last_rewrite_size.load(.seq_cst);
@@ -552,6 +588,7 @@ fn rewriteNeeded(self: *Self) bool {
     return false;
 }
 
+/// Cancels scheduled work, joins an active rewrite, flushes pending bytes, and releases resources.
 pub fn deinit(self: *Self) void {
     if (self.flush_task) |*task| {
         task.deinit();
@@ -571,10 +608,14 @@ pub fn deinit(self: *Self) void {
     self.journal.close();
 }
 
+/// Thread-safe byte queue used to carry mutations across an AOF rewrite.
 const Queue = struct {
+    /// Allocator-backed concatenation of queued, already-terminated command records.
     items: std.array_list.Managed(u8),
+    /// Protects all access to `items`.
     lock: sync.Mutex,
 
+    /// Creates an empty queue using the supplied allocator.
     pub fn init(allocator: std.mem.Allocator) !Queue {
         return .{
             .items = std.array_list.Managed(u8).init(allocator),
@@ -582,12 +623,15 @@ const Queue = struct {
         };
     }
 
+    /// Copies command bytes into the queue while holding its lock.
     pub fn enqueue(self: *Queue, cmd: []u8) !void {
         self.lock.lock();
         defer self.lock.unlock();
         try self.items.appendSlice(cmd);
     }
 
+    /// Returns the current backing slice and clears the queue while locked.
+    /// The slice remains backed by the queue and is valid only until subsequent queue mutation.
     pub fn dequeueAll(self: *Queue) []u8 {
         self.lock.lock();
         defer self.lock.unlock();
@@ -596,6 +640,7 @@ const Queue = struct {
         return slice;
     }
 
+    /// Releases the queue's allocated storage.
     pub fn deinit(self: *Queue) void {
         self.items.deinit();
     }

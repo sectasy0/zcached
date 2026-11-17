@@ -1,3 +1,6 @@
+//! Saves and restores the in-memory database using timestamped `.zcpf` snapshot files.
+//! Snapshot values use the protocol encoding after a count-bearing file header.
+
 const std = @import("std");
 const fs = @import("fs");
 const runtime_io = @import("runtime_io");
@@ -10,26 +13,43 @@ const types = @import("../../protocol/types.zig");
 const Serializer = @import("../../protocol/deserializer.zig").Deserializer;
 const DeserializerT = @import("../../protocol/serializer.zig").SerializerT;
 const fixed_buffer_stream = @import("../../protocol/fixed_buffer_stream.zig");
+/// Protocol decoder specialized for reading a snapshot from a fixed-buffer reader.
 const Deserializer = DeserializerT(fixed_buffer_stream.FixedBufferStream.Reader);
 
 const utils = @import("../utils.zig");
 const Logger = @import("../logger.zig");
 
+/// Directory used when no snapshot directory is configured.
 const DEFAULT_PATH: []const u8 = "./persist/";
 
-const FileEntry = struct { name: []const u8, ctime: i128, size: usize };
+/// Metadata for a candidate snapshot file; `name` is owned by the discovering allocator.
+const FileEntry = struct {
+    /// Allocated basename of the snapshot file; caller frees the selected entry's name.
+    name: []const u8,
+    /// Creation time in nanoseconds, used to select the newest snapshot.
+    ctime: i128,
+    /// Snapshot size in bytes, used for the read buffer.
+    size: usize,
+};
 
+/// Snapshot writer and reader bound to a configuration, logger, and storage allocator.
 pub const Handler = @This();
 
+/// Allocator for serializer state, temporary buffers, and snapshot paths.
 allocator: std.mem.Allocator,
 
+/// Decoder retained for the duration of this handler and released by `deinit`.
 deserializer: Deserializer,
 
+/// Server configuration associated with this persistence handler.
 config: Config,
+/// Logger used for filesystem errors that are handled locally.
 logger: *Logger,
 
+/// Configured snapshot directory; initialized to `DEFAULT_PATH` when omitted.
 path: ?[]const u8,
 
+/// Initializes protocol decoding state and selects the configured or default directory.
 pub fn init(
     allocator: std.mem.Allocator,
     config: Config,
@@ -49,10 +69,13 @@ pub fn init(
     return persister;
 }
 
+/// Releases the decoder's allocated resources.
 pub fn deinit(self: *Handler) void {
     self.deserializer.deinit();
 }
 
+/// Writes a snapshot of all memory entries and returns its byte length.
+/// The returned count is zero when file creation fails; other serialization and I/O errors propagate.
 pub fn save(self: *Handler, memory: *Memory) !usize {
     var serializer = Serializer.init(self.allocator);
     defer serializer.deinit();
@@ -107,7 +130,8 @@ pub fn save(self: *Handler, memory: *Memory) !usize {
     return payload.len;
 }
 
-// have to load latest file from `self.path`
+/// Loads the newest validly named snapshot from the configured directory into memory.
+/// Returns `InvalidFile` for absent or malformed data; filesystem and storage errors may propagate.
 pub fn load(self: *Handler, memory: *Memory) !void {
     var dir = try fs.cwd().openDir(self.path.?, .{
         .follow_symlinks = false,
@@ -181,6 +205,8 @@ pub fn load(self: *Handler, memory: *Memory) !void {
     }
 }
 
+/// Finds the newest regular `.zcpf` file in `dir`, returning owned filename metadata if found.
+/// The caller owns and must free the returned entry's `name`.
 fn getLatestFile(self: *Handler, dir: fs.Dir) !?FileEntry {
     var latest: ?FileEntry = null;
 

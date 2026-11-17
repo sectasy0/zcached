@@ -8,22 +8,42 @@ const builtin = @import("builtin");
 const linux = std.os.linux;
 const Reactor = @This();
 
+/// Read or write readiness requested for a descriptor.
 pub const Interest = enum { read, write };
-pub const Key = struct { fd: std.posix.fd_t, interest: Interest };
+/// Identifies one descriptor's readiness direction in this reactor.
+pub const Key = struct {
+    /// Descriptor watched; the reactor borrows it and never closes it.
+    fd: std.posix.fd_t,
+    /// Read or write readiness requested for `fd`.
+    interest: Interest,
+};
 
-const Watch = struct { id: u64, ready: bool = false };
+/// Current one-shot registration and its completion state.
+const Watch = struct {
+    /// Monotonic token used to reject stale native completions.
+    id: u64,
+    /// Set once readiness arrives, retained until emitted by `wait`.
+    ready: bool = false,
+};
+/// Platform-specific event queue, selected at compile time for supported OSes.
 const Native = switch (builtin.os.tag) {
     .macos => std.posix.fd_t,
     .linux => linux.IoUring,
     else => @compileError("The native reactor supports macOS and Linux only"),
 };
 
+/// Allocator used for watch and generation maps for this reactor's lifetime.
 allocator: std.mem.Allocator,
+/// Native kqueue or io_uring handle owned by this reactor.
 native: Native,
+/// Active descriptor interests, including ready events not yet returned.
 watches: std.AutoHashMapUnmanaged(Key, Watch) = .empty,
+/// Maps live native tokens back to watches; stale tokens are ignored safely.
 generations: std.AutoHashMapUnmanaged(u64, Key) = .empty,
+/// Next unique token; exhaustion is reported rather than reusing a generation.
 next_id: u64 = 1,
 
+/// Creates the native event queue, failing when required OS capabilities are absent.
 pub fn init(allocator: std.mem.Allocator) !Reactor {
     const native = if (builtin.os.tag == .macos) blk: {
         while (true) {
@@ -47,6 +67,7 @@ pub fn init(allocator: std.mem.Allocator) !Reactor {
     return .{ .allocator = allocator, .native = native };
 }
 
+/// Closes the native queue and frees internal maps; all registrations are discarded.
 pub fn deinit(self: *Reactor) void {
     if (builtin.os.tag == .macos) {
         const rc = std.c.close(self.native);
@@ -60,6 +81,8 @@ pub fn deinit(self: *Reactor) void {
     self.* = undefined;
 }
 
+/// Registers `key` once; repeated registration is a no-op. The descriptor stays
+/// caller-owned, and invalid descriptors or exhausted generations are errors.
 pub fn arm(self: *Reactor, key: Key) !void {
     if (self.watches.contains(key)) return;
     if (key.fd < 0) return error.FileDescriptorInvalid;
@@ -87,6 +110,7 @@ pub fn arm(self: *Reactor, key: Key) !void {
     self.generations.putAssumeCapacity(id, key);
 }
 
+/// Cancels a registration if present. An already-ready event is simply removed.
 pub fn disarm(self: *Reactor, key: Key) !void {
     const watch = self.watches.get(key) orelse return;
     if (builtin.os.tag == .macos) {
@@ -110,8 +134,10 @@ pub fn disarm(self: *Reactor, key: Key) !void {
     _ = self.generations.remove(watch.id);
 }
 
-/// A zero timeout is nonblocking; null waits indefinitely. Empty output is an
-/// immediate no-op. Readiness, including EOF/ERR, is removed only when emitted.
+/// Waits for up to the supplied capacity of one-shot events.
+/// A zero timeout polls, `null` waits indefinitely, and empty output returns
+/// immediately. Events, including EOF/ERR, are consumed only when emitted;
+/// native failures are returned and still-registered watches remain active.
 pub fn wait(self: *Reactor, events: []Key, timeout_ns: ?u64) !usize {
     if (events.len == 0) return 0;
     const deadline: ?u64 = if (timeout_ns) |ns| (try monotonic()) +| ns else null;
@@ -129,6 +155,7 @@ pub fn wait(self: *Reactor, events: []Key, timeout_ns: ?u64) !usize {
     }
 }
 
+/// Copies ready keys into caller storage and consumes exactly those registrations.
 fn emit(self: *Reactor, events: []Key) usize {
     var count: usize = 0;
     var it = self.watches.iterator();
@@ -146,6 +173,7 @@ fn emit(self: *Reactor, events: []Key) usize {
     return count;
 }
 
+/// Applies a single kqueue change, retrying interrupted syscalls.
 fn change(self: *Reactor, key: Key, id: u64, flags: u16) !void {
     const changes = [1]std.c.Kevent{.{
         .ident = @intCast(key.fd),
@@ -165,6 +193,7 @@ fn change(self: *Reactor, key: Key, id: u64, flags: u16) !void {
     }
 }
 
+/// Waits on kqueue until an event or deadline, discarding stale tokens.
 fn waitKqueue(self: *Reactor, events: []Key, deadline: ?u64) !usize {
     var native_events: [128]std.c.Kevent = undefined;
     const changes: [0]std.c.Kevent = .{};
@@ -196,6 +225,7 @@ fn waitKqueue(self: *Reactor, events: []Key, deadline: ?u64) !usize {
     }
 }
 
+/// Submits queued io_uring operations and drains completions under CQ pressure.
 fn flush(self: *Reactor) !void {
     _ = self.native.flush_sq();
     while (self.native.sq_ready() != 0) {
@@ -211,6 +241,7 @@ fn flush(self: *Reactor) !void {
     }
 }
 
+/// Copies available io_uring completions and updates corresponding watches.
 fn drain(self: *Reactor) !usize {
     var cqes: [128]linux.io_uring_cqe = undefined;
     var total: usize = 0;
@@ -225,6 +256,7 @@ fn drain(self: *Reactor) !usize {
     }
 }
 
+/// Marks a live watch ready or classifies a cancellation/stale completion.
 fn complete(self: *Reactor, cqe: linux.io_uring_cqe) !void {
     if (cqe.user_data == 0) {
         // A poll may win its race with cancellation (ENOENT/EALREADY).
@@ -247,6 +279,7 @@ fn complete(self: *Reactor, cqe: linux.io_uring_cqe) !void {
     _ = self.generations.remove(cqe.user_data);
 }
 
+/// Enters io_uring's wait syscall for completions, bounded by an optional duration.
 fn enterWait(self: *Reactor, remaining: ?u64) !void {
     var ts: linux.kernel_timespec = undefined;
     var arg: linux.io_uring_getevents_arg = .{ .sigmask = 0, .sigmask_sz = 0, .pad = 0, .ts = 0 };
@@ -263,6 +296,7 @@ fn enterWait(self: *Reactor, remaining: ?u64) !void {
     }
 }
 
+/// Returns monotonic nanoseconds, retrying interrupted macOS clock queries.
 fn monotonic() !u64 {
     var ts: std.c.timespec = undefined;
     if (builtin.os.tag == .linux) {
@@ -280,6 +314,7 @@ fn monotonic() !u64 {
     return @as(u64, @intCast(ts.sec)) * std.time.ns_per_s + @as(u64, @intCast(ts.nsec));
 }
 
+/// Converts common native errors into stable reactor errors.
 fn nativeError(err: std.posix.E) anyerror {
     return switch (err) {
         .BADF => error.FileDescriptorInvalid,
@@ -297,6 +332,7 @@ fn nativeError(err: std.posix.E) anyerror {
     };
 }
 
+/// Creates a pipe for reactor tests, returning native errors as Zig errors.
 fn testPipe() ![2]std.posix.fd_t {
     var fds: [2]std.posix.fd_t = undefined;
     if (std.c.pipe(&fds) != 0) return nativeError(std.posix.errno(-1));

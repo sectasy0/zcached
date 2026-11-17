@@ -472,12 +472,6 @@ fn copy(socket: anytype) !void {
     );
 }
 
-/// Tests additional types like float, boolean, null, array, and map.
-/// This function sends commands to the server and expects specific responses.
-/// It includes tests for setting and getting these types, as well as checking their sizes.
-/// It also tests the deletion of these types and ensures that the server responds correctly.
-/// The function uses the `sendAndExpect` utility to send commands and check responses.
-/// It is designed to be run as part of the server's end-to-end tests.
 fn testAdditionalTypes(socket: anytype) !void {
     // Float test
     try sendAndExpect(

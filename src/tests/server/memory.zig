@@ -170,6 +170,48 @@ test "memory should not grow if key overriden with put" {
     try std.testing.expectEqual(before_put, tracking.real_size);
 }
 
+test "same-length string overwrite reuses stored allocation" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    fixture.config.max_memory = std.math.maxInt(usize);
+    try fixture.create_memory();
+
+    try fixture.memory.?.put("key", .{ .str = "old" });
+    const tracking = utils.ptrCast(
+        TracingAllocator,
+        fixture.memory.?.allocator.ptr,
+    );
+    const allocs_before = tracking.count_allocs;
+    const frees_before = tracking.count_frees;
+
+    try fixture.memory.?.put("key", .{ .str = "new" });
+
+    try std.testing.expectEqual(allocs_before, tracking.count_allocs);
+    try std.testing.expectEqual(frees_before, tracking.count_frees);
+    try std.testing.expectEqualStrings("new", (try fixture.memory.?.get("key")).str);
+}
+
+test "same-length simple string overwrite reuses stored allocation" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    fixture.config.max_memory = std.math.maxInt(usize);
+    try fixture.create_memory();
+
+    try fixture.memory.?.put("key", .{ .sstr = "old" });
+    const tracking = utils.ptrCast(
+        TracingAllocator,
+        fixture.memory.?.allocator.ptr,
+    );
+    const allocs_before = tracking.count_allocs;
+    const frees_before = tracking.count_frees;
+
+    try fixture.memory.?.put("key", .{ .sstr = "new" });
+
+    try std.testing.expectEqual(allocs_before, tracking.count_allocs);
+    try std.testing.expectEqual(frees_before, tracking.count_frees);
+    try std.testing.expectEqualStrings("new", (try fixture.memory.?.get("key")).sstr);
+}
+
 test "unlimited storage bypasses allocation tracking" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();

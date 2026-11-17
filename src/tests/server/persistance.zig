@@ -4,6 +4,7 @@ const fs = @import("fs");
 const fixtures = @import("../fixtures.zig");
 const ContextFixture = fixtures.ContextFixture;
 
+// Verifies a valid snapshot restores all encoded entries.
 test "should load" {
     fs.cwd().makePath("./tmp/persist-load") catch {};
 
@@ -27,6 +28,7 @@ test "should load" {
     fs.cwd().deleteDir("./tmp/persist-load") catch {};
 }
 
+// Checks snapshot loading rejects a missing file signature.
 test "should not load without header" {
     fs.cwd().makePath("./tmp/persist-no-header") catch {};
 
@@ -50,6 +52,7 @@ test "should not load without header" {
     fs.cwd().deleteDir("./tmp/persist-no-header") catch {};
 }
 
+// Checks files without the snapshot extension are not accepted.
 test "should not load invalid ext" {
     fs.cwd().makePath("./tmp/persist-invalid-ext") catch {};
 
@@ -73,6 +76,7 @@ test "should not load invalid ext" {
     fs.cwd().deleteDir("./tmp/persist-invalid-ext") catch {};
 }
 
+// Checks malformed snapshot contents return InvalidFile.
 test "should not load corrupted file" {
     fs.cwd().makePath("./tmp/persist-corrupted") catch {};
 
@@ -96,6 +100,7 @@ test "should not load corrupted file" {
     fs.cwd().deleteDir("./tmp/persist-corrupted") catch {};
 }
 
+// Verifies saving writes a snapshot and reports its serialized length.
 test "should save" {
     fs.cwd().makePath("./tmp/persist-save") catch {};
 

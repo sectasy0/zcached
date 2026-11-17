@@ -1,3 +1,7 @@
+//! Single-thread-owned evented I/O with stackful fibers and readiness-driven waits.
+//! Fibers run on the backend's owner thread; foreign callers are dispatched through
+//! futures, while blocking platform services are delegated to a private threaded
+//! interface that does not schedule tasks.
 const std = @import("std");
 const builtin = @import("builtin");
 const Reactor = @import("reactor.zig");
@@ -5,29 +9,49 @@ const Io = std.Io;
 const posix = std.posix;
 const Evented = @This();
 
-// Synchronous platform services are reused; their task scheduler is never used.
+/// Synchronous platform services are reused; their task scheduler is never used.
 blocking: Io.Threaded,
+/// One-shot readiness queue used to resume fibers blocked on sockets.
 reactor: Reactor,
+/// Allocator for fiber records, argument/result buffers, and scheduler state.
 allocator: std.mem.Allocator,
+/// Thread allowed to execute this backend's fibers and scheduler.
 owner: std.Thread.Id,
+/// Backend-aware lock protecting scheduler and fiber bookkeeping.
 mutex: Lock,
+/// Wakes foreign threads waiting for fiber/group completion.
 condition: Condition,
+/// All live asynchronous fibers, linked for scheduler scans.
 fibers: ?*Fiber = null,
+/// FIFO head of fibers ready to run.
 ready_head: ?*Fiber = null,
+/// FIFO tail of fibers ready to run.
 ready_tail: ?*Fiber = null,
+/// Fiber currently executing on the owner thread.
 current: *Fiber,
+/// Embedded fiber representing execution outside a scheduled task.
 main_fiber: Fiber,
+/// Saved context to resume the scheduler after a fiber yields.
 scheduler_context: Io.fiber.Context,
+/// Guarded scheduler stack and storage for the scheduler's launch closure.
 scheduler_stack: []align(16) u8,
+/// Completed fiber awaiting scheduler bookkeeping and possible reclamation.
 finished: ?*Fiber = null,
+/// Nonblocking pipe used to wake a scheduler waiting in the native reactor.
 wake_pipe: [2]posix.fd_t,
+/// Requests scheduler shutdown during backend deinitialization.
 stopping: bool = false,
+/// Link to the next registered backend for cross-thread futex wakeups.
 next_backend: ?*Evented = null,
 
+/// Fixed stack capacity for each scheduled fiber.
 const stack_size = 4 * 1024 * 1024;
+/// Head of live backends that can receive futex wakeups.
 var backends: ?*Evented = null;
+/// Serializes modifications and scans of the backend registry.
 var backends_mutex: Io.Mutex = .init;
 
+/// Allocates an aligned fiber stack with an inaccessible guard page.
 fn allocateStack() ![]align(16) u8 {
     const guard = std.heap.pageSize();
     const memory = std.heap.page_allocator.rawAlloc(stack_size + guard, .@"16", @returnAddress()) orelse return error.OutOfMemory;
@@ -40,64 +64,104 @@ fn allocateStack() ![]align(16) u8 {
     return @alignCast(memory[guard .. guard + stack_size]);
 }
 
+/// Releases a stack previously returned by `allocateStack`.
 fn freeStack(stack: []align(16) u8) void {
     const guard = std.heap.pageSize();
     const memory = stack.ptr - guard;
     std.heap.page_allocator.rawFree(memory[0 .. stack.len + guard], .@"16", @returnAddress());
 }
+/// Mutex whose blocking operations use this backend's synchronous I/O services.
 const Lock = struct {
+    /// Backend supplying an uncancelable I/O context for the lock operations.
     backend: *Evented,
+    /// Underlying standard-library mutex.
     inner: Io.Mutex = .init,
 
+    /// Acquires the mutex without allowing task cancellation to interrupt it.
     fn lock(self: *Lock) void {
         self.inner.lockUncancelable(self.backend.blocking.io());
     }
 
+    /// Releases the mutex using the same backend context as acquisition.
     fn unlock(self: *Lock) void {
         self.inner.unlock(self.backend.blocking.io());
     }
 };
+/// Condition variable bound to a backend's platform I/O context.
 const Condition = struct {
+    /// Backend supplying the I/O interface used while waiting or waking.
     backend: *Evented,
+    /// Underlying standard-library condition variable.
     inner: Io.Condition = .init,
 
+    /// Atomically releases `mutex` while waiting, then reacquires it.
     fn wait(self: *Condition, mutex: *Lock) void {
         self.inner.waitUncancelable(self.backend.blocking.io(), &mutex.inner);
     }
 
+    /// Wakes all threads waiting on this condition.
     fn broadcast(self: *Condition) void {
         self.inner.broadcast(self.backend.blocking.io());
     }
 };
+/// Data placed at the top of a new stack to enter a fiber or scheduler.
+/// `fiber == null` identifies the scheduler's launch closure.
 const Closure = extern struct { backend: *Evented, fiber: ?*Fiber };
+/// Reason a fiber is parked, including its identity-check data where needed.
 const Wait = union(enum) {
+    /// Fiber is not waiting on an external event.
     none,
+    /// Fiber awaits a one-shot descriptor readiness notification.
     socket: Reactor.Key,
+    /// Fiber waits while an atomic word retains an expected value.
     futex: struct { ptr: *const u32, expected: u32 },
+    /// Fiber awaits completion of another future.
     future: *Fiber,
+    /// Fiber awaits all members of a task group.
     group: *Io.Group,
+    /// Fiber awaits only its deadline.
     timer,
 };
+/// Stack, context, callback, and scheduler state for one task.
 const Fiber = struct {
+    /// Saved machine state used when this fiber is suspended.
     context: Io.fiber.Context = undefined,
+    /// Owned execution stack; allocated on task creation and freed on completion.
     stack: ?[]align(16) u8 = null,
+    /// Aligned copy of callback arguments retained until task destruction.
     arguments: ?[]align(64) u8 = null,
+    /// Aligned callback result buffer copied out by await.
     result: ?[]align(64) u8 = null,
+    /// Entry callback for a future, absent for group-only tasks.
     start: ?*const fn (*const anyopaque, *anyopaque) void = null,
+    /// Entry callback for a group task, mutually exclusive with `start`.
     group_start: ?*const fn (*const anyopaque) void = null,
+    /// Group accounting owner; group fibers are reclaimed when they finish.
     group: ?*Io.Group = null,
+    /// Next fiber in the backend's live-fiber list.
     next: ?*Fiber = null,
+    /// Next fiber in the scheduler's ready queue.
     ready_next: ?*Fiber = null,
+    /// Prevents duplicate insertion into the ready queue.
     queued: bool = false,
+    /// Set by scheduler after the callback returns.
     done: bool = false,
+    /// True while the fiber is suspended awaiting an event or another fiber.
     parked: bool = false,
+    /// Pending cancellation delivered at a cancellation point when unblocked.
     cancel_requested: bool = false,
+    /// Cancellation shielding state carried across fiber switches.
     protection: Io.CancelProtection = .unblocked,
+    /// Whether a wakeup may resume this fiber by delivering cancellation.
     cancelable: bool = true,
+    /// Current wait target used by scheduler wakeup scans.
     wait: Wait = .none,
+    /// Optional timeout deadline for timer and timed waits.
     deadline: ?Io.Clock.Timestamp = null,
 };
 
+/// Initializes native readiness, wakeup, guarded-stack, and scheduler state.
+/// This backend must be deinitialized on its owner thread after all fibers finish.
 pub fn init(self: *Evented, allocator: std.mem.Allocator) !void {
     if (!Io.fiber.supported) @compileError("evented I/O requires a supported fiber architecture");
     var reactor = try Reactor.init(allocator);
@@ -132,6 +196,8 @@ pub fn init(self: *Evented, allocator: std.mem.Allocator) !void {
     backends = self;
 }
 
+/// Stops scheduling, releases native resources, and invalidates this backend.
+/// The caller must ensure no asynchronous fibers remain.
 pub fn deinit(self: *Evented) void {
     std.debug.assert(self.fibers == null);
     backends_mutex.lockUncancelable(self.blocking.io());
@@ -154,10 +220,12 @@ pub fn deinit(self: *Evented) void {
     self.* = undefined;
 }
 
+/// Builds the I/O interface whose task operations use this fiber scheduler.
 pub fn io(self: *Evented) Io {
     return .{ .userdata = &self.blocking, .vtable = &vtable };
 }
 
+/// Starts from the threaded vtable and replaces supported operations with evented versions.
 const vtable: Io.VTable = blk: {
     var services: Io.Threaded = undefined;
     var result = services.io().vtable.*;
@@ -192,15 +260,18 @@ const vtable: Io.VTable = blk: {
     break :blk result;
 };
 
+/// Recovers the containing backend from the userdata pointer passed by `Io`.
 fn from(userdata: ?*anyopaque) *Evented {
     const blocking: *Io.Threaded = @ptrCast(@alignCast(userdata));
     return @alignCast(@fieldParentPtr("blocking", blocking));
 }
 
+/// Returns the currently executing fiber only on the backend's owner thread.
 fn active(self: *Evented) ?*Fiber {
     return if (std.Thread.getCurrentId() == self.owner) self.current else null;
 }
 
+/// Constructs the initial ABI-specific context pointing at a launch closure.
 fn contextFor(closure: *Closure) Io.fiber.Context {
     return switch (builtin.cpu.arch) {
         .aarch64 => .{ .sp = @intFromPtr(closure), .fp = 0, .pc = @intFromPtr(&entry) },
@@ -209,6 +280,7 @@ fn contextFor(closure: *Closure) Io.fiber.Context {
     };
 }
 
+/// Architecture entry stub that terminates unwinding before entering Zig code.
 fn entry() callconv(.naked) noreturn {
     // Terminate stack unwinding at the fiber root instead of retaining the previous fiber's return address.
     switch (builtin.cpu.arch) {
@@ -230,6 +302,7 @@ fn entry() callconv(.naked) noreturn {
     }
 }
 
+/// Dispatches a newly entered stack to its callback or to the scheduler loop.
 fn run(closure: *Closure) callconv(.c) noreturn {
     const self = closure.backend;
     if (closure.fiber) |fiber| {
@@ -241,17 +314,20 @@ fn run(closure: *Closure) callconv(.c) noreturn {
     self.scheduler();
 }
 
+/// Saves the current fiber and transfers execution to the scheduler context.
 fn switchToScheduler(self: *Evented) void {
     const message: Io.fiber.Switch = .{ .old = &self.current.context, .new = &self.scheduler_context };
     switchContext(&message);
 }
 
+/// Invokes the ABI-specific context switch with the supplied old/new contexts.
 fn switchContext(message: *const Io.fiber.Switch) void {
     const call: *const fn (*const Io.fiber.Switch) callconv(.c) void = @ptrCast(&switchAssembly);
     call(message);
 }
 
 // Save the C ABI's callee-saved state explicitly; inline fiber asm loses live registers in optimized Zig 0.17 builds.
+/// Saves and restores the ABI-preserved machine state during a fiber switch.
 fn switchAssembly() callconv(.naked) void {
     switch (builtin.cpu.arch) {
         .aarch64 => asm volatile (
@@ -330,6 +406,7 @@ fn switchAssembly() callconv(.naked) void {
     }
 }
 
+/// Places the current fiber on the ready queue before yielding to the scheduler.
 fn yieldReady(self: *Evented) void {
     self.mutex.lock();
     self.enqueue(self.current);
@@ -337,6 +414,7 @@ fn yieldReady(self: *Evented) void {
     self.switchToScheduler();
 }
 
+/// Notifies a scheduler blocked in the reactor through the nonblocking wake pipe.
 fn notify(self: *Evented) void {
     const byte = [_]u8{1};
     while (true) {
@@ -352,6 +430,7 @@ fn notify(self: *Evented) void {
     }
 }
 
+/// Appends a live fiber once to the ready queue and clears its parked state.
 fn enqueue(self: *Evented, fiber: *Fiber) void {
     if (fiber.queued or fiber.done) return;
     fiber.parked = false;
@@ -361,6 +440,8 @@ fn enqueue(self: *Evented, fiber: *Fiber) void {
     self.ready_tail = fiber;
 }
 
+/// Runs the owner-thread scheduler until shutdown, dispatching ready fibers and
+/// polling descriptor events or deadlines between runs.
 fn scheduler(self: *Evented) noreturn {
     var ready_runs: usize = 0;
     while (true) {
@@ -459,6 +540,8 @@ fn scheduler(self: *Evented) noreturn {
     }
 }
 
+/// Allocates a fiber stack and aligned argument/result storage.
+/// Callback alignments above 64 bytes are rejected as unavailable.
 fn create(self: *Evented, result_len: usize, alignment: std.mem.Alignment, arguments: []const u8, arguments_alignment: std.mem.Alignment) !*Fiber {
     if (alignment.compare(.gt, .@"64") or arguments_alignment.compare(.gt, .@"64")) return error.ConcurrencyUnavailable;
     const fiber = try self.allocator.create(Fiber);
@@ -476,6 +559,7 @@ fn create(self: *Evented, result_len: usize, alignment: std.mem.Alignment, argum
     return fiber;
 }
 
+/// Releases all owned buffers and the stack of a completed fiber.
 fn destroy(self: *Evented, fiber: *Fiber) void {
     freeStack(fiber.stack.?);
     self.allocator.free(fiber.arguments.?);
@@ -483,12 +567,15 @@ fn destroy(self: *Evented, fiber: *Fiber) void {
     self.allocator.destroy(fiber);
 }
 
+/// Removes a fiber from the live list; the caller must hold the backend mutex.
 fn unlink(self: *Evented, fiber: *Fiber) void {
     var link = &self.fibers;
     while (link.* != fiber) link = &link.*.?.next;
     link.* = fiber.next;
 }
 
+/// Creates and schedules a future-backed fiber, returning its opaque future handle.
+/// Allocation or unsupported alignment is reported as concurrency unavailable.
 fn concurrent(userdata: ?*anyopaque, result_len: usize, alignment: std.mem.Alignment, arguments: []const u8, arguments_alignment: std.mem.Alignment, start: *const fn (*const anyopaque, *anyopaque) void) Io.ConcurrentError!*Io.AnyFuture {
     const self = from(userdata);
     const fiber = self.create(result_len, alignment, arguments, arguments_alignment) catch return error.ConcurrencyUnavailable;
@@ -502,6 +589,7 @@ fn concurrent(userdata: ?*anyopaque, result_len: usize, alignment: std.mem.Align
     return @ptrCast(fiber);
 }
 
+/// Starts asynchronous work, falling back to inline execution if scheduling fails.
 fn asyncStart(userdata: ?*anyopaque, result: []u8, alignment: std.mem.Alignment, arguments: []const u8, arguments_alignment: std.mem.Alignment, start: *const fn (*const anyopaque, *anyopaque) void) ?*Io.AnyFuture {
     return concurrent(userdata, result.len, alignment, arguments, arguments_alignment, start) catch {
         start(arguments.ptr, result.ptr);
@@ -509,11 +597,14 @@ fn asyncStart(userdata: ?*anyopaque, result: []u8, alignment: std.mem.Alignment,
     };
 }
 
+/// Marks cancellation pending and makes an eligible parked fiber runnable.
 fn requestCancel(self: *Evented, fiber: *Fiber) void {
     fiber.cancel_requested = true;
     if (fiber.parked and fiber.cancelable and fiber.protection == .unblocked) self.enqueue(fiber);
 }
 
+/// Waits for a future, copies its result to caller storage, and reclaims it.
+/// Owner-thread callers suspend as fibers; foreign callers block on a condition.
 fn awaitFuture(userdata: ?*anyopaque, future: *Io.AnyFuture, result: []u8, _: std.mem.Alignment) void {
     const self = from(userdata);
     const fiber: *Fiber = @ptrCast(@alignCast(future));
@@ -535,6 +626,7 @@ fn awaitFuture(userdata: ?*anyopaque, future: *Io.AnyFuture, result: []u8, _: st
     self.mutex.unlock();
 }
 
+/// Requests cancellation, wakes the target if needed, then awaits its final result.
 fn cancelFuture(userdata: ?*anyopaque, future: *Io.AnyFuture, result: []u8, alignment: std.mem.Alignment) void {
     const self = from(userdata);
     self.mutex.lock();
@@ -544,6 +636,7 @@ fn cancelFuture(userdata: ?*anyopaque, future: *Io.AnyFuture, result: []u8, alig
     awaitFuture(userdata, future, result, alignment);
 }
 
+/// Adds a group task and increments group accounting before scheduling it.
 fn groupConcurrent(userdata: ?*anyopaque, group: *Io.Group, arguments: []const u8, alignment: std.mem.Alignment, start: *const fn (*const anyopaque) void) Io.ConcurrentError!void {
     const self = from(userdata);
     const fiber = self.create(0, .@"1", arguments, alignment) catch return error.ConcurrencyUnavailable;
@@ -560,10 +653,12 @@ fn groupConcurrent(userdata: ?*anyopaque, group: *Io.Group, arguments: []const u
     self.notify();
 }
 
+/// Adds group work or runs the callback inline if fiber creation is unavailable.
 fn groupAsync(userdata: ?*anyopaque, group: *Io.Group, arguments: []const u8, alignment: std.mem.Alignment, start: *const fn (*const anyopaque) void) void {
     groupConcurrent(userdata, group, arguments, alignment, start) catch start(arguments.ptr);
 }
 
+/// Waits for group completion and propagates cancellation to group members when requested.
 fn waitGroup(self: *Evented, group: *Io.Group, cancel_requested: bool) bool {
     self.mutex.lock();
     var canceled = cancel_requested;
@@ -598,19 +693,25 @@ fn waitGroup(self: *Evented, group: *Io.Group, cancel_requested: bool) bool {
     return canceled;
 }
 
+/// Awaits every group member and reports cancellation to the caller.
 fn groupAwait(userdata: ?*anyopaque, group: *Io.Group, _: *anyopaque) Io.Cancelable!void {
     if (from(userdata).waitGroup(group, false)) return error.Canceled;
 }
 
+/// Cancels outstanding group members and waits for their cleanup to finish.
 fn groupCancel(userdata: ?*anyopaque, group: *Io.Group, _: *anyopaque) void {
     _ = from(userdata).waitGroup(group, true);
 }
 
+/// Persistent state shared by asynchronous batch operation callbacks.
 const BatchState = struct {
+    /// Tracks tasks launched for the batch so cancellation joins them.
     group: Io.Group = .init,
+    /// Signals that a worker has updated completion or pending state.
     event: Io.Event = .unset,
 };
 
+/// Executes one submitted batch item and moves it to completed or reusable storage.
 fn batchRun(self: *Evented, batch: *Io.Batch, state: *BatchState, index: Io.Operation.OptionalIndex, operation: Io.Operation) void {
     const result = self.io().operate(operation) catch error.Canceled;
     self.mutex.lock();
@@ -631,6 +732,8 @@ fn batchRun(self: *Evented, batch: *Io.Batch, state: *BatchState, index: Io.Oper
     state.event.set(self.io());
 }
 
+/// Dispatches submitted batch operations concurrently until a result, timeout,
+/// or idle state is reached; timed-out work remains cancelable through the batch.
 fn batchAwaitConcurrent(userdata: ?*anyopaque, batch: *Io.Batch, timeout: Io.Timeout) Io.Batch.AwaitConcurrentError!void {
     const self = from(userdata);
     if (self.active() == null) {
@@ -672,6 +775,7 @@ fn batchAwaitConcurrent(userdata: ?*anyopaque, batch: *Io.Batch, timeout: Io.Tim
     }
 }
 
+/// Completes one submitted operation inline or waits for concurrent work.
 fn batchAwaitAsync(userdata: ?*anyopaque, batch: *Io.Batch) Io.Cancelable!void {
     const self = from(userdata);
     errdefer batch.cancel(self.io());
@@ -692,6 +796,7 @@ fn batchAwaitAsync(userdata: ?*anyopaque, batch: *Io.Batch) Io.Cancelable!void {
     } else batchCancel(userdata, batch);
 }
 
+/// Cancels and joins batch work, then frees its persistent state.
 fn batchCancel(userdata: ?*anyopaque, batch: *Io.Batch) void {
     const self = from(userdata);
     if (batch.userdata) |ptr| {
@@ -702,6 +807,7 @@ fn batchCancel(userdata: ?*anyopaque, batch: *Io.Batch) void {
     }
 }
 
+/// Delivers pending cancellation at an unblocked cancellation point.
 fn checkCancel(userdata: ?*anyopaque) Io.Cancelable!void {
     const self = from(userdata);
     if (self.active()) |fiber| {
@@ -714,6 +820,7 @@ fn checkCancel(userdata: ?*anyopaque) Io.Cancelable!void {
     } else try self.blocking.io().checkCancel();
 }
 
+/// Marks cancellation pending for the active fiber or threaded caller.
 fn recancel(userdata: ?*anyopaque) void {
     const self = from(userdata);
     if (self.active()) |fiber| {
@@ -723,6 +830,7 @@ fn recancel(userdata: ?*anyopaque) void {
     } else self.blocking.io().recancel();
 }
 
+/// Replaces cancellation shielding and returns the prior protection state.
 fn swapCancelProtection(userdata: ?*anyopaque, protection: Io.CancelProtection) Io.CancelProtection {
     const self = from(userdata);
     if (self.active()) |fiber| {
@@ -735,6 +843,9 @@ fn swapCancelProtection(userdata: ?*anyopaque, protection: Io.CancelProtection) 
     return self.blocking.io().swapCancelProtection(protection);
 }
 
+/// Parks the active fiber on a wait condition and optional deadline.
+/// Socket watches are shared among matching fibers and disarmed only when the
+/// final waiter leaves; cancellation is checked before and after the wait.
 fn park(self: *Evented, wait: Wait, timeout: Io.Timeout, cancelable: bool) Io.Cancelable!void {
     const fiber = self.active().?;
     if (cancelable) try checkCancel(&self.blocking);
@@ -778,6 +889,7 @@ fn park(self: *Evented, wait: Wait, timeout: Io.Timeout, cancelable: bool) Io.Ca
     if (cancelable) try checkCancel(&self.blocking);
 }
 
+/// Waits until a futex word changes, times out, or the fiber is canceled.
 fn futexWait(userdata: ?*anyopaque, ptr: *const u32, expected: u32, timeout: Io.Timeout) Io.Cancelable!void {
     const self = from(userdata);
     if (self.active() == null) return self.blocking.io().vtable.futexWait(userdata, ptr, expected, timeout);
@@ -785,6 +897,7 @@ fn futexWait(userdata: ?*anyopaque, ptr: *const u32, expected: u32, timeout: Io.
     try self.park(.{ .futex = .{ .ptr = ptr, .expected = expected } }, timeout, true);
 }
 
+/// Waits on a futex without cancellation or a deadline.
 fn futexWaitUncancelable(userdata: ?*anyopaque, ptr: *const u32, expected: u32) void {
     const self = from(userdata);
     if (self.active() == null) return self.blocking.io().vtable.futexWaitUncancelable(userdata, ptr, expected);
@@ -792,6 +905,8 @@ fn futexWaitUncancelable(userdata: ?*anyopaque, ptr: *const u32, expected: u32) 
     self.park(.{ .futex = .{ .ptr = ptr, .expected = expected } }, .none, false) catch unreachable;
 }
 
+/// Wakes matching fibers across registered backends, delegating any remaining
+/// wake quota to the threaded implementation.
 fn futexWake(userdata: ?*anyopaque, ptr: *const u32, max_waiters: u32) void {
     const self = from(userdata);
     var remaining = max_waiters;
@@ -816,18 +931,21 @@ fn futexWake(userdata: ?*anyopaque, ptr: *const u32, max_waiters: u32) void {
     if (remaining != 0) self.blocking.io().vtable.futexWake(userdata, ptr, remaining);
 }
 
+/// Suspends the current fiber until the timeout expires or cancellation arrives.
 fn sleep(userdata: ?*anyopaque, timeout: Io.Timeout) Io.Cancelable!void {
     const self = from(userdata);
     if (self.active() == null) return self.blocking.io().vtable.sleep(userdata, timeout);
     try self.park(.timer, timeout, true);
 }
 
+/// Enables nonblocking mode on an existing descriptor.
 fn nonblocking(fd: posix.fd_t) !void {
     const flags = try fcntl(fd, posix.F.GETFL, 0);
     const mask: u32 = @bitCast(@as(posix.O, .{ .NONBLOCK = true }));
     _ = try fcntl(fd, posix.F.SETFL, flags | mask);
 }
 
+/// Calls `fcntl`, retrying interruptions and translating other syscall failures.
 fn fcntl(fd: posix.fd_t, command: i32, argument: usize) !usize {
     while (true) {
         const result = posix.system.fcntl(fd, command, argument);
@@ -839,6 +957,8 @@ fn fcntl(fd: posix.fd_t, command: i32, argument: usize) !usize {
     }
 }
 
+/// Establishes a stream TCP connection, suspending the owner-thread fiber while
+/// connect is pending and honoring the optional timeout/cancellation.
 fn netConnectIp(userdata: ?*anyopaque, address: *const Io.net.IpAddress, options: Io.net.IpAddress.ConnectOptions) Io.net.IpAddress.ConnectError!Io.net.Socket {
     const self = from(userdata);
     if (self.active() == null) {
@@ -895,6 +1015,8 @@ fn netConnectIp(userdata: ?*anyopaque, address: *const Io.net.IpAddress, options
     }
 }
 
+/// Creates a listening IP socket through threaded services, then enables
+/// nonblocking mode so the reactor can drive accepts.
 fn netListenIp(userdata: ?*anyopaque, address: *const Io.net.IpAddress, options: Io.net.IpAddress.ListenOptions) Io.net.IpAddress.ListenError!Io.net.Socket {
     const self = from(userdata);
     const socket = try self.blocking.io().vtable.netListenIp(userdata, address, options);
@@ -906,6 +1028,8 @@ fn netListenIp(userdata: ?*anyopaque, address: *const Io.net.IpAddress, options:
     return socket;
 }
 
+/// Accepts one connection, parking on read readiness when the listener is empty.
+/// The returned socket is nonblocking and close-on-exec.
 fn netAccept(userdata: ?*anyopaque, fd: Io.net.Socket.Handle, options: Io.net.Server.AcceptOptions) Io.net.Server.AcceptError!Io.net.Socket {
     const self = from(userdata);
     if (self.active() == null) {
@@ -940,6 +1064,8 @@ fn netAccept(userdata: ?*anyopaque, fd: Io.net.Socket.Handle, options: Io.net.Se
     }
 }
 
+/// Routes supported stream operations to evented handlers and delegates other
+/// operations to threaded I/O; unsupported datagram requests return their API errors.
 fn operate(userdata: ?*anyopaque, operation: Io.Operation) Io.Cancelable!Io.Operation.Result {
     const self = from(userdata);
     switch (operation) {
@@ -980,6 +1106,7 @@ fn operate(userdata: ?*anyopaque, operation: Io.Operation) Io.Cancelable!Io.Oper
     };
 }
 
+/// Receives stream data and ancillary control bytes, retrying after read readiness.
 fn readSocket(self: *Evented, operation: Io.Operation.NetRead) (Io.Cancelable || Io.Operation.NetRead.Error)!Io.net.Stream.ReadResult {
     var buffers: [8]posix.iovec = undefined;
     var count: usize = 0;
@@ -1016,6 +1143,7 @@ fn readSocket(self: *Evented, operation: Io.Operation.NetRead) (Io.Cancelable ||
     }
 }
 
+/// Sends stream headers, payload slices, and control data, parking on write readiness.
 fn writeSocket(self: *Evented, operation: Io.Operation.NetWrite) (Io.Cancelable || Io.Operation.NetWrite.Error)!usize {
     var buffers: [8]posix.iovec_const = undefined;
     var count: usize = 0;
@@ -1063,31 +1191,37 @@ fn writeSocket(self: *Evented, operation: Io.Operation.NetWrite) (Io.Cancelable 
     }
 }
 
+/// Reports IP datagram binding as unsupported by this TCP-only reactor.
 fn unsupportedBind(userdata: ?*anyopaque, address: *const Io.net.IpAddress, options: Io.net.IpAddress.BindOptions) Io.net.IpAddress.BindError!Io.net.Socket {
     std.log.err("datagram binding is not supported by the TCP reactor backend", .{});
     return Io.failingNetBindIp(userdata, address, options);
 }
 
+/// Reports Unix-domain listeners as unsupported by this TCP-only reactor.
 fn unsupportedListenUnix(userdata: ?*anyopaque, address: *const Io.net.UnixAddress, options: Io.net.UnixAddress.ListenOptions) Io.net.UnixAddress.ListenError!Io.net.Socket.Handle {
     std.log.err("Unix sockets are not supported by the TCP reactor backend", .{});
     return Io.failingNetListenUnix(userdata, address, options);
 }
 
+/// Reports Unix-domain connections as unsupported by this TCP-only reactor.
 fn unsupportedConnectUnix(userdata: ?*anyopaque, address: *const Io.net.UnixAddress) Io.net.UnixAddress.ConnectError!Io.net.Socket.Handle {
     std.log.err("Unix sockets are not supported by the TCP reactor backend", .{});
     return Io.failingNetConnectUnix(userdata, address);
 }
 
+/// Reports socket-pair creation as unsupported by this TCP-only reactor.
 fn unsupportedPair(userdata: ?*anyopaque, options: Io.net.Socket.CreatePairOptions) Io.net.Socket.CreatePairError![2]Io.net.Socket {
     std.log.err("socket pairs are not supported by the TCP reactor backend", .{});
     return Io.failingNetSocketCreatePair(userdata, options);
 }
 
+/// Reports sendfile-style transfer as unsupported; callers can stream writes instead.
 fn unsupportedWriteFile(userdata: ?*anyopaque, fd: Io.net.Socket.Handle, header: []const u8, reader: *Io.File.Reader, limit: Io.Limit) Io.net.Stream.Writer.WriteFileError!usize {
     std.log.err("sendfile is not supported by the TCP reactor backend; use streaming writes", .{});
     return Io.failingNetWriteFile(userdata, fd, header, reader, limit);
 }
 
+/// Reports hostname lookup as unsupported; callers must use numeric IP addresses.
 fn unsupportedLookup(userdata: ?*anyopaque, host: Io.net.HostName, results: *Io.Queue(Io.net.HostName.LookupResult), options: Io.net.HostName.LookupOptions) Io.net.HostName.LookupError!void {
     std.log.err("DNS lookup is not supported by the TCP reactor backend; use numeric IP addresses", .{});
     return Io.failingNetLookup(userdata, host, results, options);
@@ -1099,13 +1233,16 @@ test "evented futures and groups run on the reactor thread and cancel sleeps" {
     defer backend.deinit();
     const interface = backend.io();
     const Work = struct {
+        /// Sleeps briefly and returns the thread ID on which its fiber ran.
         fn thread(io_arg: Io) Io.Cancelable!std.Thread.Id {
             try io_arg.sleep(.fromMilliseconds(1), .awake);
             return std.Thread.getCurrentId();
         }
+        /// Remains parked until canceled, exercising future cancellation.
         fn block(io_arg: Io) Io.Cancelable!void {
             try io_arg.sleep(.fromSeconds(60), .awake);
         }
+        /// Delays and then signals the supplied event.
         fn mark(io_arg: Io, event: *Io.Event) Io.Cancelable!void {
             try io_arg.sleep(.fromMilliseconds(1), .awake);
             event.set(io_arg);
@@ -1147,6 +1284,7 @@ test "evented TCP accept, connect, streaming and batch timeout" {
     try std.testing.expectEqual(@as(usize, 5), try peer.read(interface, &buffers));
     try std.testing.expectEqualStrings("hello", bytes[0..5]);
     const ForeignWriter = struct {
+        /// Writes from a foreign thread through the evented interface.
         fn run(io_arg: Io, stream: Io.net.Stream) void {
             var writer = stream.writer(io_arg, &.{});
             writer.interface.writeAll("thread") catch |err| @panic(@errorName(err));
@@ -1158,6 +1296,7 @@ test "evented TCP accept, connect, streaming and batch timeout" {
     try std.testing.expectEqualStrings("thread", bytes[0..6]);
     try std.testing.expectError(error.Timeout, interface.operateTimeout(.{ .net_read = .{ .socket_handle = peer.socket.handle, .data = &buffers } }, .{ .duration = .{ .raw = .fromMilliseconds(2), .clock = .awake } }));
     const Writer = struct {
+        /// Repeatedly fills the socket until cancellation interrupts the write.
         fn run(io_arg: Io, fd: posix.fd_t) !void {
             const payload: [65536]u8 = @splat(0);
             while (true) _ = try (try io_arg.operate(.{ .net_write = .{ .socket_handle = fd, .data = &.{&payload} } })).net_write;
@@ -1167,6 +1306,7 @@ test "evented TCP accept, connect, streaming and batch timeout" {
     try interface.sleep(.fromMilliseconds(2), .awake);
     try std.testing.expectError(error.Canceled, writing.cancel(interface));
     const ReadyWriter = struct {
+        /// Repeats zero-byte writes to exercise cancellation while always ready.
         fn run(io_arg: Io, fd: posix.fd_t) !void {
             while (true) _ = try (try io_arg.operate(.{ .net_write = .{ .socket_handle = fd, .data = &.{""} } })).net_write;
         }
@@ -1186,6 +1326,7 @@ test "evented futex wakeups interoperate with an external queue thread" {
     const interface = backend.io();
     var semaphore: Io.Semaphore = .{};
     const Producer = struct {
+        /// Posts all semaphore tokens from a non-owner thread.
         fn run(io_arg: Io, sem: *Io.Semaphore) void {
             for (0..2000) |_| sem.post(io_arg);
         }
@@ -1201,19 +1342,27 @@ test "evented synchronization wakes fibers on another reactor thread" {
     defer backend.deinit();
     const interface = backend.io();
     const Shared = struct {
+        /// Signals that the peer backend is ready to exchange semaphore tokens.
         ready: Io.Event = .unset,
+        /// Requests work from the peer thread.
         request: Io.Semaphore = .{},
+        /// Acknowledges one completed peer update.
         response: Io.Semaphore = .{},
+        /// Protects the shared update count.
         mutex: Io.Mutex = .init,
+        /// Number of updates performed by both threads.
         count: usize = 0,
+        /// Captures a failure from the worker thread for the test thread.
         failure: ?anyerror = null,
 
+        /// Runs peer work and records any error for the owning test.
         fn run(self: *@This()) void {
             self.work() catch |err| {
                 self.failure = err;
             };
         }
 
+        /// Creates a peer backend and participates in the synchronized exchange.
         fn work(self: *@This()) !void {
             var peer: Evented = undefined;
             try peer.init(std.testing.allocator);
@@ -1256,9 +1405,11 @@ test "evented completed group members release stacks before the group is cancele
     var count: usize = 0;
     var completed: Io.Event = .unset;
     const Work = struct {
+        /// Parks until group cancellation reaches this task.
         fn block(io_arg: Io) Io.Cancelable!void {
             try io_arg.sleep(.fromSeconds(60), .awake);
         }
+        /// Increments completion count and signals when all short tasks finish.
         fn finish(io_arg: Io, n: *usize, event: *Io.Event) void {
             n.* += 1;
             if (n.* == 32) event.set(io_arg);
@@ -1281,6 +1432,7 @@ test "evented cancellation protection, cleanup and recancel" {
     var entered: Io.Event = .unset;
     var cleaned = false;
     const Work = struct {
+        /// Tests shielding, cleanup, and redelivery of cancellation.
         fn run(io_arg: Io, event: *Io.Event, cleanup: *bool) !void {
             defer cleanup.* = true;
             const previous = io_arg.swapCancelProtection(.blocked);

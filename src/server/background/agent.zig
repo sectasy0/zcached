@@ -1,3 +1,4 @@
+//! Concurrent task scheduler with FIFO immediate work and time-ordered delayed work.
 const std = @import("std");
 const runtime_io = @import("runtime_io");
 const sync = @import("sync");
@@ -5,22 +6,31 @@ const sync = @import("sync");
 const fifo = @import("fifo.zig");
 const utils = @import("../utils.zig");
 
+/// Shared state allowing a scheduled handle to cancel and synchronize with its task.
 const Cancellation = struct {
+    /// Allocator used to free this state after both references are released.
     allocator: std.mem.Allocator,
     // One reference belongs to the handle, one to the queued task's lifetime.
+    /// Number of live owners; the final release destroys this allocation.
     references: std.atomic.Value(usize) = .init(2),
+    /// Serializes cancellation with callback execution.
     mutex: sync.Mutex = .{},
+    /// Set while holding `mutex` to prevent a not-yet-started callback from running.
     canceled: bool = false,
 
+    /// Drops one owner and frees the state when no handle or task retains it.
     fn release(self: *Cancellation) void {
         if (self.references.fetchSub(1, .acq_rel) == 1) self.allocator.destroy(self);
     }
 };
 
+/// Handle for canceling a delayed or recurring task and waiting for active execution.
 pub const ScheduledTask = struct {
+    /// Shared cancellation state; null after deinitialization or when no task is owned.
     cancellation: ?*Cancellation,
 
     /// Waits for an executing callback and prevents subsequent executions.
+    /// Cancellation takes effect after any current callback releases the shared mutex.
     pub fn cancel(self: *ScheduledTask) void {
         const state = self.cancellation orelse return;
         state.mutex.lock();
@@ -28,6 +38,7 @@ pub const ScheduledTask = struct {
         state.canceled = true;
     }
 
+    /// Cancels the task and releases this handle's reference to its state.
     pub fn deinit(self: *ScheduledTask) void {
         const state = self.cancellation orelse return;
         self.cancel();
@@ -36,16 +47,24 @@ pub const ScheduledTask = struct {
     }
 };
 
+/// Type-erased callback plus timing, argument ownership, and optional cancellation state.
 pub const Task = struct {
+    /// Callback invoked for each execution; null marks the dequeue shutdown sentinel.
     run: ?*const fn (args: ?*const anyopaque) void,
+    /// Cleanup for the cloned callback arguments, called when the task is destroyed.
     destroy: ?*const fn (allocator: std.mem.Allocator, args: ?*const anyopaque) void,
 
+    /// Absolute runtime timestamp when this execution becomes eligible.
     execute_at: i64 = 0,
+    /// Repeat interval in timestamp units; zero denotes a one-shot task.
     interval: i64 = 0,
 
+    /// Type-erased, queue-owned callback arguments.
     args: ?*const anyopaque,
+    /// Optional shared cancellation state retained for the queued task.
     cancellation: ?*Cancellation = null,
 
+    /// Runs at most once, then frees cloned arguments and cancellation ownership.
     pub fn executeAndDestroy(self: *Task, allocator: std.mem.Allocator) void {
         if (self.run) |run| {
             run(self.args);
@@ -54,6 +73,7 @@ pub const Task = struct {
         self.deinit(allocator);
     }
 
+    /// Releases owned callback arguments and the task's cancellation reference.
     fn deinit(self: *Task, allocator: std.mem.Allocator) void {
         const local_destroy = self.destroy;
         const local_args = self.args;
@@ -68,33 +88,44 @@ pub const Task = struct {
         self.cancellation = null;
     }
 
+    /// Invokes the callback without clearing it or releasing task resources.
     pub fn execute(self: *Task) void {
         if (self.run) |run| {
             run(self.args);
         }
     }
 
+    /// Orders tasks by their next scheduled timestamp for the delayed priority queue.
     pub fn compare(context: void, a: Task, b: Task) std.math.Order {
         _ = context;
         return std.math.order(a.execute_at, b.execute_at);
     }
 };
 
+/// Thread-safe immediate and delayed queues consumed by the agent's drain thread.
 pub const Queue = struct {
     // FIFO for ready to execute tasks
+    /// Tasks eligible now, dequeued in insertion order.
     ready: fifo.LinearFifo(Task, .Dynamic),
     // Priority queue for delayed tasks, ordered by execute_at.
+    /// Future tasks, with the earliest execution timestamp at the head.
     delayed: std.PriorityQueue(Task, void, Task.compare),
+    /// Allocator used by the delayed queue and owned queue storage.
     allocator: std.mem.Allocator,
 
     // optional capacity limit for testing reschedule failures; ignored in normal operation
+    /// Optional test-only cap across both queues; unset in normal use.
     capacity: ?usize = null,
 
+    /// Protects queue contents, stopping state, and wakeup transitions.
     lock: sync.Mutex,
 
+    /// Signals the drain thread after enqueue or stop.
     wakeup: std.Io.Event = .unset,
+    /// Rejects new tasks and lets a waiting dequeue return its sentinel.
     stopping: bool = false,
 
+    /// Creates empty task queues using `allocator` for storage.
     pub fn init(allocator: std.mem.Allocator) !Queue {
         return .{
             .ready = .init(allocator),
@@ -104,11 +135,15 @@ pub const Queue = struct {
         };
     }
 
+    /// Optional per-task timing and cancellation metadata for `enqueue`.
     pub const EnqueueOptions = struct {
+        /// Repeat delay; zero schedules immediate, one-shot work.
         interval: i64 = 0,
+        /// Shared cancellation state retained by each queued execution.
         cancellation: ?*Cancellation = null,
     };
 
+    /// Clones callback arguments and queues a type-erased wrapper; failure frees its clone.
     pub fn enqueue(
         self: *Queue,
         allocator: std.mem.Allocator,
@@ -120,9 +155,12 @@ pub const Queue = struct {
         defer self.lock.unlock();
 
         const Wrapper = struct {
+            /// Wrapper's concrete type, used only while constructing task callbacks.
             const Self = @This();
+            /// Pointer to the callback argument tuple owned by the queue.
             args: *const @TypeOf(args),
 
+            /// Restores the argument tuple type and invokes the comptime callback.
             fn run(ptr: ?*const anyopaque) void {
                 const nonnull_ptr = ptr orelse return;
 
@@ -130,6 +168,7 @@ pub const Queue = struct {
                 @call(.auto, func, args_ptr.*);
             }
 
+            /// Restores the argument type and frees its queue-owned clone.
             fn destroy(alloc: std.mem.Allocator, ptr: ?*const anyopaque) void {
                 const nonnull_ptr = ptr orelse return;
 
@@ -158,12 +197,14 @@ pub const Queue = struct {
     }
 
     /// Transfers task ownership only after a successful enqueue.
+    /// On failure, the caller remains responsible for task resources.
     pub fn enqueueTask(self: *Queue, task: Task) !void {
         self.lock.lock();
         defer self.lock.unlock();
         try self.enqueueInner(task);
     }
 
+    /// Inserts a task into the immediate FIFO or timestamp-ordered delayed queue.
     fn enqueueInner(self: *Queue, task: Task) !void {
         if (self.stopping) return error.AgentStopped;
         if (self.capacity) |cap| {
@@ -181,6 +222,8 @@ pub const Queue = struct {
         self.wakeup.set(runtime_io.get());
     }
 
+    /// Removes the earliest eligible task, waiting for enqueue or its deadline as needed.
+    /// Returns a null-run sentinel after stop; delayed work is not run during shutdown.
     pub fn dequeue(self: *Queue) Task {
         self.lock.lock();
         defer self.lock.unlock();
@@ -229,6 +272,7 @@ pub const Queue = struct {
     /// - Duplicates any `[]u8` or `[]const u8` fields inside `args.args`.
     /// - On failure, frees already-allocated strings.
     /// Returns a pointer to the newly allocated clone.
+    /// Only tuple arguments containing a root `args` struct have their byte-slice fields duplicated.
     fn takeOwnershipByCloning(allocator: std.mem.Allocator, args: anytype) error{OutOfMemory}!*@TypeOf(args) {
         const T = @TypeOf(args);
         const res = try allocator.create(T);
@@ -262,6 +306,7 @@ pub const Queue = struct {
     /// Releases ownership of a previously cloned struct.
     /// - Frees any `[]u8` or `[]const u8` fields inside `args.args`.
     /// - Destroys the struct allocation.
+    /// This mirrors the narrow tuple/root-`args` shape handled by the clone helper.
     fn releaseOwnership(allocator: std.mem.Allocator, args: anytype) void {
         const T = @TypeOf(args.*);
         if (@typeInfo(T) == .@"struct") {
@@ -283,6 +328,7 @@ pub const Queue = struct {
         allocator.destroy(args);
     }
 
+    /// Destroys all queued tasks and their owned arguments, then frees queue storage.
     pub fn deinit(self: *Queue, allocator: std.mem.Allocator) void {
         self.lock.lock();
         defer self.lock.unlock();
@@ -303,21 +349,33 @@ pub const Queue = struct {
     }
 };
 
+/// Runs queued work on one background thread and coordinates scheduling and shutdown.
+/// Current scheduler type, used by its thread entry point and lifecycle methods.
 const Self = @This();
 
+/// Queues immediate and timed callback tasks.
 queue: Queue,
+/// Drain thread, null until started or after it has joined.
 drain_thread: ?std.Thread = null,
 
+/// Number of attempts to enqueue a recurring task's next execution.
 reschedule_retries: usize = 5,
+/// Pause between recurring-task enqueue retries.
 reschedule_retry_delay_ms: u64 = 100,
 
+/// Allocator shared by queue storage and owned task arguments.
 allocator: std.mem.Allocator,
+/// External process-running flag retained for integration with application lifecycle.
 running: *std.atomic.Value(bool),
 
+/// Set by the drain thread once it has entered its worker loop.
 started: std.atomic.Value(bool) = .init(false),
+/// Protects startup notification.
 mutex: sync.Mutex = .{},
+/// Wakes `kickoff` after the drain thread sets `started`.
 cond: sync.Condition = .{},
 
+/// Initializes the queue and retains the allocator and application running flag.
 pub fn init(allocator: std.mem.Allocator, running: *std.atomic.Value(bool)) !Self {
     return .{
         .queue = try .init(allocator),
@@ -326,6 +384,7 @@ pub fn init(allocator: std.mem.Allocator, running: *std.atomic.Value(bool)) !Sel
     };
 }
 
+/// Starts the drain thread and waits until it signals that startup completed.
 pub fn kickoff(self: *Self) !void {
     self.drain_thread = try std.Thread.spawn(.{}, Self.drain, .{
         self,
@@ -338,10 +397,12 @@ pub fn kickoff(self: *Self) !void {
     self.mutex.unlock();
 }
 
+/// Schedules a callback with cloned arguments and optional repeat/cancellation settings.
 pub fn schedule(self: *Self, comptime func: anytype, args: anytype, options: ?Queue.EnqueueOptions) !void {
     try self.queue.enqueue(self.allocator, func, args, options);
 }
 
+/// Schedules cancelable work and returns a handle that synchronizes with its callback.
 pub fn scheduleCancelable(self: *Self, comptime func: anytype, args: anytype, interval: i64) !ScheduledTask {
     const state = try self.allocator.create(Cancellation);
     state.* = .{ .allocator = self.allocator };
@@ -350,6 +411,7 @@ pub fn scheduleCancelable(self: *Self, comptime func: anytype, args: anytype, in
     return .{ .cancellation = state };
 }
 
+/// Stops and joins the drain thread; ready tasks are processed before it exits.
 pub fn stop(self: *Self) void {
     const thread = self.drain_thread orelse return;
     self.queue.lock.lock();
@@ -360,11 +422,13 @@ pub fn stop(self: *Self) void {
     self.drain_thread = null;
 }
 
+/// Stops the worker and releases all queued task and queue storage.
 pub fn deinit(self: *Self) void {
     self.stop();
     self.queue.deinit(self.allocator);
 }
 
+/// Announces startup, dequeues work, and runs or reschedules each task serially.
 fn drain(self: *Self) void {
     self.mutex.lock();
     self.started.store(true, .seq_cst);
@@ -412,6 +476,7 @@ fn drain(self: *Self) void {
     }
 }
 
+/// Enqueues a recurring task at a fixed-rate deadline, retrying transient failures.
 fn rescheduleCyclic(self: *Self, task: *Task, prev_sched: i64, interval: i64) !void {
     const now = runtime_io.timestamp();
 

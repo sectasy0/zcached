@@ -8,6 +8,7 @@ const ZType = @import("../../protocol/types.zig").ZType;
 const sets = @import("../../protocol/types.zig").sets;
 const commands = @import("../../server/processing/commands.zig");
 
+// Confirms SET returns OK and stores the supplied value.
 test "should handle SET command" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -28,6 +29,7 @@ test "should handle SET command" {
     try std.testing.expectEqualStrings((try fixture.memory.?.get("key")).str, "value");
 }
 
+// Checks SET rejects a missing value.
 test "should SET return error.InvalidCommand when passed 2 args" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -46,6 +48,7 @@ test "should SET return error.InvalidCommand when passed 2 args" {
     try std.testing.expectEqual(result.err, error.InvalidCommand);
 }
 
+// Checks SET rejects a command with no key or value.
 test "should SET return error.InvalidCommand when passed 1 args" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -63,6 +66,7 @@ test "should SET return error.InvalidCommand when passed 1 args" {
     try std.testing.expectEqual(result.err, error.InvalidCommand);
 }
 
+// Confirms GET returns an owned snapshot that remains valid after storage changes.
 test "should handle GET command" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -85,6 +89,7 @@ test "should handle GET command" {
     try std.testing.expectEqualStrings(result.ok.str, "value");
 }
 
+// Checks GET rejects a request without a key.
 test "should SET return error.InvalidCommand when missing key" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -103,6 +108,7 @@ test "should SET return error.InvalidCommand when missing key" {
     try std.testing.expectEqual(result.err, error.InvalidCommand);
 }
 
+// Confirms DELETE removes an existing key and returns OK.
 test "should handle DELETE command" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -123,6 +129,7 @@ test "should handle DELETE command" {
     try std.testing.expectEqual(fixture.memory.?.get("key"), error.NotFound);
 }
 
+// Checks DELETE reports NotFound for an absent key.
 test "should return error.NotFound for non existing during DELETE command" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -140,6 +147,7 @@ test "should return error.NotFound for non existing during DELETE command" {
     try std.testing.expectEqual(result, commands.Handler.Result{ .err = error.NotFound });
 }
 
+// Checks DELETE rejects a request without a key.
 test "should DELETE return error.InvalidCommand when missing key" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -158,6 +166,7 @@ test "should DELETE return error.InvalidCommand when missing key" {
     try std.testing.expectEqual(result.err, error.InvalidCommand);
 }
 
+// Confirms FLUSH removes every stored entry and returns OK.
 test "should handle FLUSH command" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -177,6 +186,7 @@ test "should handle FLUSH command" {
     try std.testing.expectEqual(fixture.memory.?.internal.count(), 0);
 }
 
+// Confirms PING returns the PONG response.
 test "should handle PING command" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -195,6 +205,7 @@ test "should handle PING command" {
     try std.testing.expectEqual(result.ok, ZType{ .sstr = "PONG" });
 }
 
+// Confirms DBSIZE reports the number of stored keys.
 test "should handle DBSIZE command" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -213,6 +224,7 @@ test "should handle DBSIZE command" {
     try std.testing.expectEqual(result.ok, ZType{ .int = 1 });
 }
 
+// Checks MGET returns present values and null for a missing key.
 test "should handle MGET command" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -241,6 +253,7 @@ test "should handle MGET command" {
     try std.testing.expectEqual(result.ok.map.get("key3").?, ZType{ .null = {} });
 }
 
+// Confirms MSET stores alternating key/value arguments.
 test "should handle MSET command" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -261,6 +274,7 @@ test "should handle MSET command" {
     try std.testing.expectEqualStrings((try fixture.memory.?.get("key")).str, command_set.items[2].str);
 }
 
+// Checks MSET requires at least one key/value pair.
 test "should handle MSET return InvalidArgs when empty" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -278,6 +292,7 @@ test "should handle MSET return InvalidArgs when empty" {
     try std.testing.expectEqual(result.err, error.InvalidArgs);
 }
 
+// Checks MSET rejects an unmatched key argument.
 test "should handle MSET and return InvalidArgs when not even" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -296,6 +311,7 @@ test "should handle MSET and return InvalidArgs when not even" {
     try std.testing.expectEqual(result.err, error.InvalidArgs);
 }
 
+// Checks MSET rejects non-string keys.
 test "should handle MSET and return KeyNotString" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -315,6 +331,7 @@ test "should handle MSET and return KeyNotString" {
     try std.testing.expectEqual(result.err, error.KeyNotString);
 }
 
+// Confirms KEYS returns all stored keys in the expected array.
 test "should handle KEYS command" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -343,6 +360,7 @@ test "should handle KEYS command" {
     try helper.expectEqualZTypes(result.ok, .{ .array = expected });
 }
 
+// Checks KEYS returns an empty array for empty storage.
 test "should handle KEYS command no data in storage" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -365,6 +383,7 @@ test "should handle KEYS command no data in storage" {
     try helper.expectEqualZTypes(result.ok, .{ .array = expected });
 }
 
+// Confirms LASTSAVE exposes the current persistence timestamp.
 test "should handle LASTSAVE command" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -383,6 +402,7 @@ test "should handle LASTSAVE command" {
     try helper.expectEqualZTypes(result.ok, .{ .int = expected });
 }
 
+// Checks SAVE reports failure when storage is empty.
 test "should SAVE return error.SaveFailure when there is no data" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -399,6 +419,7 @@ test "should SAVE return error.SaveFailure when there is no data" {
     try std.testing.expectEqual(result.err, error.SaveFailure);
 }
 
+// Checks SIZEOF reports encoded byte sizes for supported value types.
 test "should handle SIZEOF command" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -491,6 +512,7 @@ test "should handle SIZEOF command" {
     try helper.expectEqualZTypes(result.ok, .{ .int = 1 });
 }
 
+// Checks SIZEOF reports NotFound for an absent key.
 test "should return error.NotFound for non existing during SIZEOF command" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -508,6 +530,7 @@ test "should return error.NotFound for non existing during SIZEOF command" {
     try std.testing.expectEqual(result.err, error.NotFound);
 }
 
+// Confirms ECHO preserves both string and simple-string response types.
 test "should handle ECHO command" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -530,6 +553,7 @@ test "should handle ECHO command" {
     try helper.expectEqualZTypes(result.ok, .{ .sstr = "Hello Mars!" });
 }
 
+// Checks ECHO rejects a non-string argument.
 test "should ECHO return error.KeyNotString" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -547,6 +571,7 @@ test "should ECHO return error.KeyNotString" {
     try std.testing.expectEqual(result.err, error.KeyNotString);
 }
 
+// Confirms RENAME moves a value to the destination key.
 test "should handle RENAME command" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -568,6 +593,7 @@ test "should handle RENAME command" {
     try helper.expectEqualZTypes(try fixture.memory.?.get("key2"), .{ .bool = true });
 }
 
+// Checks RENAME reports NotFound when the source key is absent.
 test "should RENAME return error.NotFound" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -586,6 +612,7 @@ test "should RENAME return error.NotFound" {
     try std.testing.expectEqual(result.err, error.NotFound);
 }
 
+// Checks RENAME rejects a missing destination key.
 test "should RENAME return error.InvalidCommand" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -603,6 +630,7 @@ test "should RENAME return error.InvalidCommand" {
     try std.testing.expectEqual(result.err, error.InvalidCommand);
 }
 
+// Checks RENAME rejects non-string source or destination keys.
 test "should RENAME return error.KeyNotString" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -626,6 +654,7 @@ test "should RENAME return error.KeyNotString" {
     try std.testing.expectEqual(result.err, error.KeyNotString);
 }
 
+// Confirms COPY creates a destination with the source value.
 test "should handle COPY command" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -646,6 +675,7 @@ test "should handle COPY command" {
     try helper.expectEqualZTypes(try fixture.memory.?.get("testcopy"), .{ .int = 10 });
 }
 
+// Checks COPY with REPLACE overwrites an existing destination.
 test "should handle COPY command with REPLACE param" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -668,6 +698,7 @@ test "should handle COPY command with REPLACE param" {
     try helper.expectEqualZTypes(try fixture.memory.?.get("test2"), .{ .int = 1 });
 }
 
+// Checks COPY rejects a request missing its destination.
 test "should COPY return error.InvalidCommand" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -685,6 +716,7 @@ test "should COPY return error.InvalidCommand" {
     try std.testing.expectEqual(result.err, error.InvalidCommand);
 }
 
+// Checks COPY rejects non-string source, destination, or modifier arguments.
 test "should COPY return error.KeyNotString" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -709,6 +741,7 @@ test "should COPY return error.KeyNotString" {
     }
 }
 
+// Checks COPY without REPLACE rejects an existing destination.
 test "should COPY return error.BusyKey" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();

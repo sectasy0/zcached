@@ -8,6 +8,7 @@ const ProtocolHandlerT = @import("../../protocol/handler.zig").ProtocolHandlerT;
 const fixed_buffer_stream = @import("../../protocol/fixed_buffer_stream.zig");
 const types = @import("../../protocol/types.zig");
 
+// Verifies the handler parses one command array into its typed arguments.
 test "serialize" {
     var stream = fixed_buffer_stream.fixedBufferStream("*3\r\n$3\r\nSET\r\n$9\r\nmycounter\r\n:42\r\n");
 
@@ -24,6 +25,7 @@ test "serialize" {
     try std.testing.expectEqual(42, result_array[2].int);
 }
 
+// Verifies the handler encodes a typed array using the protocol wire format.
 test "deserialize" {
     var array = try std.array_list.Managed(types.ZType).initCapacity(std.testing.allocator, 3);
     defer array.deinit();

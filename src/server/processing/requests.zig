@@ -1,3 +1,6 @@
+//! Frames incoming byte streams into requests and coordinates protocol decoding,
+//! command execution, response serialization, and error reporting.
+
 // Standard library
 const std = @import("std");
 
@@ -17,14 +20,19 @@ const errors = @import("errors.zig");
 const consts = @import("../network/consts.zig");
 const Deserializer = @import("../../protocol/deserializer.zig").Deserializer;
 
+/// Owns the protocol handler and command dispatcher used for incoming requests.
 pub const Processor = @This();
 
 const Protocol = proto.ProtocolHandlerT(fixed_buffer_stream.FixedBufferStream.Reader);
 
+/// Command executor whose allocator is switched to the protocol arena per request.
 cmd_handler: commands.Handler,
+/// Shared configuration and server resources used for logging, storage, and errors.
 context: Context,
+/// Serializer/deserializer state reused across requests and reset after processing.
 protocol: Protocol,
 
+/// Initializes protocol state and a command handler; allocates resources that require `deinit`.
 pub fn init(allocator: std.mem.Allocator, context: Context) !Processor {
     return .{
         .cmd_handler = commands.Handler.init(
@@ -36,6 +44,8 @@ pub fn init(allocator: std.mem.Allocator, context: Context) !Processor {
     };
 }
 
+/// Processes every complete framed request in the connection accumulator.
+/// Leaves an incomplete suffix in place and updates `receive_start` for the next read.
 pub fn deframe(self: *Processor, connection: *Connection) void {
     var start = connection.receive_start;
 
@@ -67,6 +77,8 @@ pub fn deframe(self: *Processor, connection: *Connection) void {
     }
 }
 
+/// Decodes and executes one request payload, appending one terminated response or error.
+/// Request bytes are borrowed; per-request protocol arena allocations are reset on return.
 pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
     defer self.protocol.reset();
     self.cmd_handler.allocator = self.protocol.serializer.arena.allocator();
@@ -118,6 +130,8 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
     }
 }
 
+/// Handles GET through storage's read-locked value callback to serialize directly to output.
+/// Rolls back partial output before reporting lookup, serialization, or terminator errors.
 fn processGet(self: *Processor, connection: *Connection, command_set: *const std.array_list.Managed(ZType)) void {
     const output_start = connection.tx_accumulator.items.len;
     const args = errors.buildArgs(command_set);
@@ -151,6 +165,7 @@ fn processGet(self: *Processor, connection: *Connection, command_set: *const std
     }
 }
 
+/// Sends a command error and logs which decoded command failed.
 fn failCommand(
     self: *Processor,
     connection: *Connection,
@@ -165,22 +180,26 @@ fn failCommand(
     );
 }
 
+/// Identifies GET case-insensitively so its value can be serialized without an intermediate copy.
 fn isGetCommand(command_set: *const std.array_list.Managed(ZType)) bool {
     return command_set.items.len > 0 and
         command_set.items[0] == .str and
         std.ascii.eqlIgnoreCase(command_set.items[0].str, "GET");
 }
 
+/// Serializes a value into the managed connection output buffer.
 fn appendSerializedValue(output: *std.array_list.Managed(u8), value: ZType) !void {
     try Deserializer.write(output, value);
 }
 
+/// Writes an error response; failures to write are logged because this path cannot return them.
 fn sendError(self: *Processor, connection: *Connection, err: anyerror, args: errors.Args) void {
     errors.handle(connection.out(), err, args, self.context.resources.logger) catch |write_error| {
         self.context.resources.logger.err("* failed to send error: {any}", .{write_error});
     };
 }
 
+/// Releases protocol serializer and deserializer resources owned by this processor.
 pub fn deinit(self: *Processor) void {
     self.protocol.deinit();
 }

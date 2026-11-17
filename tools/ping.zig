@@ -1,6 +1,10 @@
+//! Opens a TCP connection to the default local server and sends one PING frame.
+
 const std = @import("std");
 const consts = @import("consts.zig");
 
+/// Sends a PING request, propagating connection and write failures to the caller.
+/// The socket and threaded I/O resources are released on every return path.
 pub fn main() !void {
     var threaded_io = std.Io.Threaded.init(std.heap.page_allocator, .{});
     defer threaded_io.deinit();

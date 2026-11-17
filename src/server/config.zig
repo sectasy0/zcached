@@ -1,15 +1,30 @@
+//! Defines server configuration defaults and loads values from a Zig Object Notation file.
+
 const std = @import("std");
 const fs = @import("fs");
 const utils = @import("utils.zig");
 const NodeIndex = std.zig.Ast.Node.Index;
 const Address = @import("network/address.zig").Address;
 
+/// Default path used when no configuration file is supplied.
 pub const DEFAULT_PATH: []const u8 = "./zcached.conf.zon";
 
+/// Server settings, including defaults and allocator-owned parsed values.
 const Config = @This();
 
+/// Append-only-file persistence and rewrite settings.
 pub const AOFConfig = struct {
-    pub const FlushStrategy = enum { always, everysec, auto, no };
+    /// Policy controlling when append-only data is flushed.
+    pub const FlushStrategy = enum {
+        /// Flush after each write operation.
+        always,
+        /// Flush periodically, normally once per second.
+        everysec,
+        /// Choose flushing behavior automatically.
+        auto,
+        /// Do not flush automatically.
+        no,
+    };
     /// Flush strategy for the AOF file.
     /// Options: "always", "everysec", "no", default: "everysec"
     /// - "always" - flush every write operation (not recommended for performance)
@@ -23,10 +38,14 @@ pub const AOFConfig = struct {
     /// Percentage of the AOF file to rewrite.
     rewrite_percentage: u32 = 100, // 100%
     /// Minimum size of the AOF file to rewrite.
+    /// Minimum AOF size that permits a rewrite.
     rewrite_min_size: usize = 64 * 1024 * 1024, // 64MB
+    /// Initial buffer capacity used while rewriting the AOF.
     rewrite_buffer_size: usize = 64 * 1024, // 64KB
+    /// Maximum buffer capacity used while rewriting the AOF.
     rewrite_buffer_max_size: usize = 256 * 1024, // 256KB
 
+    /// Configuration keys recognized inside the AOF section.
     const Fields = enum {
         flush_strategy,
         path,
@@ -35,15 +54,20 @@ pub const AOFConfig = struct {
     };
 };
 
+/// Initial capacities and retry timing for background-agent queues.
 pub const AgentConfig = struct {
+    /// Initial capacity of each background worker queue.
     // Default capacity of the background worker queues
     // Queues size are dynamic, this is just the initial capacity
     default_capacity: usize = 64,
+    /// Maximum retries when a task cannot be rescheduled.
     // Number of times to retry rescheduling a task if rescheduling fails
     reschedule_retries: usize = 5,
+    /// Delay between reschedule retries, in milliseconds.
     // Delay between reschedule retries in milliseconds
     reschedule_retry_delay_ms: u64 = 100,
 
+    /// Configuration keys recognized in the agent section.
     const Fields = enum {
         default_capacity,
         reschedule_retries,
@@ -51,18 +75,25 @@ pub const AgentConfig = struct {
     };
 };
 
+/// TLS activation, certificate paths, and peer-verification policy.
 pub const TLSConfig = struct {
+    /// Whether TLS is enabled for the server.
     enabled: bool = false,
+    /// Path to the certificate file
     // Path to the certificate file
     cert_path: ?[]const u8 = null,
+    /// Path to the private key file
     // Path to the private key file
     key_path: ?[]const u8 = null,
+    /// Path to the CA certificate file
     // Path to the CA certificate file
     ca_path: ?[]const u8 = null,
+    /// Whether to verify peer certificates
     // Whether to verify peer certificates
     // If true, the server will verify the peer's certificate against the CA certificate.
     verify_mode: TLSConfig.VerifyMode = .none,
 
+    /// Available peer certificate verification modes.
     pub const VerifyMode = enum {
         none, // No verification
         peer, // Verify peer's certificate
@@ -70,6 +101,7 @@ pub const TLSConfig = struct {
         client_once, // Verify client certificate once
     };
 
+    /// Configuration keys recognized in the TLS section.
     const Fields = enum {
         enabled,
         cert_path,
@@ -79,27 +111,41 @@ pub const TLSConfig = struct {
     };
 };
 
+/// Listening address, including its port.
 address: Address = Address.initIp4(.{ 127, 0, 0, 1 }, 7556),
 
+/// Log file path used when initializing the logger.
 loger_path: []const u8 = DEFAULT_PATH,
 
 // maximum connections per worker thread
 // to calculate global max connctions: `workers` * `max_clients`
+/// Maximum client connections assigned to each worker thread.
 max_clients: usize = 512,
+/// Memory limit in bytes; zero means unlimited.
 max_memory: usize = 0, // 0 means unlimited, value in bytes
+/// Initial client buffer size in bytes; it may grow for larger payloads.
 client_buffer: usize = 4096, // its resized if more space is requied
+/// Number of worker threads.
 workers: usize = 4,
+/// Whether request and response payloads are included in logs.
 log_network_payloads: bool = true,
 
+/// Settings for append-only persistence.
 aof: AOFConfig = .{},
+/// Settings for secure transport.
 tls: TLSConfig = .{},
+/// Settings for background task queues.
 agent: AgentConfig = .{},
 
+/// IP addresses permitted by the access middleware; storage is owned by this config.
 whitelist: std.array_list.Managed(Address) = undefined,
+/// Maximum request size in bytes; zero means unlimited.
 max_request_size: usize = 10 * 1024 * 1024, // 0 means unlimited, value in bytes
 
+/// Allocator used for whitelist storage and parsed TLS/AOF path strings.
 allocator: std.mem.Allocator,
 
+/// Releases the whitelist and parsed paths allocated from `allocator`.
 pub fn deinit(config: *const Config) void {
     config.whitelist.deinit();
     if (config.tls.cert_path != null) config.allocator.free(config.tls.cert_path.?);
@@ -108,10 +154,14 @@ pub fn deinit(config: *const Config) void {
     if (config.aof.path != null) config.allocator.free(config.aof.path.?);
 }
 
+/// Returns the configured listening address by value.
 pub fn getAddress(self: *const Config) Address {
     return self.address;
 }
 
+/// Loads defaults and applies values from an optional ZON file.
+/// A missing file leaves defaults intact; I/O and allocation errors are propagated.
+/// Parsed path strings and whitelist storage are owned by the returned config.
 pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]const u8) !Config {
     var path: []const u8 = DEFAULT_PATH;
     if (file_path != null) path = file_path.?;
@@ -157,6 +207,7 @@ pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]c
     return config;
 }
 
+/// Top-level configuration keys accepted by the ZON parser.
 const ConfigField = enum {
     address,
     port,
@@ -171,6 +222,7 @@ const ConfigField = enum {
     whitelist,
 };
 
+/// Validates the ZON root and applies each declared field, logging malformed roots.
 fn processAst(config: *Config, ast: std.zig.Ast) !void {
     var buf: [2]NodeIndex = undefined;
     if (ast.errors.len > 0) {
@@ -224,19 +276,29 @@ fn processAst(config: *Config, ast: std.zig.Ast) !void {
     }
 }
 
+/// Intermediate values decoded from ZON syntax before assignment to configuration.
 const Node = union(enum) {
+    /// Explicit null literal.
     null,
+    /// Boolean literal value.
     bool: bool,
 
+    /// Non-negative integer literal value.
     int: u64,
+    /// Floating-point literal value.
     float: f64,
+    /// Decoded string literal.
     string: []const u8,
+    /// Name of an enum literal.
     @"enum": []const u8,
 
+    /// Object members preserved by key during section parsing.
     object: std.StringArrayHashMapUnmanaged(Node),
+    /// Empty object literal.
     empty, // .{}
 };
 
+/// Decodes one root field, including nested objects and address lists.
 fn processField(
     config: *Config,
     buf: *[2]NodeIndex,
@@ -384,6 +446,7 @@ fn processField(
     );
 }
 
+/// Interprets a scalar AST node and forwards supported values for assignment.
 fn parseByNodeTag(
     config: *Config,
     allocator: std.mem.Allocator,
@@ -432,6 +495,8 @@ fn parseByNodeTag(
     }
 }
 
+/// Type-checks and applies a decoded value to the matching configuration setting.
+/// Unknown fields and mismatched value types are ignored; address parse failures are logged.
 fn assignFieldValue(config: *Config, field_name: []const u8, value: anytype) !void {
     const config_field = std.meta.stringToEnum(ConfigField, field_name) orelse {
         return;

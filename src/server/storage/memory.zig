@@ -1,3 +1,4 @@
+//! Thread-safe in-memory key/value storage and snapshot access.
 const std = @import("std");
 const runtime_io = @import("runtime_io");
 const sync = @import("sync");
@@ -10,19 +11,27 @@ const Logger = @import("../logger.zig");
 const Config = @import("../config.zig");
 const utils = @import("../utils.zig");
 
+/// Thread-safe in-memory key/value store with persistence and memory-limit support.
 const Memory = @This();
 
+/// Owns the stored keys and values.
 internal: std.StringHashMap(types.ZType),
+/// Allocator used for stored data and returned key collections.
 allocator: std.mem.Allocator,
 
+/// Persister used to write consistent snapshots of the store.
 persister: *persistance.Handler,
 
+/// Runtime settings that affect storage limits and persistence behavior.
 config: Config,
 
+/// Protects the map and its owned values from concurrent access.
 lock: sync.RwLock,
 
+/// Timestamp associated with the most recent successful save.
 last_save: i64,
 
+/// Creates an empty store using the supplied allocator, config, and persister.
 pub fn init(
     allocator: std.mem.Allocator,
     config: Config,
@@ -38,6 +47,7 @@ pub fn init(
     };
 }
 
+/// Reports whether tracked allocations have reached the configured limit.
 fn isMemoryLimitReached(self: *Memory) bool {
     if (self.config.max_memory == 0) return false;
 
@@ -45,6 +55,7 @@ fn isMemoryLimitReached(self: *Memory) bool {
     return tracking.real_size >= self.config.max_memory;
 }
 
+/// Inserts or replaces a value, preserving owned storage for compatible strings.
 pub fn put(self: *Memory, key: []const u8, value: types.ZType) !void {
     self.lock.lock();
     defer self.lock.unlock();
@@ -55,6 +66,29 @@ pub fn put(self: *Memory, key: []const u8, value: types.ZType) !void {
         .err => return error.InvalidValue,
         else => {
             const result = try self.internal.getOrPut(key);
+            const stored_bytes: ?[]const u8 = if (result.found_existing) switch (result.value_ptr.*) {
+                .str => |bytes| bytes,
+                .sstr => |bytes| bytes,
+                else => null,
+            } else null;
+            const incoming_bytes: ?[]const u8 = switch (value) {
+                .str => |bytes| bytes,
+                .sstr => |bytes| bytes,
+                else => null,
+            };
+
+            // Same-kind, same-size strings can reuse their buffer without changing the response type.
+            if (stored_bytes != null and incoming_bytes != null and
+                std.meta.activeTag(result.value_ptr.*) == std.meta.activeTag(value) and
+                stored_bytes.?.len == incoming_bytes.?.len)
+            {
+                const stored = stored_bytes.?;
+                const incoming = incoming_bytes.?;
+                if (!std.mem.eql(u8, stored, incoming)) {
+                    @memmove(@constCast(stored), incoming);
+                }
+                return;
+            }
             const zvalue = try types.ztype_copy(value, self.allocator);
 
             if (!result.found_existing) {
@@ -73,6 +107,7 @@ pub fn put(self: *Memory, key: []const u8, value: types.ZType) !void {
     }
 }
 
+/// Returns a borrowed value; callers must not retain it across concurrent mutations.
 pub fn get(self: *Memory, key: []const u8) !types.ZType {
     self.lock.lockShared();
     defer self.lock.unlockShared();
@@ -80,6 +115,7 @@ pub fn get(self: *Memory, key: []const u8) !types.ZType {
     return self.internal.get(key) orelse error.NotFound;
 }
 
+/// Returns an independent copy of a stored value allocated with `allocator`.
 pub fn getCopy(self: *Memory, key: []const u8, allocator: std.mem.Allocator) !types.ZType {
     self.lock.lockShared();
     defer self.lock.unlockShared();
@@ -87,6 +123,7 @@ pub fn getCopy(self: *Memory, key: []const u8, allocator: std.mem.Allocator) !ty
     return types.ztype_copy(value, allocator);
 }
 
+/// Calls `callback` with a borrowed value while holding the store's shared lock.
 pub fn withValue(self: *Memory, key: []const u8, context: anytype, callback: anytype) !void {
     self.lock.lockShared();
     defer self.lock.unlockShared();
@@ -94,6 +131,7 @@ pub fn withValue(self: *Memory, key: []const u8, context: anytype, callback: any
     try callback(context, value);
 }
 
+/// Returns a value's byte length, collection count, or scalar storage size.
 pub fn valueSize(self: *Memory, key: []const u8) !usize {
     self.lock.lockShared();
     defer self.lock.unlockShared();
@@ -107,6 +145,7 @@ pub fn valueSize(self: *Memory, key: []const u8) !usize {
     };
 }
 
+/// Removes a key and frees its owned key and value; returns false if absent.
 pub fn delete(self: *Memory, key: []const u8) bool {
     self.lock.lock();
     defer self.lock.unlock();
@@ -125,6 +164,7 @@ pub fn delete(self: *Memory, key: []const u8) bool {
     return true;
 }
 
+/// Removes all entries while retaining the map's allocated capacity.
 pub fn flush(self: *Memory) void {
     self.lock.lock();
     defer self.lock.unlock();
@@ -141,6 +181,7 @@ pub fn flush(self: *Memory) void {
     self.internal.clearRetainingCapacity();
 }
 
+/// Returns the number of entries currently stored.
 pub fn size(self: *Memory) i64 {
     self.lock.lockShared();
     defer self.lock.unlockShared();
@@ -148,6 +189,7 @@ pub fn size(self: *Memory) i64 {
     return self.internal.count();
 }
 
+/// Writes a consistent snapshot through the configured persister.
 pub fn save(self: *Memory) !usize {
     self.lock.lockShared();
     defer self.lock.unlockShared();
@@ -155,6 +197,7 @@ pub fn save(self: *Memory) !usize {
     return try self.persister.save(self);
 }
 
+/// Returns keys backed by the store's allocations; key slices are borrowed.
 pub fn keys(self: *Memory) !std.array_list.Managed(types.ZType) {
     self.lock.lockShared();
     defer self.lock.unlockShared();
@@ -170,6 +213,7 @@ pub fn keys(self: *Memory) !std.array_list.Managed(types.ZType) {
     return result;
 }
 
+/// Returns independently allocated copies of all keys.
 pub fn keysCopy(self: *Memory, allocator: std.mem.Allocator) !types.ZType.Array {
     self.lock.lockShared();
     defer self.lock.unlockShared();
@@ -185,6 +229,7 @@ pub fn keysCopy(self: *Memory, allocator: std.mem.Allocator) !types.ZType.Array 
     return result;
 }
 
+/// Moves a value to `new_key`, replacing any value already stored there.
 pub fn rename(self: *Memory, key: []const u8, new_key: []const u8) !void {
     self.lock.lock();
     defer self.lock.unlock();
@@ -213,6 +258,7 @@ pub fn rename(self: *Memory, key: []const u8, new_key: []const u8) !void {
     self.internal.put(zkey, zvalue) catch return error.InsertFailure;
 }
 
+/// Copies a value to `destination`, optionally replacing an existing entry.
 pub fn copy(self: *Memory, source: []const u8, destination: []const u8, replace: bool) !void {
     self.lock.lock();
     defer self.lock.unlock();
@@ -239,12 +285,14 @@ pub fn copy(self: *Memory, source: []const u8, destination: []const u8, replace:
     destination_result.value_ptr.* = zvalue;
 }
 
+/// Starts a shared-locked map iteration; the caller must unlock after iteration.
 pub fn iterator(self: *Memory) @TypeOf(self.internal.iterator()) {
     self.lock.lockShared();
 
     return self.internal.iterator();
 }
 
+/// Releases all values and map storage owned by this store.
 pub fn deinit(self: *Memory) void {
     var value: types.ZType = .{ .map = self.internal };
 
