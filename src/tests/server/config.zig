@@ -45,6 +45,62 @@ test "config can disable network payload logging" {
     try std.testing.expect(!config.log_network_payloads);
 }
 
+test "config loads memory sharding settings alongside legacy memory limit" {
+    var config_file = try ConfigFile.init(testPath(@src().line));
+    defer config_file.deinit();
+    try config_file.create(std.testing.allocator,
+        \\.{
+        \\    .max_memory = 4096,
+        \\    .memory = .{ .shard_count = 3, .default_capacity = 8, .limit = 8192 },
+        \\}
+    );
+    var config = try Config.load(std.testing.allocator, config_file.path, null);
+    defer config.deinit();
+    try std.testing.expectEqual(@as(usize, 3), config.memory.shard_count);
+    try std.testing.expectEqual(@as(usize, 8), config.memory.default_capacity);
+    try std.testing.expectEqual(@as(usize, 8192), config.memory.limit);
+    try std.testing.expectEqual(@as(usize, 4096), config.max_memory);
+}
+
+test "config loads typed network, snapshot and logging sections" {
+    var file = try ConfigFile.init(testPath(@src().line));
+    defer file.deinit();
+    const allocator = std.testing.allocator;
+    try file.create(allocator,
+        \\.{
+        \\    .network = .{ .idle_timeout_ms = 30000, .request_timeout_ms = 5000, .max_pending_response_bytes = 65536 },
+        \\    .snapshot = .{ .path = "./tmp/snapshots", .interval_secs = 60, .keep_last = 3 },
+        \\    .log = .{ .level = .@"error" },
+        \\}
+    );
+    var config = try Config.load(allocator, file.path, null);
+    defer config.deinit();
+    try std.testing.expectEqual(@as(u32, 30000), config.network.idle_timeout_ms);
+    try std.testing.expectEqual(@as(u32, 5000), config.network.request_timeout_ms);
+    try std.testing.expectEqual(@as(usize, 65536), config.network.max_pending_response_bytes);
+    try std.testing.expectEqualStrings("./tmp/snapshots", config.snapshot.path.?);
+    try std.testing.expectEqual(@as(u32, 60), config.snapshot.interval_secs);
+    try std.testing.expectEqual(@as(usize, 3), config.snapshot.keep_last);
+    try std.testing.expectEqual(.@"error", config.log.level);
+}
+
+test "config rejects invalid operational settings" {
+    var file = try ConfigFile.init(testPath(@src().line));
+    defer file.deinit();
+    const allocator = std.testing.allocator;
+    for ([_]struct { source: []const u8, failure: anyerror }{
+        .{ .source = ".{ .network = .{ .request_timeout_ms = -1 } }", .failure = error.ParseZon },
+        .{ .source = ".{ .network = .{ .idle_timeout_ms = 4294967296 } }", .failure = error.ParseZon },
+        .{ .source = ".{ .snapshot = .{ .path = \"\" } }", .failure = error.InvalidSnapshotPath },
+        .{ .source = ".{ .snapshot = .{ .path = \"./persist\" }, .log = .{ .level = .verbose } }", .failure = error.ParseZon },
+    }) |case| {
+        try file.create(allocator, case.source);
+        const result = Config.load(allocator, file.path, null);
+        if (result) |config| config.deinit() else |_| {}
+        try std.testing.expectError(case.failure, result);
+    }
+}
+
 test "config load custom values ipv4" {
     var config_file = try ConfigFile.init(testPath(@src().line));
     config_file.address = "192.168.0.1";

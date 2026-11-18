@@ -84,6 +84,10 @@ pub const OutWriter = struct {
 
 /// Reads more request bytes, enforcing the limit on unread data and requiring a frame terminator.
 pub fn readPending(self: *Self, max_size: usize) !void {
+    return self.readPendingTimed(max_size, .none);
+}
+
+pub fn readPendingTimed(self: *Self, max_size: usize, timeout: std.Io.Timeout) !void {
     const pending_len = self.accumulator.items.len - self.receive_start;
     if (pending_len > max_size) return error.MessageTooLarge;
 
@@ -102,7 +106,7 @@ pub fn readPending(self: *Self, max_size: usize) !void {
     try self.accumulator.ensureUnusedCapacity(read_capacity);
     const old_len = self.accumulator.items.len;
     const read_buffer = self.accumulator.items.ptr[old_len .. old_len + read_capacity];
-    const read_size = try self.stream.read(read_buffer);
+    const read_size = try self.stream.readTimed(read_buffer, timeout);
     if (read_size == 0) return error.ConnectionClosed;
 
     if (read_size > remaining) return error.MessageTooLarge;

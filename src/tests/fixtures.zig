@@ -10,8 +10,6 @@ const Stream = @import("../server/network/stream.zig").Stream;
 
 const Connection = @import("../server/network/connection.zig");
 
-const TracingAllocator = @import("../server/tracing.zig");
-
 const Context = @import("../server/context.zig");
 const Agent = @import("../server/background/agent.zig");
 
@@ -22,7 +20,6 @@ var running: std.atomic.Value(bool) = .init(true);
 
 pub const ContextFixture = struct {
     allocator: std.mem.Allocator,
-    tracing_allocator: TracingAllocator,
     logger: Logger,
     config: Config,
     persistance: ?persistance.Handler,
@@ -32,11 +29,9 @@ pub const ContextFixture = struct {
 
     pub fn init() !ContextFixture {
         const allocator: std.mem.Allocator = std.testing.allocator;
-        const tracing_allocator: TracingAllocator = TracingAllocator.init(allocator);
 
         return ContextFixture{
             .allocator = allocator,
-            .tracing_allocator = tracing_allocator,
             .logger = try Logger.init(allocator, null, null, false),
             .config = try Config.load(allocator, null, null),
             .persistance = null,
@@ -47,10 +42,11 @@ pub const ContextFixture = struct {
 
     pub fn create_memory(self: *ContextFixture) !void {
         if (self.memory != null) self.memory.?.deinit();
+        self.memory = null;
         if (self.persistance == null) try self.create_persistance();
 
-        self.memory = Memory.init(
-            if (self.config.max_memory == 0) self.allocator else self.tracing_allocator.allocator(),
+        self.memory = try Memory.init(
+            self.allocator,
             self.config,
             &self.persistance.?,
         );

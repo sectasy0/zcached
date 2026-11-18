@@ -4,6 +4,30 @@ const fs = @import("fs");
 const Logger = @import("../../server/logger.zig");
 const Agent = @import("../../server/background/agent.zig");
 
+test "minimum log severity filters messages without disabling payload logging" {
+    const allocator = std.testing.allocator;
+    const path = "./tmp/minimum-log-severity.log";
+    defer fs.cwd().deleteFile(path) catch {};
+    var logger = try Logger.init(allocator, null, path, false);
+    defer logger.deinit();
+    logger.level = .Warning;
+    logger.info("filtered dispatch", .{});
+    logger.log(.Debug, "filtered direct", .{});
+    logger.warn("kept warning", .{});
+    logger.logEvent(.Request, "kept payload");
+    logger.flush();
+
+    const file = try fs.cwd().openFile(path, .{ .mode = .read_only });
+    defer file.close();
+    var buffer: [512]u8 = undefined;
+    const size = (try file.stat()).size;
+    try std.testing.expect(size <= buffer.len);
+    const log = buffer[0..try file.readAll(buffer[0..size])];
+    try std.testing.expect(std.mem.indexOf(u8, log, "filtered") == null);
+    try std.testing.expect(std.mem.indexOf(u8, log, "kept warning") != null);
+    try std.testing.expect(std.mem.indexOf(u8, log, "kept payload") != null);
+}
+
 test "queued logger dispatch preserves levels and owns event payloads" {
     const allocator = std.testing.allocator;
     const path = "./tmp/queued-network-payload.log";

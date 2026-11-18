@@ -47,8 +47,8 @@ pub const Context = struct {
     }
 
     /// Performs a server-side TLS handshake and attaches TLS state to a socket stream.
-    pub fn upgrade(self: *const Context, io: std.Io, socket: std.Io.net.Stream) !StreamContext {
-        return upgradeWithContext(io, self.ctx, socket, false);
+    pub fn upgrade(self: *const Context, io: std.Io, socket: std.Io.net.Stream, timeout: std.Io.Timeout) !StreamContext {
+        return upgradeWithContext(io, self.ctx, socket, false, timeout);
     }
 
     /// Releases the context; existing upgraded streams own separate SSL sessions.
@@ -64,11 +64,11 @@ pub fn upgradeClient(io: std.Io, socket: std.Io.net.Stream) !StreamContext {
     defer openssl.SSL_CTX_free(ctx);
     if (openssl.SSL_CTX_set_min_proto_version(ctx, openssl.TLS1_3_VERSION) != 1) return error.SSLMinVersion;
     openssl.SSL_CTX_set_verify(ctx, openssl.SSL_VERIFY_NONE, null);
-    return upgradeWithContext(io, ctx, socket, true);
+    return upgradeWithContext(io, ctx, socket, true, .none);
 }
 
 /// Builds SSL/BIO state, selects the handshake role, and completes negotiation.
-fn upgradeWithContext(io: std.Io, ctx: *openssl.SSL_CTX, socket: std.Io.net.Stream, client: bool) !StreamContext {
+fn upgradeWithContext(io: std.Io, ctx: *openssl.SSL_CTX, socket: std.Io.net.Stream, client: bool, timeout: std.Io.Timeout) !StreamContext {
     const ssl = openssl.SSL_new(ctx) orelse return error.SSLInitFailure;
     errdefer openssl.SSL_free(ssl);
     const input = openssl.BIO_new(openssl.BIO_s_mem()) orelse return error.TLSBioFailure;
@@ -80,7 +80,7 @@ fn upgradeWithContext(io: std.Io, ctx: *openssl.SSL_CTX, socket: std.Io.net.Stre
     if (client) openssl.SSL_set_connect_state(ssl) else openssl.SSL_set_accept_state(ssl);
 
     var state = StreamContext{ .io = io, .ssl = ssl, .input = input, .output = output };
-    try state.handshake(socket);
+    try state.handshake(socket, timeout);
     return state;
 }
 
@@ -102,23 +102,23 @@ pub const StreamContext = struct {
     }
 
     /// Drains pending encrypted output to the socket and returns the byte count.
-    fn flush(self: *StreamContext, socket: std.Io.net.Stream) Error!usize {
+    fn flush(self: *StreamContext, socket: std.Io.net.Stream, timeout: std.Io.Timeout) Error!usize {
         var buffer: [16384]u8 = undefined;
         var total: usize = 0;
         while (openssl.BIO_ctrl_pending(self.output) > 0) {
             const n = openssl.BIO_read(self.output, &buffer, buffer.len);
             if (n <= 0) return error.TLSBioFailure;
             const length: usize = @intCast(n);
-            try socket_io.writeAll(self.io, socket, buffer[0..length]);
+            try socket_io.writeAll(self.io, socket, buffer[0..length], timeout);
             total += length;
         }
         return total;
     }
 
     /// Reads encrypted socket bytes into the input BIO; EOF is a TLS truncation error.
-    fn receive(self: *StreamContext, socket: std.Io.net.Stream) Error!void {
+    fn receive(self: *StreamContext, socket: std.Io.net.Stream, timeout: std.Io.Timeout) Error!void {
         var buffer: [16384]u8 = undefined;
-        const count = try socket_io.read(self.io, socket, &buffer);
+        const count = try socket_io.read(self.io, socket, &buffer, timeout);
         if (count == 0) return error.TLSUnexpectedEof;
         var offset: usize = 0;
         while (offset < count) {
@@ -129,44 +129,44 @@ pub const StreamContext = struct {
     }
 
     /// Flushes generated records and satisfies OpenSSL's request for I/O progress.
-    fn proceed(self: *StreamContext, socket: std.Io.net.Stream, status: c_int) Error!void {
-        const flushed = try self.flush(socket);
+    fn proceed(self: *StreamContext, socket: std.Io.net.Stream, status: c_int, timeout: std.Io.Timeout) Error!void {
+        const flushed = try self.flush(socket, timeout);
         switch (status) {
-            openssl.SSL_ERROR_WANT_READ => try self.receive(socket),
+            openssl.SSL_ERROR_WANT_READ => try self.receive(socket, timeout),
             openssl.SSL_ERROR_WANT_WRITE => if (flushed == 0) return error.TLSNoProgress,
             else => return error.TLSProtocolError,
         }
     }
 
     /// Drives negotiation until OpenSSL reports completion or an I/O/protocol error.
-    fn handshake(self: *StreamContext, socket: std.Io.net.Stream) Error!void {
+    fn handshake(self: *StreamContext, socket: std.Io.net.Stream, timeout: std.Io.Timeout) Error!void {
         while (true) {
             openssl.ERR_clear_error();
             const result = openssl.SSL_do_handshake(self.ssl);
             const status = if (result == 1) openssl.SSL_ERROR_NONE else openssl.SSL_get_error(self.ssl, result);
             if (result == 1) {
-                _ = try self.flush(socket);
+                _ = try self.flush(socket, timeout);
                 return;
             }
-            try self.proceed(socket, status);
+            try self.proceed(socket, status, timeout);
         }
     }
 
     /// Reads decrypted application data; zero indicates a clean TLS close-notify.
-    pub fn read(self: *StreamContext, socket: std.Io.net.Stream, buffer: []u8) Error!usize {
+    pub fn read(self: *StreamContext, socket: std.Io.net.Stream, buffer: []u8, timeout: std.Io.Timeout) Error!usize {
         while (true) {
             openssl.ERR_clear_error();
             const result = openssl.SSL_read(self.ssl, buffer.ptr, @intCast(@min(buffer.len, std.math.maxInt(c_int))));
             const status = if (result > 0) openssl.SSL_ERROR_NONE else openssl.SSL_get_error(self.ssl, result);
             if (result > 0) {
-                _ = try self.flush(socket);
+                _ = try self.flush(socket, timeout);
                 return @intCast(result);
             }
             if (status == openssl.SSL_ERROR_ZERO_RETURN) {
-                _ = try self.flush(socket);
+                _ = try self.flush(socket, timeout);
                 return 0;
             }
-            try self.proceed(socket, status);
+            try self.proceed(socket, status, timeout);
         }
     }
 
@@ -177,11 +177,11 @@ pub const StreamContext = struct {
             const result = openssl.SSL_write(self.ssl, bytes.ptr, @intCast(@min(bytes.len, std.math.maxInt(c_int))));
             const status = if (result > 0) openssl.SSL_ERROR_NONE else openssl.SSL_get_error(self.ssl, result);
             if (result > 0) {
-                _ = try self.flush(socket);
+                _ = try self.flush(socket, .none);
                 return @intCast(result);
             }
             if (status == openssl.SSL_ERROR_ZERO_RETURN) return error.TLSUnexpectedEof;
-            try self.proceed(socket, status);
+            try self.proceed(socket, status, .none);
         }
     }
 };

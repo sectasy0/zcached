@@ -133,7 +133,7 @@ pub const Handler = struct {
                 .ok = .{ .int = self.context.resources.memory.size() },
             },
             .LASTSAVE => return .{
-                .ok = .{ .int = self.context.resources.memory.last_save },
+                .ok = .{ .int = self.context.resources.memory.last_save.load(.monotonic) },
             },
             .SAVE => return self.save(),
             .KEYS => return self.zkeys(),

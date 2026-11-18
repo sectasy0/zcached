@@ -356,8 +356,8 @@ pub fn rewrite(self: *Self) void {
     var rewrite_installed = false;
     defer if (!rewrite_installed) rewritten.close();
 
-    self.context.resources.memory.lock.lock();
-    defer self.context.resources.memory.lock.unlock();
+    var iterator = self.context.resources.memory.iterator();
+    defer iterator.deinit();
 
     var handler: Protocol = Protocol.init(self.allocator) catch |err| {
         self.context.resources.logger.log(.Error, "# Failed to initialize AOF rewrite serializer: {}", .{err});
@@ -365,7 +365,6 @@ pub fn rewrite(self: *Self) void {
     };
     defer handler.deinit();
 
-    var iterator = self.context.resources.memory.internal.iterator();
     while (iterator.next()) |item| {
         self.rewrite_buffer.appendSlice("*3\r\n$3\r\nSET\r\n") catch |err| {
             self.context.resources.logger.log(

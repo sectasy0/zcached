@@ -183,7 +183,7 @@ test "should handle FLUSH command" {
 
     const result = cmd_handler.process(&command_set);
     try std.testing.expectEqual(result.ok, ZType{ .sstr = "OK" });
-    try std.testing.expectEqual(fixture.memory.?.internal.count(), 0);
+    try std.testing.expectEqual(fixture.memory.?.size(), 0);
 }
 
 // Confirms PING returns the PONG response.
@@ -389,7 +389,7 @@ test "should handle LASTSAVE command" {
     defer fixture.deinit();
     try fixture.create_memory();
 
-    const expected: i64 = fixture.memory.?.last_save;
+    const expected = fixture.memory.?.last_save.load(.monotonic);
 
     var cmd_handler = commands.Handler.init(fixture.allocator, fixture.context());
 

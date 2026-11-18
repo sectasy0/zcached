@@ -47,7 +47,7 @@ fn number(comptime T: type, text: []const u8, min: T, max: T) !T {
 }
 
 /// Parses profiling flags and enforces valid workload bounds and timeout ordering.
-fn parseOptions(args: []const [:0]const u8) !Options {
+pub fn parseOptions(args: []const [:0]const u8) !Options {
     var options: Options = .{};
     var i: usize = 1;
     while (i < args.len) : (i += 2) {
@@ -172,7 +172,7 @@ fn requireSuccess(term: std.process.Child.Term, label: []const u8) !void {
 
 /// Reaps a child without relinquishing its PID when the wait operation is canceled.
 /// The PID is cleared only after waitpid observes a terminal process status.
-fn waitChild(child: *std.process.Child, io: std.Io) !std.process.Child.Term {
+pub fn waitChild(child: *std.process.Child, io: std.Io) !std.process.Child.Term {
     std.debug.assert(child.stdin == null and child.stdout == null and child.stderr == null);
     // Canceling Child.wait clears its PID even when the process is still alive.
     while (true) {
@@ -221,7 +221,7 @@ fn run(allocator: std.mem.Allocator, io: std.Io, options: Options) !void {
         \\    .address = "127.0.0.1",
         \\    .port = {d},
         \\    .workers = {d},
-        \\    .max_memory = 0,
+        \\    .memory = .{{ .limit = 0 }},
         \\    .log_network_payloads = false,
         \\    .tls = .{{ .enabled = false }},
         \\    .aof = .{{ .flush_strategy = .no, .path = "./data/appendonly.aof" }},
@@ -396,45 +396,4 @@ pub fn main(init: std.process.Init) !void {
     std.posix.sigaction(.TERM, &action, &old_term);
     defer std.posix.sigaction(.TERM, &old_term, null);
     try run(allocator, init.io, options);
-}
-
-test "profile options validate workload and recording bounds" {
-    const options = try parseOptions(&.{ "profile", "--duration", "5", "--clients", "2", "--requests", "10", "--pipeline", "3", "--value-size", "16384", "--output", "/tmp/profile-test" });
-    try std.testing.expectEqual(@as(u32, 5), options.duration);
-    try std.testing.expectEqual(@as(usize, 3), options.pipeline);
-    try std.testing.expectEqual(@as(usize, 16384), options.value_size);
-    try std.testing.expectError(error.InvalidOptionValue, parseOptions(&.{ "profile", "--pipeline", "0" }));
-    try std.testing.expectError(error.InvalidOptionValue, parseOptions(&.{ "profile", "--clients", "129" }));
-    try std.testing.expectError(error.InvalidOptionValue, parseOptions(&.{ "profile", "--value-size", "1048577" }));
-    try std.testing.expectError(error.InvalidRequestCount, parseOptions(&.{ "profile", "--requests", "3" }));
-    try std.testing.expectError(error.TimeoutTooShort, parseOptions(&.{ "profile", "--duration", "30", "--timeout", "30" }));
-    try std.testing.expectError(error.MissingOptionValue, parseOptions(&.{ "profile", "--output" }));
-    try std.testing.expectError(error.UnknownOption, parseOptions(&.{ "profile", "--unknown", "1" }));
-}
-
-test "canceling process monitoring preserves ownership for cleanup" {
-    var threaded = std.Io.Threaded.init(std.testing.allocator, .{});
-    defer threaded.deinit();
-    const io = threaded.io();
-    var child = try std.process.spawn(io, .{
-        .argv = &.{ "/bin/sleep", "60" },
-        .stdin = .ignore,
-        .stdout = .ignore,
-        .stderr = .ignore,
-    });
-    defer child.kill(io);
-    const pid = child.id.?;
-    var started: std.Io.Event = .unset;
-    // Isolates child monitoring in a task and signals when cancellation is safe.
-    const Monitor = struct {
-        /// Announces entry before waiting so the test can reliably cancel the monitor.
-        fn run(process: *std.process.Child, interface: std.Io, ready: *std.Io.Event) !std.process.Child.Term {
-            ready.set(interface);
-            return waitChild(process, interface);
-        }
-    };
-    var future = try io.concurrent(Monitor.run, .{ &child, io, &started });
-    started.waitUncancelable(io);
-    try std.testing.expectError(error.Canceled, future.cancel(io));
-    try std.testing.expectEqual(@as(?std.process.Child.Id, pid), child.id);
 }

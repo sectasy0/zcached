@@ -67,6 +67,7 @@ test "Server handles fragmented and pipelined requests alongside an idle client"
     try fixture.create_memory();
     fixture.logger.agent = &fixture.agent;
     fixture.config.max_clients = 2;
+    fixture.config.network.max_pending_response_bytes = pong.len;
     var running: std.atomic.Value(bool) = .init(true);
     var context = fixture.context();
     context.running = &running;
@@ -91,6 +92,62 @@ test "Server handles fragmented and pipelined requests alongside an idle client"
     task.cancel(io) catch |err| switch (err) {
         error.Canceled => {},
     };
+}
+
+test "Server expires idle clients and enforces a deadline across request fragments" {
+    const Check = struct {
+        result: anyerror!void = undefined,
+
+        fn run(io: std.Io, state: *@This()) void {
+            state.result = check(io);
+        }
+
+        fn check(io: std.Io) !void {
+            var fixture = try ContextFixture.init();
+            defer fixture.deinit();
+            defer fixture.agent.deinit();
+            try fixture.create_memory();
+            fixture.config.log_network_payloads = false;
+            fixture.config.network.idle_timeout_ms = 250;
+            fixture.config.network.request_timeout_ms = 90;
+            var server = try Server.init(fixture.allocator, io, fixture.context());
+            defer server.deinit();
+            try server.transport.listen(Address.initIp4(.{ 127, 0, 0, 1 }, 0));
+            var task = try io.concurrent(Server.acceptConnections, .{ &server, io });
+            defer task.cancel(io) catch {};
+
+            const addr = server.transport.listen_address.ip;
+            const idle = try addr.connect(io, .{ .mode = .stream });
+            defer idle.close(io);
+            const slow = try addr.connect(io, .{ .mode = .stream });
+            defer slow.close(io);
+            var writer = slow.writer(io, &.{});
+            try writer.interface.writeAll(ping);
+            try expectResponseTimeout(slow, pong, 2000);
+            try writer.interface.writeAll(ping[0..1]);
+            try io.sleep(.fromMilliseconds(55), .awake);
+            try writer.interface.writeAll(ping[1..2]);
+            // This read expires after the original request deadline, but before
+            // a new 90 ms timer started on the second fragment would expire.
+            try expectClosed(io, slow, 70);
+            try expectClosed(io, idle, 2000);
+        }
+    };
+    var check: Check = .{};
+    var worker: runtime_io.Worker = .{};
+    try worker.start(std.testing.io, std.testing.allocator, Check.run, .{&check});
+    worker.join();
+    try check.result;
+}
+
+fn expectClosed(io: std.Io, stream: std.Io.net.Stream, ms: i64) !void {
+    var byte: [1]u8 = undefined;
+    var buffers = [_][]u8{&byte};
+    const result = try io.operateTimeout(.{ .net_read = .{
+        .socket_handle = stream.socket.handle,
+        .data = &buffers,
+    } }, .{ .duration = .{ .raw = .fromMilliseconds(ms), .clock = .awake } });
+    try std.testing.expectEqual(@as(usize, 0), (try result.net_read).data_len);
 }
 
 test "Server resumes accepting after its client limit is released" {

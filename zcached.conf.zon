@@ -14,17 +14,33 @@
     // TCP port zcached will listen on
     .port = 7556,
 
+    .network = .{
+        // 0 disables each timeout. Idle also limits the TLS handshake.
+        .idle_timeout_ms = 0,
+        // Time to finish receiving a frame after its first bytes arrive.
+        .request_timeout_ms = 0,
+        // Flush pipelined responses at this threshold; 0 disables it.
+        .max_pending_response_bytes = 0,
+    },
+
     // -------------------------
     // Memory and request limits
     // -------------------------
-    // Maximum memory in bytes; 0 = unlimited
-    .max_memory = 0,
+    .memory = .{
+        .shard_count = 16,
+        .default_capacity = 64,
+        // Global limit across shards in bytes; 0 = unlimited unless legacy max_memory is set.
+        .limit = 0,
+    },
 
     // Default per-client buffer size in bytes
     .client_buffer = 4096,
 
     // Log request and response payloads
     .log_network_payloads = true,
+
+    // Minimum operational severity: .debug, .info, .warning, .@"error".
+    .log = .{ .level = .debug },
 
     // Maximum request size in bytes
     .max_request_size = 10485760, // 10 MB
@@ -64,6 +80,14 @@
 
         // Minimum AOF size before a rewrite can be triggered (64 MB)
         .rewrite_min_size = 67108864,
+    },
+
+    .snapshot = .{
+        .path = "./persist",
+        // 0 disables scheduled saves; manual SAVE is still available.
+        .interval_secs = 0,
+        // 0 keeps all snapshots.
+        .keep_last = 0,
     },
 
     // -------------------------

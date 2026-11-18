@@ -1,8 +1,88 @@
 const std = @import("std");
 const fs = @import("fs");
+const runtime_io = @import("runtime_io");
 
 const fixtures = @import("../fixtures.zig");
 const ContextFixture = fixtures.ContextFixture;
+const Handler = @import("../../server/storage/persistance.zig");
+
+test "scheduled snapshots use configured directory and prune only older snapshots" {
+    const allocator = std.testing.allocator;
+    const path = try std.fmt.allocPrint(allocator, "./tmp/persist-scheduled-{d}", .{runtime_io.timestampNanoseconds()});
+    defer allocator.free(path);
+    try fs.cwd().makePath(path);
+    defer fs.cwd().deleteTree(path) catch {};
+    const dir = try fs.cwd().openDir(path, .{ .iterate = true });
+    defer dir.close();
+    for ([_][]const u8{ "dump_1.zcpf", "dump_2.zcpf", "unrelated.zcpf" }) |name| {
+        const file = try dir.createFile(name, .{});
+        defer file.close();
+        try file.writeAll("zcpf%0\r\n");
+    }
+
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    defer fixture.agent.deinit();
+    try fixture.create_memory();
+    var config = fixture.config;
+    config.snapshot = .{ .path = path, .interval_secs = 1, .keep_last = 2 };
+    var persister = try Handler.init(allocator, config, &fixture.logger, null);
+    defer persister.deinit();
+    const memory = &fixture.memory.?;
+    memory.last_save.store(0, .monotonic);
+    try memory.put("scheduled", .{ .int = 12 });
+    try fixture.agent.kickoff();
+    try persister.start(&fixture.agent, memory);
+    const io = runtime_io.get();
+    const limit = runtime_io.timestampNanoseconds() + 5 * std.time.ns_per_s;
+    while (memory.last_save.load(.monotonic) == 0 and runtime_io.timestampNanoseconds() < limit)
+        try io.sleep(.fromMilliseconds(10), .awake);
+    persister.stop();
+    try std.testing.expect(memory.last_save.load(.monotonic) > 2);
+    const removed = dir.openFile("dump_1.zcpf", .{});
+    if (removed) |file| file.close() else |_| {}
+    try std.testing.expectError(error.FileNotFound, removed);
+    for ([_][]const u8{ "dump_2.zcpf", "unrelated.zcpf" }) |name| {
+        const file = try dir.openFile(name, .{});
+        file.close();
+    }
+    memory.flush();
+    try persister.load(memory);
+    try std.testing.expectEqual(@as(i64, 12), (try memory.get("scheduled")).int);
+}
+
+test "snapshot round trip restores every shard with a different shard count" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    fixture.config.memory.shard_count = 3;
+    try fixture.create_memory();
+    const path = try std.fmt.allocPrint(fixture.allocator, "./tmp/persist-sharded-{d}/", .{runtime_io.timestampNanoseconds()});
+    defer fixture.allocator.free(path);
+    try fs.cwd().makePath(path);
+    defer fs.cwd().deleteDir(path) catch {};
+    fixture.persistance.?.path = path;
+
+    for (0..128) |index| {
+        var buffer: [32]u8 = undefined;
+        const key = try std.fmt.bufPrint(&buffer, "snapshot-key-{d}", .{index});
+        try fixture.memory.?.put(key, .{ .int = @intCast(index) });
+    }
+    for (fixture.memory.?.fabric.shards) |*shard| try std.testing.expect(shard.map.count() > 0);
+    try std.testing.expect(try fixture.memory.?.save() > 0);
+    const filename = try std.fmt.allocPrint(fixture.allocator, "{s}dump_{d}.zcpf", .{ path, fixture.memory.?.last_save.load(.monotonic) });
+    defer fixture.allocator.free(filename);
+    defer fs.cwd().deleteFile(filename) catch {};
+
+    fixture.config.memory.shard_count = 5;
+    try fixture.create_memory();
+    try fixture.persistance.?.load(&fixture.memory.?);
+    try std.testing.expectEqual(@as(i64, 128), fixture.memory.?.size());
+    for (0..128) |index| {
+        var buffer: [32]u8 = undefined;
+        const key = try std.fmt.bufPrint(&buffer, "snapshot-key-{d}", .{index});
+        try std.testing.expectEqual(@as(i64, @intCast(index)), (try fixture.memory.?.get(key)).int);
+    }
+}
 
 // Verifies a valid snapshot restores all encoded entries.
 test "should load" {
@@ -13,7 +93,7 @@ test "should load" {
     try fixture.create_memory();
     fixture.persistance.?.path = "./tmp/persist-load/";
 
-    try std.testing.expectEqual(fixture.memory.?.internal.count(), 0);
+    try std.testing.expectEqual(fixture.memory.?.size(), 0);
 
     const file_content = "zcpf%4\r\n$5\r\ntest2\r\n$8\r\ntesttest\r\n$5\r\ntest1\r\n$8\r\ntesttest\r\n$5\r\ntest3\r\n$8\r\ntesttest\r\n$5\r\ntest4\r\n$8\r\ntesttest\r\n\x03";
     const file = try fs.cwd().createFile("./tmp/persist-load/dump_123.zcpf", .{});
@@ -22,7 +102,7 @@ test "should load" {
 
     try fixture.persistance.?.load(&fixture.memory.?);
 
-    try std.testing.expectEqual(fixture.memory.?.internal.count(), 4);
+    try std.testing.expectEqual(fixture.memory.?.size(), 4);
 
     fs.cwd().deleteFile("./tmp/persist-load/dump_123.zcpf") catch {};
     fs.cwd().deleteDir("./tmp/persist-load") catch {};
@@ -39,7 +119,7 @@ test "should not load without header" {
 
     fs.cwd().makeDir("./tmp/persist-no-header") catch {};
 
-    try std.testing.expectEqual(fixture.memory.?.internal.count(), 0);
+    try std.testing.expectEqual(fixture.memory.?.size(), 0);
 
     const file_content = "%4\r\n$5\r\ntest2\r\n$8\r\ntesttest\r\n$5\r\ntest1\r\n$8\r\ntesttest\r\n$5\r\ntest3\r\n$8\r\ntesttest\r\n$5\r\ntest4\r\n$8\r\ntesttest";
     const file = try fs.cwd().createFile("./tmp/persist-no-header/dump_123.zcpf", .{});
@@ -63,7 +143,7 @@ test "should not load invalid ext" {
 
     fs.cwd().makeDir("./tmp/persist-invalid-ext") catch {};
 
-    try std.testing.expectEqual(fixture.memory.?.internal.count(), 0);
+    try std.testing.expectEqual(fixture.memory.?.size(), 0);
 
     const file_content = "%4\r\n$5\r\ntest2\r\n$8\r\ntesttest\r\n$5\r\ntest1\r\n$8\r\ntesttest\r\n$5\r\ntest3\r\n$8\r\ntesttest\r\n$5\r\ntest4\r\n$8\r\ntesttest";
     const file = try fs.cwd().createFile("./tmp/persist-invalid-ext/dump_latest_123.asdf", .{});
@@ -76,28 +156,33 @@ test "should not load invalid ext" {
     fs.cwd().deleteDir("./tmp/persist-invalid-ext") catch {};
 }
 
-// Checks malformed snapshot contents return InvalidFile.
-test "should not load corrupted file" {
-    fs.cwd().makePath("./tmp/persist-corrupted") catch {};
-
+test "rejects malformed contents in a recognized snapshot file" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
     try fixture.create_memory();
-    fixture.persistance.?.path = "./tmp/persist-corrupted/";
+    const path = "./tmp/persist-corrupted/";
+    const filename = path ++ "dump_123.zcpf";
+    try fs.cwd().makePath(path);
+    defer fs.cwd().deleteDir(path) catch {};
+    defer fs.cwd().deleteFile(filename) catch {};
+    fixture.persistance.?.path = path;
+    const memory = &fixture.memory.?;
+    const last_save = memory.last_save.load(.monotonic);
 
-    fs.cwd().makeDir("./tmp/persist-corrupted") catch {};
-
-    try std.testing.expectEqual(fixture.memory.?.internal.count(), 0);
-
-    const file_content = "%4\r\n$5test2\r\n$4\r\ntesttest\r\n$5\r\ntest1\r\n$8\r\ntesttest\r\n$5\r\ntest3\r\n$8\r\ntesttest\r\n$5\r\ntest4\r\n$8\r\ntesttest";
-    const file = try fs.cwd().createFile("./tmp/persist-corrupted/dump_123.asdf", .{});
-    try file.writeAll(file_content);
-    defer file.close();
-
-    try std.testing.expectEqual(fixture.persistance.?.load(&fixture.memory.?), error.InvalidFile);
-
-    fs.cwd().deleteFile("./tmp/persist-corrupted/dump_123.asdf") catch {};
-    fs.cwd().deleteDir("./tmp/persist-corrupted") catch {};
+    for ([_][]const u8{
+        "zc",
+        "zcpf%1\r\n:5\r\n:7\r\n",
+        "zcpf%1\r\n$3\r\nkey\r\n$8\r\n",
+    }) |payload| {
+        {
+            const file = try fs.cwd().createFile(filename, .{});
+            defer file.close();
+            try file.writeAll(payload);
+        }
+        try std.testing.expectError(error.InvalidFile, fixture.persistance.?.load(memory));
+        try std.testing.expectEqual(@as(i64, 0), memory.size());
+        try std.testing.expectEqual(last_save, memory.last_save.load(.monotonic));
+    }
 }
 
 // Verifies saving writes a snapshot and reports its serialized length.
@@ -121,7 +206,7 @@ test "should save" {
     const filename = try std.fmt.allocPrint(
         std.testing.allocator,
         "./tmp/persist-save/dump_{d}.zcpf",
-        .{fixture.memory.?.last_save},
+        .{fixture.memory.?.last_save.load(.monotonic)},
     );
     defer std.testing.allocator.free(filename);
     fs.cwd().deleteFile(filename) catch {};

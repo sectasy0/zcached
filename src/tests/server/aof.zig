@@ -56,6 +56,40 @@ fn processCommand(
     try std.testing.expect(result == .ok);
 }
 
+test "AOF rewrite snapshots every shard and replays into a different shard count" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    fixture.config.memory.shard_count = 3;
+    try fixture.create_memory();
+    const path = try uniquePath(fixture.allocator);
+    defer fixture.allocator.free(path);
+    defer fs.cwd().deleteFile(path) catch {};
+    const rewrite_path = try std.fmt.allocPrint(fixture.allocator, "{s}.rewrite", .{path});
+    defer fixture.allocator.free(rewrite_path);
+    defer fs.cwd().deleteFile(rewrite_path) catch {};
+    try configureAOF(&fixture, path, .everysec);
+    var aof = try AOF.init(fixture.allocator, fixture.context());
+    defer aof.deinit();
+    for (0..128) |index| {
+        var buffer: [32]u8 = undefined;
+        const key = try std.fmt.bufPrint(&buffer, "rewrite-key-{d}", .{index});
+        try fixture.memory.?.put(key, .{ .int = @intCast(index) });
+    }
+    for (fixture.memory.?.fabric.shards) |*shard| try std.testing.expect(shard.map.count() > 0);
+    aof.rewrite();
+    try std.testing.expect(aof.last_rewrite_size.load(.seq_cst) > 0);
+    try std.testing.expectEqual(aof.last_rewrite_size.load(.seq_cst), try fileSize(path));
+    fixture.config.memory.shard_count = 5;
+    try fixture.create_memory();
+    try aof.replay();
+    try std.testing.expectEqual(@as(i64, 128), fixture.memory.?.size());
+    for (0..128) |index| {
+        var buffer: [32]u8 = undefined;
+        const key = try std.fmt.bufPrint(&buffer, "rewrite-key-{d}", .{index});
+        try std.testing.expectEqual(@as(i64, @intCast(index)), (try fixture.memory.?.get(key)).int);
+    }
+}
+
 // Verifies successful mutations are journaled and replay restores the final key state.
 test "AOF stores successful mutations and replays them from configured path" {
     var fixture = try ContextFixture.init();
@@ -118,7 +152,7 @@ test "AOF stores successful mutations and replays them from configured path" {
     fixture.memory.?.flush();
     try aof.flush();
     try aof.replay();
-    try std.testing.expectEqual(@as(usize, 0), fixture.memory.?.internal.count());
+    try std.testing.expectEqual(@as(i64, 0), fixture.memory.?.size());
 }
 
 // Checks the always policy writes each append to disk immediately.
@@ -317,5 +351,5 @@ test "no strategy neither appends nor replays commands" {
     try aof.replay();
     try std.testing.expectEqual(@as(u64, existing_command.len), try fileSize(path));
     try std.testing.expectEqual(@as(usize, 0), aof.buffer.items.len);
-    try std.testing.expectEqual(@as(usize, 0), fixture.memory.?.internal.count());
+    try std.testing.expectEqual(@as(i64, 0), fixture.memory.?.size());
 }

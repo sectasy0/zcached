@@ -8,7 +8,7 @@ comptime {
     _ = @import("tests/server/config.zig");
     _ = @import("tests/server/cli.zig");
     _ = @import("tests/server/logger.zig");
-    _ = @import("server/tracing.zig");
+    _ = @import("tests/server/tracing.zig");
     _ = @import("tests/server/utils.zig");
 
     _ = @import("tests/background/fifo.zig");
@@ -26,4 +26,8 @@ comptime {
     _ = @import("tests/server/memory.zig");
     _ = @import("tests/server/persistance.zig");
     _ = @import("tests/server/aof.zig");
+
+    _ = @import("tests/runtime/evented.zig");
+    _ = @import("tests/tools/benchmark.zig");
+    _ = @import("tests/tools/profile.zig");
 }

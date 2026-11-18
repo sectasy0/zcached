@@ -21,9 +21,6 @@ const Memory = @import("server/storage/memory.zig");
 const persistance = @import("server/storage/persistance.zig");
 const AOF = @import("server/storage/aof.zig");
 
-// Tracing
-const TracingAllocator = @import("server/tracing.zig");
-
 pub const panic = std.debug.FullPanic(panicHandler);
 
 /// Indicates whether the server should continue accepting and serving work.
@@ -157,6 +154,12 @@ pub fn main(init: std.process.Init) void {
         return;
     };
     defer config.deinit();
+    logger.level = switch (config.log.level) {
+        .debug => .Debug,
+        .info => .Info,
+        .warning => .Warning,
+        .@"error" => .Error,
+    };
 
     var persister = persistance.Handler.init(
         allocator,
@@ -169,28 +172,15 @@ pub fn main(init: std.process.Init) void {
     };
     defer persister.deinit();
 
-    // allocator for database inner database data purposes.
-    // we don't need to wrap it in a thread-safe allocator because Memory struct is secured by mutex
-    var dbgpa: std.heap.DebugAllocator(.{
-        .safety = true,
-        // .verbose_log = true,
-        // .retain_metadata = true,
-    }) = .init;
-    defer if (debug_allocator) {
-        _ = dbgpa.deinit();
-    };
-
-    const storage_allocator = if (debug_allocator) dbgpa.allocator() else std.heap.smp_allocator;
-    var tracing = TracingAllocator.init(storage_allocator);
     var memory = Memory.init(
-        if (config.max_memory == 0) storage_allocator else tracing.allocator(),
+        allocator,
         config,
         &persister,
-    );
-    defer {
-        memory.deinit();
-        if (debug_allocator and dbgpa.detectLeaks() != 0) std.process.exit(255);
-    }
+    ) catch |err| {
+        logger.err("# failed to initialize memory: {any}", .{err});
+        return;
+    };
+    defer memory.deinit();
 
     agent.kickoff() catch |err| {
         logger.err("# failed to initialize background agent: {any}", .{err});
@@ -202,11 +192,15 @@ pub fn main(init: std.process.Init) void {
         return;
     };
 
-    persister.load(&memory) catch |err| {
-        if (err != error.FileNotFound) {
-            logger.warn("# failed to restore data from latest .zcpf file: {any}", .{err});
-        }
-    };
+    if (config.snapshot.interval_secs == 0 or config.aof.flush_strategy == .no) {
+        persister.load(&memory) catch |err| {
+            if (err != error.FileNotFound) {
+                logger.warn("# failed to restore data from latest .zcpf file: {any}", .{err});
+            }
+        };
+    } else {
+        logger.info("# automatic snapshots are backups; restoring only the AOF", .{});
+    }
 
     var context = Context{
         .config = &config,
@@ -237,6 +231,11 @@ pub fn main(init: std.process.Init) void {
         logger.err("# failed to schedule AOF flush: {any}", .{err});
         return;
     };
+    persister.start(&agent, &memory) catch |err| {
+        logger.err("# failed to schedule snapshots: {any}", .{err});
+        return;
+    };
+    defer persister.stop();
 
     {
         var server = NetworkServer.init(allocator, evented_io.io(), context) catch |err| {

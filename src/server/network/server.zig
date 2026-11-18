@@ -128,13 +128,15 @@ pub fn acceptConnections(self: *Server, io: std.Io) std.Io.Cancelable!void {
 
 /// Applies access and TLS checks, then processes framed requests until the client closes.
 fn serve(self: *Server, io: std.Io, incoming: StreamServer.Connection, slots: *std.Io.Semaphore) std.Io.Cancelable!void {
+    const deadline = @import("socket.zig").deadline;
+    const network = self.context.config.network;
     defer slots.post(io);
     var accepted = incoming;
     defer accepted.stream.close();
 
     access.verify(self.context.config, self.context.resources.logger, accepted.address) catch return;
 
-    self.transport.upgrade(&accepted.stream) catch |err| {
+    self.transport.upgrade(&accepted.stream, deadline(io, network.idle_timeout_ms)) catch |err| {
         if (err == error.Canceled) return error.Canceled;
         self.context.resources.logger.err("# TLS handshake failed: {any}", .{err});
         return;
@@ -154,24 +156,39 @@ fn serve(self: *Server, io: std.Io, incoming: StreamServer.Connection, slots: *s
     self.context.resources.logger.info("# new connection from: {any}", .{accepted.address});
     defer self.context.resources.logger.info("# connection with client closed: {any}", .{accepted.address});
 
+    var request_deadline: std.Io.Timeout = .none;
     while (self.context.running.load(.seq_cst)) {
-        connection.readPending(self.context.config.max_request_size) catch |err| {
+        const idle_deadline = deadline(io, network.idle_timeout_ms);
+        const read_deadline = if (request_deadline == .none) idle_deadline else if (idle_deadline == .none or
+            request_deadline.deadline.raw.nanoseconds <= idle_deadline.deadline.raw.nanoseconds) request_deadline else idle_deadline;
+        const max_size = self.context.config.max_request_size;
+        connection.readPendingTimed(if (max_size == 0) std.math.maxInt(usize) else max_size, read_deadline) catch |err| {
             switch (err) {
-                error.IncompleteMessage => continue,
+                error.IncompleteMessage => {
+                    if (request_deadline == .none) request_deadline = deadline(io, network.request_timeout_ms);
+                    continue;
+                },
                 error.Canceled => return error.Canceled,
-                error.ConnectionClosed, error.ConnectionResetByPeer, error.SocketUnconnected => return,
+                error.Timeout, error.ConnectionClosed, error.ConnectionResetByPeer, error.SocketUnconnected => return,
                 else => {
                     self.context.resources.logger.err("# failed to read request: {any}", .{err});
                     return;
                 },
             }
         };
-        processor.deframe(&connection);
-        connection.writePending() catch |err| {
-            if (err == error.Canceled) return error.Canceled;
-            self.context.resources.logger.err("# failed to write response: {any}", .{err});
-            return;
-        };
+        // A completed frame starts a new deadline only if this read also began the next frame.
+        const ends_in_frame = connection.accumulator.items[connection.accumulator.items.len - 1] == @import("consts.zig").EXT_CHAR;
+        request_deadline = if (ends_in_frame) .none else deadline(io, network.request_timeout_ms);
+        while (true) {
+            processor.deframe(&connection);
+            if (connection.tx_accumulator.items.len == 0) break;
+            connection.writePending() catch |err| {
+                if (err == error.Canceled) return error.Canceled;
+                self.context.resources.logger.err("# failed to write response: {any}", .{err});
+                return;
+            };
+            if (network.max_pending_response_bytes == 0 or connection.accumulator.items.len == 0) break;
+        }
     }
 }
 

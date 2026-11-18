@@ -4,6 +4,8 @@
 const std = @import("std");
 const fs = @import("fs");
 const runtime_io = @import("runtime_io");
+const sync = @import("sync");
+const Agent = @import("../background/agent.zig");
 
 const Config = @import("../config.zig");
 const Memory = @import("memory.zig");
@@ -16,7 +18,6 @@ const fixed_buffer_stream = @import("../../protocol/fixed_buffer_stream.zig");
 /// Protocol decoder specialized for reading a snapshot from a fixed-buffer reader.
 const Deserializer = DeserializerT(fixed_buffer_stream.FixedBufferStream.Reader);
 
-const utils = @import("../utils.zig");
 const Logger = @import("../logger.zig");
 
 /// Directory used when no snapshot directory is configured.
@@ -26,10 +27,7 @@ const DEFAULT_PATH: []const u8 = "./persist/";
 const FileEntry = struct {
     /// Allocated basename of the snapshot file; caller frees the selected entry's name.
     name: []const u8,
-    /// Creation time in nanoseconds, used to select the newest snapshot.
-    ctime: i128,
-    /// Snapshot size in bytes, used for the read buffer.
-    size: usize,
+    timestamp: i64,
 };
 
 /// Snapshot writer and reader bound to a configuration, logger, and storage allocator.
@@ -48,6 +46,8 @@ logger: *Logger,
 
 /// Configured snapshot directory; initialized to `DEFAULT_PATH` when omitted.
 path: ?[]const u8,
+save_lock: sync.Mutex = .{},
+save_task: ?Agent.ScheduledTask = null,
 
 /// Initializes protocol decoding state and selects the configured or default directory.
 pub fn init(
@@ -56,133 +56,142 @@ pub fn init(
     logger: *Logger,
     path: ?[]const u8,
 ) !Handler {
-    var persister = Handler{
+    return .{
         .allocator = allocator,
         .config = config,
         .deserializer = try Deserializer.init(allocator),
         .logger = logger,
-        .path = path,
+        .path = path orelse config.snapshot.path orelse DEFAULT_PATH,
     };
-
-    if (persister.path == null) persister.path = DEFAULT_PATH;
-
-    return persister;
 }
 
 /// Releases the decoder's allocated resources.
 pub fn deinit(self: *Handler) void {
+    self.stop();
     self.deserializer.deinit();
 }
 
+pub fn start(self: *Handler, agent: *Agent, memory: *Memory) !void {
+    const interval = self.config.snapshot.interval_secs;
+    if (interval == 0 or self.save_task != null) return;
+    self.save_task = try agent.scheduleCancelable(saveScheduled, .{ self, memory }, interval);
+}
+
+pub fn stop(self: *Handler) void {
+    if (self.save_task) |*task| task.deinit();
+    self.save_task = null;
+}
+
+fn saveScheduled(self: *Handler, memory: *Memory) void {
+    _ = self.save(memory) catch |err| {
+        self.logger.err("# scheduled snapshot failed: {any}", .{err});
+    };
+}
+
 /// Writes a snapshot of all memory entries and returns its byte length.
-/// The returned count is zero when file creation fails; other serialization and I/O errors propagate.
 pub fn save(self: *Handler, memory: *Memory) !usize {
-    var serializer = Serializer.init(self.allocator);
-    defer serializer.deinit();
+    self.save_lock.lock();
+    defer self.save_lock.unlock();
 
-    var bytes = std.array_list.Managed(u8).init(self.allocator);
+    var bytes: std.array_list.Managed(u8) = .init(self.allocator);
     defer bytes.deinit();
-
-    const header = try std.fmt.allocPrint(
+    const timestamp = try encodeSnapshot(self.allocator, memory, &bytes);
+    const basename = try std.fmt.allocPrint(self.allocator, "dump_{d}.zcpf", .{timestamp});
+    defer self.allocator.free(basename);
+    const filename = try fs.path.join(
         self.allocator,
-        "zcpf%{d}\r\n",
-        .{memory.size()},
-    );
-    defer self.allocator.free(header);
-
-    try bytes.appendSlice(header);
-
-    const timestamp = runtime_io.timestamp();
-    const filename = try std.fmt.allocPrint(
-        self.allocator,
-        "{s}dump_{d}.zcpf",
-        .{ self.path.?, timestamp },
+        &.{ self.path.?, basename },
     );
     defer self.allocator.free(filename);
 
-    utils.createPath(filename);
+    try fs.cwd().makePath(self.path.?);
+    const io = runtime_io.get();
+    var file = try fs.cwd().inner.createFileAtomic(io, filename, .{ .replace = true });
+    defer file.deinit(io);
+    try file.file.writeStreamingAll(io, bytes.items);
+    try file.file.sync(io);
+    try file.replace(io);
+    memory.last_save.store(timestamp, .monotonic);
 
-    const file = fs.cwd().createFile(
-        filename,
-        .{ .truncate = false },
-    ) catch |err| {
-        self.logger.err("failed to open persistance file: {any}", .{err});
-        return 0;
+    self.prune() catch |err| {
+        self.logger.warn("# snapshot saved but retention failed: {any}", .{err});
     };
-    defer file.close();
+    return bytes.items.len;
+}
 
-    var iterator = memory.internal.iterator();
+fn encodeSnapshot(allocator: std.mem.Allocator, memory: *Memory, bytes: *std.array_list.Managed(u8)) !i64 {
+    var iterator = memory.iterator();
+    defer iterator.deinit();
+    var serializer = Serializer.init(allocator);
+    defer serializer.deinit();
+    try bytes.print("zcpf%{d}\r\n", .{iterator.count()});
     while (iterator.next()) |item| {
-        const key = try serializer.process(.{ .str = item.key_ptr.* });
-        try bytes.appendSlice(key);
-
-        const value = try serializer.process(item.value_ptr.*);
-
-        try bytes.appendSlice(value);
+        try bytes.appendSlice(try serializer.process(.{ .str = item.key_ptr.* }));
+        try bytes.appendSlice(try serializer.process(item.value_ptr.*));
     }
+    return runtime_io.timestamp();
+}
 
-    const payload = bytes.toOwnedSlice() catch return 0;
-    defer self.allocator.free(payload);
+fn prune(self: *Handler) !void {
+    const keep = self.config.snapshot.keep_last;
+    if (keep == 0) return;
+    const dir = try fs.cwd().openDir(self.path.?, .{ .follow_symlinks = false, .iterate = true });
+    defer dir.close();
+    var entries: std.array_list.Managed(FileEntry) = .init(self.allocator);
+    defer {
+        for (entries.items) |entry| self.allocator.free(entry.name);
+        entries.deinit();
+    }
+    var iter = dir.iterate();
+    while (try iter.next()) |entry| {
+        if (entry.kind != .file) continue;
+        const timestamp = snapshotTimestamp(entry.name) orelse continue;
+        try entries.ensureUnusedCapacity(1);
+        entries.appendAssumeCapacity(.{ .name = try self.allocator.dupe(u8, entry.name), .timestamp = timestamp });
+    }
+    if (entries.items.len <= keep) return;
+    std.mem.sort(FileEntry, entries.items, {}, newer);
+    for (entries.items[keep..]) |entry| try dir.deleteFile(entry.name);
+}
 
-    try file.writeAll(payload);
-    memory.last_save = timestamp;
+fn newer(_: void, a: FileEntry, b: FileEntry) bool {
+    return a.timestamp > b.timestamp;
+}
 
-    return payload.len;
+fn snapshotTimestamp(name: []const u8) ?i64 {
+    const prefix = "dump_";
+    const suffix = ".zcpf";
+    if (name.len <= prefix.len + suffix.len or !std.mem.startsWith(u8, name, prefix) or
+        !std.mem.endsWith(u8, name, suffix)) return null;
+    const digits = name[prefix.len .. name.len - suffix.len];
+    if (digits.len > 1 and digits[0] == '0') return null;
+    for (digits) |digit| if (!std.ascii.isDigit(digit)) return null;
+    return std.fmt.parseInt(i64, digits, 10) catch null;
 }
 
 /// Loads the newest validly named snapshot from the configured directory into memory.
 /// Returns `InvalidFile` for absent or malformed data; filesystem and storage errors may propagate.
 pub fn load(self: *Handler, memory: *Memory) !void {
-    var dir = try fs.cwd().openDir(self.path.?, .{
+    const dir = try fs.cwd().openDir(self.path.?, .{
         .follow_symlinks = false,
-        .access_sub_paths = false,
         .iterate = true,
     });
     defer dir.close();
 
-    const latest = self.getLatestFile(dir) catch |err| {
-        self.logger.err(
-            "failed to get latest file from {s}: {any}",
-            .{ self.path.?, err },
-        );
-        return;
-    };
-
-    const latest_file = latest orelse return error.InvalidFile;
+    const latest_file = try self.getLatestFile(dir) orelse return error.InvalidFile;
     defer self.allocator.free(latest_file.name);
 
-    const filename = try std.fmt.allocPrint(
-        self.allocator,
-        "{s}{s}",
-        .{ self.path.?, latest_file.name },
-    );
-    defer self.allocator.free(filename);
-
-    const file = fs.cwd().openFile(filename, .{ .mode = .read_only }) catch |err| {
-        self.logger.err(
-            "failed to open file {s}: {any}",
-            .{ filename, err },
-        );
-        return;
-    };
+    const file = try dir.openFile(latest_file.name, .{ .mode = .read_only, .follow_symlinks = false });
     defer file.close();
 
-    if (latest.?.size == 0) return;
-
-    var buffer = try self.allocator.alloc(u8, latest.?.size);
+    const size = (try file.stat()).size;
+    if (size < "zcpf%0\r\n".len) return error.InvalidFile;
+    const buffer = try self.allocator.alloc(u8, size);
     defer self.allocator.free(buffer);
 
-    const readed_size = try file.read(buffer);
-    if (readed_size != latest.?.size) return error.InvalidFile;
+    if (try file.readAll(buffer) != buffer.len) return error.InvalidFile;
     if (!std.mem.eql(u8, buffer[0..4], "zcpf")) return error.InvalidFile;
-    const file_name = latest.?.name;
-
-    const underscore_index: usize = std.mem.indexOf(u8, file_name, "_").?;
-    const dot_index: usize = std.mem.indexOf(u8, file_name, ".").?;
-    const str_timestamp: []const u8 = file_name[underscore_index + 1 .. dot_index];
-
-    memory.last_save = try std.fmt.parseInt(i64, str_timestamp, 10);
-
+    defer self.deserializer.reset();
     var stream = fixed_buffer_stream.fixedBufferStream(buffer[4..buffer.len]);
     var reader = stream.reader();
 
@@ -193,52 +202,36 @@ pub fn load(self: *Handler, memory: *Memory) !void {
     );
     defer self.allocator.free(bytes);
 
+    if (bytes.len < 3 or bytes[0] != '%' or bytes[bytes.len - 1] != '\r') return error.InvalidFile;
     const map_len = std.fmt.parseInt(usize, bytes[1 .. bytes.len - 1], 10) catch {
         return error.InvalidLength;
     };
 
     for (0..map_len) |_| {
         const key = self.deserializer.process(reader) catch return error.InvalidFile;
+        if (key != .str) return error.InvalidFile;
         const value = self.deserializer.process(reader) catch return error.InvalidFile;
 
         try memory.put(key.str, value);
     }
+    memory.last_save.store(latest_file.timestamp, .monotonic);
 }
 
 /// Finds the newest regular `.zcpf` file in `dir`, returning owned filename metadata if found.
 /// The caller owns and must free the returned entry's `name`.
 fn getLatestFile(self: *Handler, dir: fs.Dir) !?FileEntry {
     var latest: ?FileEntry = null;
+    errdefer if (latest) |entry| self.allocator.free(entry.name);
 
     var iterator = dir.iterate();
     while (try iterator.next()) |file| {
         if (file.kind != fs.File.Kind.file) continue;
 
-        var iter = std.mem.splitBackwardsSequence(u8, file.name, ".");
-        if (!std.mem.eql(u8, iter.first(), "zcpf")) continue;
-
-        const file_path = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.path.?, file.name });
-        defer self.allocator.free(file_path);
-
+        const timestamp = snapshotTimestamp(file.name) orelse continue;
+        if (latest) |prev| if (prev.timestamp >= timestamp) continue;
         const filename = try self.allocator.dupe(u8, file.name);
-
-        const stat = try fs.cwd().statFile(file_path);
-
-        if (latest) |prev| {
-            if (stat.ctime.nanoseconds <= prev.ctime) {
-                // This file is older or the same age – we don't need the `filename` we just duplicated
-                self.allocator.free(filename);
-                continue;
-            }
-            // The new file is newer – free the previous `latest.name` before updating
-            self.allocator.free(prev.name);
-        }
-
-        latest = .{
-            .name = filename,
-            .ctime = stat.ctime.nanoseconds,
-            .size = stat.size,
-        };
+        if (latest) |prev| self.allocator.free(prev.name);
+        latest = .{ .name = filename, .timestamp = timestamp };
     }
 
     return latest;

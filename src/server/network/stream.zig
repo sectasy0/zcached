@@ -40,12 +40,16 @@ pub fn StreamT(comptime tls_enabled: bool) type {
 
         /// Reads bytes from the stream, returning zero for an empty buffer or EOF.
         pub fn read(self: *Self, buffer: []u8) ReadError!usize {
+            return self.readTimed(buffer, .none);
+        }
+
+        pub fn readTimed(self: *Self, buffer: []u8, timeout: std.Io.Timeout) ReadError!usize {
             if (self.closed) return error.StreamClosed;
             if (buffer.len == 0) return 0;
             if (tls_enabled) {
-                if (self.ctx) |*ctx| return ctx.read(self.socket, buffer);
+                if (self.ctx) |*ctx| return ctx.read(self.socket, buffer, timeout);
             }
-            return socket_io.read(self.io, self.socket, buffer);
+            return socket_io.read(self.io, self.socket, buffer, timeout);
         }
 
         /// Writes some bytes to the stream; an empty input succeeds without I/O.

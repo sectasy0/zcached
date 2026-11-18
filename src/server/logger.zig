@@ -44,6 +44,8 @@ pub const EType = enum {
 allocator: std.mem.Allocator,
 /// Optional scheduler used to defer log formatting and writes.
 agent: ?*Agent,
+/// Minimum operational severity; payload logging is configured separately.
+level: LogLevel = .Debug,
 /// Periodic flush task, present after `start` succeeds.
 flush_task: ?Agent.ScheduledTask = null,
 /// Serializes access to the shared buffer and output files.
@@ -139,6 +141,7 @@ fn flushQueued(self: *Logger) void {
 
 /// Schedules formatting when an agent exists, otherwise logs synchronously.
 fn dispatch(self: *Logger, level: LogLevel, comptime format: []const u8, args: anytype) void {
+    if (@backingInt(level) < @backingInt(self.level)) return;
     if (self.agent) |agent| {
         agent.schedule(
             logUnpack,
@@ -166,6 +169,7 @@ fn logUnpack(args: anytype) void {
 
 /// Formats and writes a message while holding the logger mutex.
 pub fn log(self: *Logger, level: LogLevel, comptime format: []const u8, args: anytype) void {
+    if (@backingInt(level) < @backingInt(self.level)) return;
     self.mutex.lock();
     defer self.mutex.unlock();
     const offset = self.buffer.items.len;

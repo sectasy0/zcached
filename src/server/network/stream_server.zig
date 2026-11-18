@@ -93,12 +93,12 @@ pub fn accept(self: *StreamServer, io: std.Io) std.Io.net.Server.AcceptError!Con
 }
 
 /// Performs a TLS handshake in place when this server has TLS enabled.
-pub fn upgrade(self: *StreamServer, stream: *Stream) !void {
+pub fn upgrade(self: *StreamServer, stream: *Stream, timeout: std.Io.Timeout) !void {
     if (comptime build_options.tls_enabled) {
         if (self.tls_ctx) |*ctx| {
             if (stream.closed) return error.StreamClosed;
             if (stream.ctx != null) return error.TLSAlreadyInitialized;
-            stream.ctx = try ctx.upgrade(stream.io, stream.socket);
+            stream.ctx = try ctx.upgrade(stream.io, stream.socket, timeout);
         }
     }
 }

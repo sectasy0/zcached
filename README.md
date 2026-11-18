@@ -26,6 +26,40 @@ reactor; its connections run as cooperative fibers, not individual OS threads.
 remain synchronous; see [network architecture](docs/internals/network_architecture.md)
 for ownership, copying, cancellation, and platform requirements.
 
+Storage uses `Memory -> Fabric -> Shard`. Fabric hashes keys onto
+`.memory.shard_count` shards (default 16); each shard owns a separate heap,
+map, and reader/writer lock. `.memory.default_capacity` (default 64) is the
+initial number of entries per shard. The shard count must be positive and
+is fixed for the lifetime of the store.
+
+`.memory.limit` limits live requested bytes across all shards, including
+map capacities but excluding allocator metadata. Zero falls back to the legacy
+`.max_memory`; both default to zero (unlimited). As before, writes are rejected
+once the current usage reaches the limit, so an accepted write can exceed it.
+COPY and RENAME lock both shards in index order and copy data into the
+destination's allocator before committing. FLUSH, key enumeration, snapshots,
+and AOF rewrites coordinate all shards for a consistent view. Iterators hold
+shared shard locks and must be released with `deinit()`, even on early exit.
+
+### Operational settings
+
+- `.network.idle_timeout_ms` limits the wait for incoming bytes (and for a TLS
+  handshake). `.network.request_timeout_ms` limits how long an incomplete frame
+  can take to arrive, even if the client keeps sending fragments. `0` disables
+  either timeout.
+- `.network.max_pending_response_bytes` flushes queued replies before processing
+  more pipelined requests. `0` disables the threshold. A single reply may exceed
+  it; it is not a hard cap on response size or allocated capacity.
+- `.snapshot.path` defaults to `./persist`. `.snapshot.interval_secs = 0` leaves
+  snapshots manual (`SAVE`); a positive value schedules periodic saves.
+  `.snapshot.keep_last = 0` keeps all files; a positive value keeps the newest
+  timestamped snapshots after a successful save. Use a dedicated directory.
+  If automatic snapshots and AOF are both enabled, startup replays **only
+  the AOF**; snapshots are backups and are not an automatic fallback for a
+  missing journal. Disable AOF to start from a snapshot.
+- `.log.level` filters operational messages (`.debug`, `.info`, `.warning`,
+  `.@"error"`). `log_network_payloads` separately controls payload logs.
+
 ## Usage
 While `zcached` lacks a CLI, you can utilize nc (netcat) from the terminal to send commands to the server.
 
@@ -58,12 +92,16 @@ echo "*1\r\n\$4\r\nPING\r\n\x03" | netcat -N localhost 7556
 ```
 
 ## Running Tests
+Test cases live under [`src/tests/`](src/tests/), grouped by subsystem and
+kept separate from implementation files.
+
 Run the tests using `zig` in the root directory of the project:
 ```bash
 zig build test
 ```
-This prints individual test results and a final summary. A failing test makes the
-command exit with a non-zero status.
+This runs the server, native I/O, benchmark, and profiler tests in one suite
+with a single final summary. A failing test makes the command exit with a
+non-zero status. Use `zig build test-io` to run only the native I/O tests.
 Test-runner arguments can be passed after `--`, for example
 `zig build test -- --seed=0x1234`. Zig 0.17's build run steps forward these
 arguments directly.
@@ -145,7 +183,7 @@ not full wire traffic or memory bandwidth. Protocol/key overhead is excluded.
 For pipelining, compare throughput and batch tail latency together.
 
 For a heavier matrix, use the dedicated 8-worker RAM instance described above
-with `.log_network_payloads = false` and `.max_memory = 0`:
+with `.log_network_payloads = false` and `.memory = .{ .limit = 0 }`:
 
 ```bash
 for size in 20 1024 16384; do
@@ -209,7 +247,7 @@ can affect throughput, so compare clean benchmark runs separately.
 
 Measured on 2026-11-16, Apple M2 (8 cores, 24 GiB), macOS 27.0.1,
 Zig 0.17.1, ReleaseFast client/server, localhost TCP, 8 server workers,
-TLS off, payload logging off, `.max_memory = 0`, AOF `.no`.
+TLS off, payload logging off, `.memory = .{ .limit = 0 }`, AOF `.no`.
 Each client used a separate key and 20,000 requests per workload.
 The tables show medians of three runs per configuration; the main matrix
 order was shuffled with seed 95617. A 2,000-request-per-client warmup at
@@ -358,9 +396,8 @@ are reset after each request. Network reads copy storage values under the read
 lock before encoding, so concurrent mutations cannot invalidate their payloads.
 ReleaseFast/ReleaseSmall use Zig's SMP allocator; Debug/ReleaseSafe retain debug
 allocation and leak checks.
-When `.max_memory = 0` (unlimited), storage uses the base allocator directly,
-without allocation tracking or the tracing allocator's mutex. A nonzero limit
-enables allocation tracking and the existing memory-limit checks.
+With no memory limit, writes skip Fabric's limit check and its mutex. Each
+shard still uses its own allocator.
 
 ## Documentation
 - For release history, see the [release_history.md](docs/release_history.md)

@@ -60,6 +60,31 @@ test "should deframe" {
     try std.testing.expectEqual(@as(usize, 0), connection.receive_start);
 }
 
+test "deframe defers pipelined commands until pending replies have drained" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    fixture.config.network.max_pending_response_bytes = 1;
+    const incoming = try fixtures.ConnectionFixture.init(std.testing.allocator);
+    var connection = incoming.connection;
+    defer connection.deinit();
+    var processor = try Processor.init(std.testing.allocator, fixture.context());
+    defer processor.deinit();
+
+    const first = "*1\r\n$4\r\nPING\r\n\x03";
+    const second = "*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n:2\r\n\x03";
+    try connection.accumulator.appendSlice(first ++ second);
+    processor.deframe(&connection);
+    try std.testing.expectEqualStrings("+PONG\r\n\x03", connection.tx_accumulator.items);
+    try std.testing.expectEqual(first.len, connection.receive_start);
+    try std.testing.expectError(error.NotFound, fixture.memory.?.get("key"));
+
+    connection.tx_accumulator.clearRetainingCapacity();
+    processor.deframe(&connection);
+    try std.testing.expectEqual(@as(i64, 2), (try fixture.memory.?.get("key")).int);
+    try std.testing.expectEqual(@as(usize, 0), connection.accumulator.items.len);
+}
+
 test "processing repeated commands bounds protocol arena memory" {
     var fixture = try ContextFixture.init();
     try fixture.create_memory();

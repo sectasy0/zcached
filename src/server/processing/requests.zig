@@ -44,12 +44,13 @@ pub fn init(allocator: std.mem.Allocator, context: Context) !Processor {
     };
 }
 
-/// Processes every complete framed request in the connection accumulator.
-/// Leaves an incomplete suffix in place and updates `receive_start` for the next read.
+/// Processes complete frames until output reaches its flush threshold.
+/// Leaves unprocessed bytes in place and updates `receive_start`.
 pub fn deframe(self: *Processor, connection: *Connection) void {
     var start = connection.receive_start;
+    const watermark = self.context.config.network.max_pending_response_bytes;
 
-    while (true) {
+    while (watermark == 0 or connection.tx_accumulator.items.len < watermark) {
         const request_end = std.mem.indexOfScalarPos(
             u8,
             connection.accumulator.items,

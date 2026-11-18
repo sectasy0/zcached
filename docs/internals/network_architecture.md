@@ -54,7 +54,7 @@ flowchart TD
     Access["IP whitelist"]
     Stream["Stream: plaintext or TLS"]
     Processor["Connection buffers + Processor"]
-    DB["Command handler -> locked Memory methods"]
+    DB["Command handler -> Memory -> Fabric -> locked shards"]
     AOF["AOF append in connection task"]
     Queue["Agent queue: logs + recurring everysec flush"]
     Backend["Evented std.Io: fibers + native reactor"]
@@ -359,7 +359,7 @@ kernel TCP receive buffer
 
 OUT
 command result
-  -> GET/MGET/KEYS owned snapshot under storage lock    [read-value copy]
+  -> GET/MGET/KEYS owned copies under shard locks      [read-value copy]
   -> Deserializer.write(tx_accumulator) + append(0x03) [direct encode]
   -> Stream.writeAll -> std.Io net_write
   -> kernel TCP send buffer                            [kernel boundary]
@@ -388,8 +388,8 @@ In particular, this is **not** an end-to-end zero-copy design.
 | Frame extraction | `items[start..request_end]` borrows the frame. | No frame-sized allocation or copy. |
 | Incomplete-tail compaction | `copyForwards` moves the unread suffix to offset zero. | Conditional in-place copy, only when tail capacity is insufficient for the next read. |
 | Protocol parsing | String/line slices borrow input; arrays/maps/sets allocate container storage in an arena. | Not a deep copy of every request value. |
-| Database `SET` | `Memory.put` deep-copies the value; a new key is duplicated. | Database allocator owns data independently of the network buffers. |
-| Database `GET` / `MGET` / `KEYS` | Values or keys are copied while holding the storage read lock. | Command-owned snapshots; no storage-borrowed payload survives into network response encoding. |
+| Database `SET` | `Memory.put` routes through Fabric and copies the value; a new key is duplicated. | Each shard's allocator owns data independently of network buffers; compatible string overwrites reuse their storage. |
+| Database `GET` / `MGET` / `KEYS` | Values or keys are copied while holding the relevant shard read locks. | Command-owned snapshots; no storage-borrowed payload survives into network response encoding. |
 | Response encoding | The shared encoder appends scalars, strings, and compound elements directly to the TX array. | One-pass encoding; no repeated concatenation of growing prefixes or separate response-sized staging allocation. |
 | Transmit accumulation | Encoded bytes and delimiters are already in the transmit array. | Connection-owned heap array; growth may relocate its allocation. |
 | Plaintext transmission | `writeAll` passes successive slices to the backend until all bytes are accepted. | No additional full-response application staging buffer. |
@@ -415,14 +415,19 @@ are reset between requests rather than accumulating their histories. Neither
 receive length nor the nominal 8 KiB starting size bounds the connection's
 total memory, particularly large TX batches and retained capacities.
 
-ReleaseFast and ReleaseSmall use `std.heap.smp_allocator`; Debug and ReleaseSafe
-retain debug allocators and leak checks. Database allocation accounting still
-uses its synchronized tracing wrapper and tracks successful size changes even
-when a remap keeps the same address.
+The application backing allocator is `std.heap.smp_allocator` in ReleaseFast
+and ReleaseSmall; Debug and ReleaseSafe retain debug allocators and leak checks.
+Each database shard owns a separate `std.heap.DebugAllocator` heap, with
+requested-byte accounting enabled and synchronization provided by its shard
+lock. Fabric sums these counters for the global database limit. Unlimited
+writes only lock their target shard; limit-enabled writes also coordinate the
+usage check through Fabric's limit mutex.
 
 Logging queues, database allocations, AOF buffers, and kernel socket buffers
-are additional memory consumers. `max_memory` is a database storage check, not
-a global cap on networking or process memory.
+are additional memory consumers. `.memory.limit` (falling back to
+`max_memory` when zero) is a database storage check, not a global cap on
+networking or process memory. Shard map capacities count toward this check;
+allocator metadata does not.
 
 ## TLS transport
 
@@ -594,7 +599,7 @@ Relevant automated coverage:
 
 | Behavior | Tests |
 | --- | --- |
-| Actual native scheduling, same-thread futures, protected cancellation/recancel, external futex wakeups, immediate group stack release, TCP connect/accept/read/write, backpressure cancellation, batch deadlines | [runtime/evented.zig](../../src/runtime/evented.zig), run with `zig build test-io` |
+| Actual native scheduling, same-thread futures, protected cancellation/recancel, external futex wakeups, immediate group stack release, TCP connect/accept/read/write, backpressure cancellation, batch deadlines | [Evented and reactor tests](../../src/tests/runtime/), run with `zig build test-io` |
 | Native one-shot readiness, disarm/rearm, bounded waits | [runtime/reactor.zig](../../src/runtime/reactor.zig) |
 | Fragmented/pipelined requests, idle client cancellation, permit release | [tests/network/server.zig](../../src/tests/network/server.zig) |
 | Ephemeral-port binding, buffered reader behavior, transport errors | [tests/network/stream_server.zig](../../src/tests/network/stream_server.zig) |

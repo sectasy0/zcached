@@ -6,11 +6,42 @@ const utils = @import("utils.zig");
 const NodeIndex = std.zig.Ast.Node.Index;
 const Address = @import("network/address.zig").Address;
 
+pub const NetworkConfig = struct {
+    idle_timeout_ms: u32 = 0,
+    request_timeout_ms: u32 = 0,
+    max_pending_response_bytes: usize = 0,
+};
+
+pub const SnapshotConfig = struct {
+    path: ?[]const u8 = null,
+    interval_secs: u32 = 0,
+    keep_last: usize = 0,
+};
+
+pub const LogConfig = struct {
+    level: enum { debug, info, warning, @"error" } = .debug,
+};
+
 /// Default path used when no configuration file is supplied.
 pub const DEFAULT_PATH: []const u8 = "./zcached.conf.zon";
 
 /// Server settings, including defaults and allocator-owned parsed values.
 const Config = @This();
+
+pub const Memory = struct {
+    /// Number of memory shards; must be positive.
+    shard_count: usize = 16,
+    /// Initial entry capacity per shard.
+    default_capacity: usize = 64,
+    /// Global requested-byte limit; zero falls back to `max_memory`.
+    limit: usize = 0,
+
+    const Fields = enum {
+        shard_count,
+        default_capacity,
+        limit,
+    };
+};
 
 /// Append-only-file persistence and rewrite settings.
 pub const AOFConfig = struct {
@@ -121,7 +152,7 @@ loger_path: []const u8 = DEFAULT_PATH,
 // to calculate global max connctions: `workers` * `max_clients`
 /// Maximum client connections assigned to each worker thread.
 max_clients: usize = 512,
-/// Memory limit in bytes; zero means unlimited.
+/// Legacy fallback for `memory.limit`; zero means unlimited.
 max_memory: usize = 0, // 0 means unlimited, value in bytes
 /// Initial client buffer size in bytes; it may grow for larger payloads.
 client_buffer: usize = 4096, // its resized if more space is requied
@@ -136,6 +167,11 @@ aof: AOFConfig = .{},
 tls: TLSConfig = .{},
 /// Settings for background task queues.
 agent: AgentConfig = .{},
+/// Sharding settings; a zero section limit falls back to `max_memory`.
+memory: Memory = .{},
+network: NetworkConfig = .{},
+snapshot: SnapshotConfig = .{},
+log: LogConfig = .{},
 
 /// IP addresses permitted by the access middleware; storage is owned by this config.
 whitelist: std.array_list.Managed(Address) = undefined,
@@ -152,6 +188,7 @@ pub fn deinit(config: *const Config) void {
     if (config.tls.key_path != null) config.allocator.free(config.tls.key_path.?);
     if (config.tls.ca_path != null) config.allocator.free(config.tls.ca_path.?);
     if (config.aof.path != null) config.allocator.free(config.aof.path.?);
+    if (config.snapshot.path) |path| config.allocator.free(path);
 }
 
 /// Returns the configured listening address by value.
@@ -170,6 +207,7 @@ pub fn load(allocator: std.mem.Allocator, file_path: ?[]const u8, log_path: ?[]c
         .allocator = allocator,
         .whitelist = std.array_list.Managed(Address).init(allocator),
     };
+    errdefer config.deinit();
     if (log_path != null) config.loger_path = log_path.?;
 
     var timestamp: [40]u8 = undefined;
@@ -219,12 +257,14 @@ const ConfigField = enum {
     log_network_payloads,
     tls,
     aof,
+    memory,
     whitelist,
 };
 
 /// Validates the ZON root and applies each declared field, logging malformed roots.
 fn processAst(config: *Config, ast: std.zig.Ast) !void {
     var buf: [2]NodeIndex = undefined;
+    var child_buf: [2]NodeIndex = undefined;
     if (ast.errors.len > 0) {
         var timestamp: [40]u8 = undefined;
         const t_size = utils.timestampf(&timestamp);
@@ -249,7 +289,7 @@ fn processAst(config: *Config, ast: std.zig.Ast) !void {
     }
 
     const root = ast.fullStructInit(
-        &buf,
+        &child_buf,
         root_decls[0],
     ) orelse {
         var timestamp: [40]u8 = undefined;
@@ -264,16 +304,54 @@ fn processAst(config: *Config, ast: std.zig.Ast) !void {
 
     for (root.ast.fields) |field_idx| {
         const field_name = ast.tokenSlice(ast.firstToken(field_idx) - 2);
+        const source = ast.getNodeSource(field_idx);
+        if (std.mem.eql(u8, field_name, "network")) {
+            config.network = try parseSection(NetworkConfig, config.allocator, source);
+            continue;
+        }
+        if (std.mem.eql(u8, field_name, "snapshot")) {
+            const snapshot = try parseSection(SnapshotConfig, config.allocator, source);
+            if (config.snapshot.path) |path| config.allocator.free(path);
+            config.snapshot = snapshot;
+            continue;
+        }
+        if (std.mem.eql(u8, field_name, "log")) {
+            config.log = try parseSection(LogConfig, config.allocator, source);
+            continue;
+        }
 
         processField(
             config,
             &buf,
             ast,
-            root,
             field_name,
             field_idx,
         ) catch continue;
     }
+}
+
+fn parseSection(T: type, allocator: std.mem.Allocator, source: []const u8) !T {
+    var scratch = std.heap.ArenaAllocator.init(allocator);
+    defer scratch.deinit();
+    const arena = scratch.allocator();
+    var diagnostics: std.zon.parse.Diagnostics = undefined;
+    var result = std.zon.parse.fromSlice(T, .{
+        .gpa = allocator,
+        .arena = arena,
+        .source = try arena.dupeSentinel(u8, source, 0),
+        .diagnostics = &diagnostics,
+    }) catch |err| {
+        if (err == error.ParseZon) std.debug.print("{f}", .{diagnostics.fmt(@typeName(T))});
+        return err;
+    };
+    if (T == SnapshotConfig) {
+        if (result.path) |path| {
+            if (path.len == 0 or std.mem.indexOfScalar(u8, path, 0) != null)
+                return error.InvalidSnapshotPath;
+            result.path = try allocator.dupe(u8, path);
+        }
+    }
+    return result;
 }
 
 /// Intermediate values decoded from ZON syntax before assignment to configuration.
@@ -303,7 +381,6 @@ fn processField(
     config: *Config,
     buf: *[2]NodeIndex,
     ast: std.zig.Ast,
-    root: std.zig.Ast.full.StructInit,
     field_name: []const u8,
     field_idx: NodeIndex,
 ) !void {
@@ -433,8 +510,7 @@ fn processField(
         return;
     }
 
-    const node: NodeIndex = root.ast.fields[field_index - 1];
-    const info: std.zig.Ast.Node = ast.nodes.get(@backingInt(node));
+    const info = ast.nodes.get(field_index);
 
     try parseByNodeTag(
         config,
@@ -545,6 +621,26 @@ fn assignFieldValue(config: *Config, field_name: []const u8, value: anytype) !vo
         .log_network_payloads => {
             if (@TypeOf(value) != bool) return;
             config.log_network_payloads = value;
+        },
+        .memory => {
+            if (@TypeOf(value) != std.StringArrayHashMapUnmanaged(Node)) return;
+            var iterator = value.iterator();
+            while (iterator.next()) |item| {
+                const field = std.meta.stringToEnum(Memory.Fields, item.key_ptr.*) orelse {
+                    std.debug.print("Unknown memory field: {s}\n", .{item.key_ptr.*});
+                    continue;
+                };
+                const node = item.value_ptr.*;
+                if (node != .int) {
+                    std.debug.print("Invalid memory field type: {s}\n", .{item.key_ptr.*});
+                    continue;
+                }
+                switch (field) {
+                    .shard_count => config.memory.shard_count = @intCast(node.int),
+                    .default_capacity => config.memory.default_capacity = @intCast(node.int),
+                    .limit => config.memory.limit = @intCast(node.int),
+                }
+            }
         },
         .aof => {
             var aof_config: AOFConfig = .{};
