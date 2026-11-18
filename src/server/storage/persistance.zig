@@ -124,10 +124,12 @@ fn encodeSnapshot(allocator: std.mem.Allocator, memory: *Memory, bytes: *std.arr
     defer iterator.deinit();
     var serializer = Serializer.init(allocator);
     defer serializer.deinit();
-    try bytes.print("zcpf%{d}\r\n", .{iterator.count()});
+    const versioned = iterator.hasExpiry();
+    try bytes.print("{s}%{d}\r\n", .{ if (versioned) "zcpf2" else "zcpf", iterator.count() });
     while (iterator.next()) |item| {
         try bytes.appendSlice(try serializer.process(.{ .str = item.key_ptr.* }));
         try bytes.appendSlice(try serializer.process(item.value_ptr.*));
+        if (versioned) try bytes.print(":{d}\r\n", .{item.expired_at});
     }
     return runtime_io.timestamp();
 }
@@ -172,6 +174,17 @@ fn snapshotTimestamp(name: []const u8) ?i64 {
 /// Loads the newest validly named snapshot from the configured directory into memory.
 /// Returns `InvalidFile` for absent or malformed data; filesystem and storage errors may propagate.
 pub fn load(self: *Handler, memory: *Memory) !void {
+    try self.loadSnapshot(memory, false);
+}
+
+/// Retains historical entries until the AOF overlay has been replayed.
+pub fn loadForReplay(self: *Handler, memory: *Memory) !void {
+    memory.fabric.replaying = true;
+    defer memory.fabric.replaying = false;
+    try self.loadSnapshot(memory, true);
+}
+
+fn loadSnapshot(self: *Handler, memory: *Memory, historical: bool) !void {
     const dir = try fs.cwd().openDir(self.path.?, .{
         .follow_symlinks = false,
         .iterate = true,
@@ -192,7 +205,8 @@ pub fn load(self: *Handler, memory: *Memory) !void {
     if (try file.readAll(buffer) != buffer.len) return error.InvalidFile;
     if (!std.mem.eql(u8, buffer[0..4], "zcpf")) return error.InvalidFile;
     defer self.deserializer.reset();
-    var stream = fixed_buffer_stream.fixedBufferStream(buffer[4..buffer.len]);
+    const versioned = buffer[4] == '2';
+    var stream = fixed_buffer_stream.fixedBufferStream(buffer[if (versioned) 5 else 4..]);
     var reader = stream.reader();
 
     const bytes = try reader.readUntilDelimiterAlloc(
@@ -207,12 +221,19 @@ pub fn load(self: *Handler, memory: *Memory) !void {
         return error.InvalidLength;
     };
 
+    const now = if (historical) 0 else Memory.unixMillis();
     for (0..map_len) |_| {
         const key = self.deserializer.process(reader) catch return error.InvalidFile;
         if (key != .str) return error.InvalidFile;
         const value = self.deserializer.process(reader) catch return error.InvalidFile;
 
-        try memory.put(key.str, value);
+        const deadline = if (versioned) blk: {
+            const expiry = self.deserializer.process(reader) catch return error.InvalidFile;
+            if (expiry != .int or expiry.int < 0) return error.InvalidFile;
+            break :blk expiry.int;
+        } else 0;
+        if (deadline != 0 and deadline <= now) continue;
+        try memory.putExpiring(key.str, value, deadline);
     }
     memory.last_save.store(latest_file.timestamp, .monotonic);
 }

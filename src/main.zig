@@ -192,8 +192,10 @@ pub fn main(init: std.process.Init) void {
         return;
     };
 
-    if (config.snapshot.interval_secs == 0 or config.aof.flush_strategy == .no) {
-        persister.load(&memory) catch |err| {
+    const aof_enabled = config.aof.flush_strategy != .no;
+    if (config.snapshot.interval_secs == 0 or !aof_enabled) {
+        const restored = if (aof_enabled) persister.loadForReplay(&memory) else persister.load(&memory);
+        restored catch |err| {
             if (err != error.FileNotFound) {
                 logger.warn("# failed to restore data from latest .zcpf file: {any}", .{err});
             }
@@ -226,6 +228,12 @@ pub fn main(init: std.process.Init) void {
     aof.replay() catch |err| {
         logger.warn("# failed to replay AOF file: {any}", .{err});
     };
+
+    var expiry_task = agent.scheduleCancelable(Memory.purgeExpired, .{&memory}, 1) catch |err| {
+        logger.err("# failed to schedule key expiry: {any}", .{err});
+        return;
+    };
+    defer expiry_task.deinit();
 
     aof.start() catch |err| {
         logger.err("# failed to schedule AOF flush: {any}", .{err});

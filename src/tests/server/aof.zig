@@ -56,6 +56,107 @@ fn processCommand(
     try std.testing.expect(result == .ok);
 }
 
+fn keyDeadline(fixture: *ContextFixture, key: []const u8) !i64 {
+    var iter = fixture.memory.?.iterator();
+    defer iter.deinit();
+    while (iter.next()) |entry| {
+        if (std.mem.eql(u8, entry.key_ptr.*, key)) return entry.expired_at;
+    }
+    return error.NotFound;
+}
+
+test "AOF preserves absolute TTLs through replay and compaction" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    const path = try uniquePath(fixture.allocator);
+    defer fixture.allocator.free(path);
+    defer fs.cwd().deleteFile(path) catch {};
+    try configureAOF(&fixture, path, .always);
+    var context = fixture.context();
+    var aof = try AOF.init(fixture.allocator, context);
+    defer aof.deinit();
+    context.resources.aof = .{ .ptr = &aof, .append_command = appendAOFCommand };
+    var handler = Commands.Handler.init(fixture.allocator, context);
+    try processCommand(&handler, fixture.allocator, &.{ .{ .str = "SET" }, .{ .str = "live" }, .{ .int = 12 }, .{ .str = "PX" }, .{ .int = 60_000 } });
+    try processCommand(&handler, fixture.allocator, &.{ .{ .str = "SET" }, .{ .str = "persisted" }, .{ .int = 7 } });
+    try processCommand(&handler, fixture.allocator, &.{ .{ .str = "EXPIRE" }, .{ .str = "persisted" }, .{ .int = 60 } });
+    try processCommand(&handler, fixture.allocator, &.{ .{ .str = "PERSIST" }, .{ .str = "persisted" } });
+    try processCommand(&handler, fixture.allocator, &.{ .{ .str = "SET" }, .{ .str = "timed" }, .{ .int = 8 } });
+    try processCommand(&handler, fixture.allocator, &.{ .{ .str = "EXPIRE" }, .{ .str = "timed" }, .{ .int = 60 } });
+    const memory = &fixture.memory.?;
+    const deadline = try keyDeadline(&fixture, "live");
+    const timed_deadline = try keyDeadline(&fixture, "timed");
+    try std.testing.expect(deadline > 0);
+    try std.testing.expect(timed_deadline > 0);
+
+    // COPY succeeds without REPLACE because the existing target has expired.
+    try aof.appendCommand(&.{ .{ .str = "SET" }, .{ .str = "copied" }, .{ .int = 2 }, .{ .str = "PXAT" }, .{ .int = 1 } });
+    try memory.putExpiring("copied", .{ .int = 2 }, 1);
+    try processCommand(&handler, fixture.allocator, &.{ .{ .str = "COPY" }, .{ .str = "live" }, .{ .str = "copied" } });
+
+    // Historical rename must replace the destination even if its source expired
+    // while the server was offline.
+    try aof.appendCommand(&.{ .{ .str = "SET" }, .{ .str = "old" }, .{ .int = 1 }, .{ .str = "PXAT" }, .{ .int = 1 } });
+    try aof.appendCommand(&.{ .{ .str = "SET" }, .{ .str = "destination" }, .{ .int = 2 } });
+    try aof.appendCommand(&.{ .{ .str = "RENAME" }, .{ .str = "old" }, .{ .str = "destination" } });
+    memory.flush();
+
+    for (0..2) |pass| {
+        if (pass == 1) {
+            aof.rewrite();
+            try std.testing.expect(aof.last_rewrite_size.load(.seq_cst) > 0);
+            memory.flush();
+            // Simulate an older snapshot overlaid by the compacted AOF.
+            try memory.put("destination", .{ .int = 2 });
+        }
+        try aof.replay();
+        try std.testing.expectError(error.NotFound, memory.get("destination"));
+        try std.testing.expectError(error.NotFound, memory.get("old"));
+        try std.testing.expectEqual(@as(i64, -1), memory.ttl("persisted"));
+        try std.testing.expectEqual(deadline, try keyDeadline(&fixture, "live"));
+        try std.testing.expectEqual(deadline, try keyDeadline(&fixture, "copied"));
+        try std.testing.expectEqual(timed_deadline, try keyDeadline(&fixture, "timed"));
+        try std.testing.expectEqual(@as(i64, 12), (try memory.get("copied")).int);
+    }
+}
+
+test "AOF replays historical snapshot keys and does not drop writes at the memory limit" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    const path = try uniquePath(fixture.allocator);
+    defer fixture.allocator.free(path);
+    defer fs.cwd().deleteFile(path) catch {};
+    try configureAOF(&fixture, path, .always);
+    const snapshot_path = try std.fmt.allocPrint(fixture.allocator, "tmp/aof-snapshot-{d}", .{runtime_io.timestampNanoseconds()});
+    defer fixture.allocator.free(snapshot_path);
+    try fs.cwd().makePath(snapshot_path);
+    defer fs.cwd().deleteTree(snapshot_path) catch {};
+    var dir = try fs.cwd().openDir(snapshot_path, .{});
+    defer dir.close();
+    {
+        const file = try dir.createFile("dump_1.zcpf", .{});
+        defer file.close();
+        try file.writeAll("zcpf2%2\r\n$3\r\nold\r\n:1\r\n:1\r\n$4\r\ndest\r\n:2\r\n:0\r\n");
+    }
+
+    const memory = &fixture.memory.?;
+    fixture.persistance.?.path = snapshot_path;
+    try fixture.persistance.?.loadForReplay(memory);
+    memory.fabric.limit = memory.fabric.memoryUsed();
+    var aof = try AOF.init(fixture.allocator, fixture.context());
+    defer aof.deinit();
+    try aof.appendCommand(&.{ .{ .str = "RENAME" }, .{ .str = "old" }, .{ .str = "dest" } });
+    try aof.appendCommand(&.{ .{ .str = "SET" }, .{ .str = "survivor" }, .{ .int = 3 } });
+    try aof.replay();
+
+    try std.testing.expectError(error.NotFound, memory.get("dest"));
+    try std.testing.expectEqual(@as(i64, 3), (try memory.get("survivor")).int);
+    memory.fabric.limit = memory.fabric.memoryUsed();
+    try std.testing.expectError(error.MemoryLimitExceeded, memory.put("new", .{ .int = 4 }));
+}
+
 test "AOF rewrite snapshots every shard and replays into a different shard count" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();

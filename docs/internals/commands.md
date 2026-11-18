@@ -30,8 +30,33 @@ GET <key>
 
 Set the value of a key.
 ```sh
-SET <key> <value>
+SET <key> <value> [EX <seconds> | PX <milliseconds>]
 ```
+
+The lifetime must be a positive integer when specified. An ordinary `SET`
+(or `MSET`) clears the previous expiry, even when replacing an equal value.
+
+### EXPIRE
+
+`EXPIRE <key> <seconds>` updates the lifetime of an existing key. Returns `1`
+on success or `0` if the key is missing or already expired. A non-positive
+lifetime deletes the key immediately.
+
+### TTL
+
+`TTL <key>` returns the remaining lifetime rounded to the nearest second, `-1`
+for a persistent key, or `-2` for a missing or expired key.
+
+### PERSIST
+
+`PERSIST <key>` removes an existing expiry and returns `1`. It returns `0` if
+the key is missing, expired, or already persistent.
+
+`RENAME` and `COPY` preserve the source's absolute deadline. Expired keys are
+hidden immediately from reads and enumeration, and reclaimed in the background.
+Snapshots continue to read the original `zcpf` format; snapshots containing
+expiry metadata use `zcpf2`. Both snapshots and AOF store absolute Unix
+deadlines rather than restarting the original lifetime during recovery.
 
 ### DELETE
 

@@ -1,6 +1,7 @@
 //! Routes operations to shards and coordinates cross-shard operations.
 const std = @import("std");
 const sync = @import("sync");
+const runtime_io = @import("runtime_io");
 const types = @import("../../protocol/types.zig");
 const Config = @import("../config.zig");
 pub const Shard = @import("shard.zig");
@@ -10,6 +11,16 @@ shards: []Shard,
 allocator: std.mem.Allocator,
 limit: usize,
 limit_lock: sync.Mutex = .{},
+// Startup replay reconstructs historical mutations before applying today's deadlines.
+replaying: bool = false,
+
+pub fn unixMillis() i64 {
+    return std.Io.Clock.real.now(runtime_io.get()).toMilliseconds();
+}
+
+fn expiryTime(self: *const Fabric) i64 {
+    return if (self.replaying) 0 else unixMillis();
+}
 
 pub fn init(allocator: std.mem.Allocator, config: Config.Memory) !Fabric {
     if (config.shard_count == 0) return error.InvalidShardCount;
@@ -52,46 +63,112 @@ pub fn memoryUsed(self: *Fabric) usize {
 }
 
 fn checkLimit(self: *Fabric) !void {
-    if (self.limit != 0 and self.memoryUsed() >= self.limit)
-        return error.MemoryLimitExceeded;
+    // Historical records can temporarily retain keys that did not coexist live.
+    if (self.replaying or self.limit == 0 or self.memoryUsed() < self.limit) return;
+    self.purgeExpired();
+    if (self.memoryUsed() >= self.limit) return error.MemoryLimitExceeded;
 }
 
 pub fn put(self: *Fabric, key: []const u8, value: types.ZType) !void {
+    return self.putExpiring(key, value, 0);
+}
+
+pub fn putExpiring(self: *Fabric, key: []const u8, value: types.ZType, deadline: i64) !void {
     if (self.limit != 0) self.limit_lock.lock();
     defer if (self.limit != 0) self.limit_lock.unlock();
     try self.checkLimit();
     const shard = self.shardFor(key);
     shard.lock.lock();
     defer shard.lock.unlock();
-    try shard.put(key, .{ .value = value });
+    try shard.put(key, .{ .value = value, .expired_at = deadline });
+}
+
+fn liveEntry(self: *const Fabric, shard: *const Shard, key: []const u8) ?Shard.Entry {
+    const entry = shard.map.get(key) orelse return null;
+    if (entry.expired_at != 0 and entry.isExpired(self.expiryTime())) return null;
+    return entry;
+}
+
+pub fn expireAt(self: *Fabric, key: []const u8, deadline: i64) bool {
+    const shard = self.shardFor(key);
+    shard.lock.lock();
+    defer shard.lock.unlock();
+    const entry = shard.map.getPtr(key) orelse return false;
+    const now = self.expiryTime();
+    if (entry.isExpired(now)) {
+        _ = shard.delete(key);
+        return false;
+    }
+    if (deadline <= now) return shard.delete(key);
+    shard.setExpiry(entry, deadline);
+    return true;
+}
+
+pub fn persist(self: *Fabric, key: []const u8) bool {
+    const shard = self.shardFor(key);
+    shard.lock.lock();
+    defer shard.lock.unlock();
+    const entry = shard.map.getPtr(key) orelse return false;
+    if (entry.expired_at == 0) return false;
+    if (entry.isExpired(self.expiryTime())) {
+        _ = shard.delete(key);
+        return false;
+    }
+    shard.setExpiry(entry, 0);
+    return true;
+}
+
+pub fn ttl(self: *Fabric, key: []const u8) i64 {
+    const shard = self.shardFor(key);
+    shard.lock.lockShared();
+    defer shard.lock.unlockShared();
+    const entry = shard.map.get(key) orelse return -2;
+    if (entry.expired_at == 0) return -1;
+    const now = self.expiryTime();
+    if (entry.isExpired(now)) return -2;
+    const remaining = entry.expired_at - now;
+    return @divTrunc(remaining, 1000) + @as(i64, @intFromBool(@rem(remaining, 1000) >= 500));
+}
+
+pub fn purgeExpired(self: *Fabric) void {
+    const now = unixMillis();
+    for (self.shards) |*shard| {
+        shard.lock.lockShared();
+        const has_expiry = shard.expiring != 0;
+        shard.lock.unlockShared();
+        if (!has_expiry) continue;
+        shard.lock.lock();
+        shard.purgeExpired(now);
+        shard.lock.unlock();
+    }
 }
 
 pub fn get(self: *Fabric, key: []const u8) !types.ZType {
     const shard = self.shardFor(key);
     shard.lock.lockShared();
     defer shard.lock.unlockShared();
-    return (shard.map.get(key) orelse return error.NotFound).value;
+    return (self.liveEntry(shard, key) orelse return error.NotFound).value;
 }
 
 pub fn getCopy(self: *Fabric, key: []const u8, allocator: std.mem.Allocator) !types.ZType {
     const shard = self.shardFor(key);
     shard.lock.lockShared();
     defer shard.lock.unlockShared();
-    return types.ztype_copy((shard.map.get(key) orelse return error.NotFound).value, allocator);
+    return types.ztype_copy((self.liveEntry(shard, key) orelse return error.NotFound).value, allocator);
 }
 
 pub fn withValue(self: *Fabric, key: []const u8, context: anytype, callback: anytype) !void {
     const shard = self.shardFor(key);
     shard.lock.lockShared();
     defer shard.lock.unlockShared();
-    try callback(context, (shard.map.get(key) orelse return error.NotFound).value);
+    try callback(context, (self.liveEntry(shard, key) orelse return error.NotFound).value);
 }
 
 pub fn valueSize(self: *Fabric, key: []const u8) !usize {
     const shard = self.shardFor(key);
     shard.lock.lockShared();
     defer shard.lock.unlockShared();
-    return switch ((shard.map.get(key) orelse return error.NotFound).value) {
+    return switch ((self.liveEntry(shard, key) orelse return error.NotFound).value) {
         .str, .sstr => |text| text.len,
         .array => |array| array.items.len,
         inline .map, .set, .uset => |collection| collection.count(),
@@ -104,7 +181,9 @@ pub fn delete(self: *Fabric, key: []const u8) bool {
     const shard = self.shardFor(key);
     shard.lock.lock();
     defer shard.lock.unlock();
-    return shard.delete(key);
+    const was_live = self.liveEntry(shard, key) != null;
+    _ = shard.delete(key);
+    return was_live;
 }
 
 pub fn flush(self: *Fabric) void {
@@ -171,8 +250,8 @@ fn transfer(self: *Fabric, source: []const u8, destination: []const u8, replace:
 
     const source_shard = &self.shards[source_index];
     const destination_shard = &self.shards[destination_index];
-    const entry = source_shard.map.get(source) orelse return error.NotFound;
-    if (!replace and destination_shard.map.contains(destination)) return error.BusyKey;
+    const entry = self.liveEntry(source_shard, source) orelse return error.NotFound;
+    if (!replace and self.liveEntry(destination_shard, destination) != null) return error.BusyKey;
     if (std.mem.eql(u8, source, destination)) return;
 
     // Copy with the destination allocator before removing anything from the source.
@@ -185,20 +264,24 @@ fn transfer(self: *Fabric, source: []const u8, destination: []const u8, replace:
 
 pub const Iterator = struct {
     fabric: *Fabric,
+    now: i64,
     shard_index: usize = 0,
     current: ?Shard.Map.Iterator = null,
 
     pub const Entry = struct {
-        key_ptr: *[]const u8,
-        value_ptr: *types.ZType,
+        key_ptr: *const []const u8,
+        value_ptr: *const types.ZType,
+        expired_at: i64,
     };
 
     pub fn next(self: *Iterator) ?Entry {
         while (self.shard_index < self.fabric.shards.len) {
             if (self.current == null)
                 self.current = self.fabric.shards[self.shard_index].map.iterator();
-            if (self.current.?.next()) |entry|
-                return .{ .key_ptr = entry.key_ptr, .value_ptr = &entry.value_ptr.value };
+            while (self.current.?.next()) |entry| {
+                if (entry.value_ptr.isExpired(self.now)) continue;
+                return .{ .key_ptr = entry.key_ptr, .value_ptr = &entry.value_ptr.value, .expired_at = entry.value_ptr.expired_at };
+            }
             self.shard_index += 1;
             self.current = null;
         }
@@ -207,8 +290,22 @@ pub const Iterator = struct {
 
     pub fn count(self: *const Iterator) usize {
         var total: usize = 0;
-        for (self.fabric.shards) |*shard| total += shard.map.count();
+        for (self.fabric.shards) |*shard| {
+            total += shard.map.count();
+            if (shard.expiring == 0) continue;
+            var iter = shard.map.iterator();
+            while (iter.next()) |entry| {
+                if (entry.value_ptr.isExpired(self.now)) total -= 1;
+            }
+        }
         return total;
+    }
+
+    pub fn hasExpiry(self: *const Iterator) bool {
+        for (self.fabric.shards) |*shard| {
+            if (shard.expiring != 0) return true;
+        }
+        return false;
     }
 
     pub fn deinit(self: *Iterator) void {
@@ -224,7 +321,7 @@ pub const Iterator = struct {
 /// The caller must deinitialize the iterator even if iteration stops early.
 pub fn iterator(self: *Fabric) Iterator {
     for (self.shards) |*shard| shard.lock.lockShared();
-    return .{ .fabric = self };
+    return .{ .fabric = self, .now = self.expiryTime() };
 }
 
 pub fn deinit(self: *Fabric) void {

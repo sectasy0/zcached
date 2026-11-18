@@ -29,6 +29,12 @@ const CommandType = enum {
     GET,
     /// Store a value at a key.
     SET,
+    /// Set the expiration time for a key.
+    /// Returns 1 if the timeout was set, 0 if the key does not exist.
+    EXPIRE,
+    TTL,
+    PERSIST,
+    PEXPIREAT, // Internal journal record.
     /// Remove a key from storage.
     DELETE,
     /// Remove all stored entries.
@@ -64,6 +70,7 @@ pub const Handler = struct {
     context: Context,
     /// Command currently being processed, borrowed only until `process` returns.
     pending_command: ?[]const ZType = null,
+    replaying: bool = false,
 
     /// Either a successful protocol value or the error that prevented execution.
     pub const Result = union(enum) {
@@ -85,7 +92,7 @@ pub const Handler = struct {
         defer self.pending_command = null;
 
         // first element in command_set is command name and should be always str
-        if (command_set.capacity == 0 or command_set.items[0] != .str) {
+        if (command_set.items.len == 0 or command_set.items[0] != .str) {
             return .{ .err = error.UnknownCommand };
         }
 
@@ -99,8 +106,22 @@ pub const Handler = struct {
                 return self.get(command_set.items[1]);
             },
             .SET => {
-                if (command_set.items.len < 3) return .{ .err = error.InvalidCommand };
-                return self.set(command_set.items[1], command_set.items[2]);
+                return self.set(command_set.items[1..]);
+            },
+            .EXPIRE, .PEXPIREAT => {
+                if (command_type == .PEXPIREAT and !self.replaying) return .{ .err = error.UnknownCommand };
+                if (command_set.items.len != 3) return .{ .err = error.InvalidCommand };
+                return self.expire(command_set.items[1], command_set.items[2], command_type == .PEXPIREAT);
+            },
+            .TTL, .PERSIST => {
+                if (command_set.items.len != 2) return .{ .err = error.InvalidCommand };
+                const key = command_set.items[1];
+                if (key != .str) return .{ .err = error.KeyNotString };
+                const memory = self.context.resources.memory;
+                if (command_type == .TTL) return .{ .ok = .{ .int = memory.ttl(key.str) } };
+                if (!memory.persist(key.str)) return .{ .ok = .{ .int = 0 } };
+                self.appendMutation() catch |err| return .{ .err = err };
+                return .{ .ok = .{ .int = 1 } };
             },
             .DELETE => {
                 if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
@@ -152,16 +173,59 @@ pub const Handler = struct {
     }
 
     /// Stores the value for a string key and records the successful mutation in the AOF.
-    fn set(self: *Handler, key: ZType, value: ZType) Result {
-        // second element in command_set is key and should be always str
+    fn set(self: *Handler, args: []const ZType) Result {
+        if (args.len != 2 and args.len != 4) return .{ .err = error.InvalidCommand };
+        const key = args[0];
         if (key != .str) return .{ .err = error.KeyNotString };
-
-        self.context.resources.memory.put(key.str, value) catch |err| {
-            return .{ .err = err };
-        };
-
-        self.appendMutation() catch |err| return .{ .err = err };
+        const value = args[1];
+        const memory = self.context.resources.memory;
+        if (args.len == 2) {
+            memory.put(key.str, value) catch |err| return .{ .err = err };
+            self.appendMutation() catch |err| return .{ .err = err };
+        } else {
+            if (args[2] != .str) return .{ .err = error.InvalidCommand };
+            const duration = parseExpiry(args[3]) catch |err| return .{ .err = err };
+            if (duration <= 0) return .{ .err = error.InvalidExpiry };
+            const option = args[2].str;
+            const deadline = if (self.replaying and std.ascii.eqlIgnoreCase(option, "PXAT"))
+                duration
+            else if (std.ascii.eqlIgnoreCase(option, "EX"))
+                relativeDeadline(duration, 1000) catch |err| return .{ .err = err }
+            else if (std.ascii.eqlIgnoreCase(option, "PX"))
+                relativeDeadline(duration, 1) catch |err| return .{ .err = err }
+            else
+                return .{ .err = error.InvalidCommand };
+            memory.putExpiring(key.str, value, deadline) catch |err| return .{ .err = err };
+            self.appendCommand(&.{ .{ .str = "SET" }, key, value, .{ .str = "PXAT" }, .{ .int = deadline } }) catch |err|
+                return .{ .err = err };
+        }
         return .{ .ok = .{ .sstr = "OK" } };
+    }
+
+    fn parseExpiry(value: ZType) error{InvalidExpiry}!i64 {
+        return switch (value) {
+            .int => value.int,
+            .str, .sstr => |text| std.fmt.parseInt(i64, text, 10) catch error.InvalidExpiry,
+            else => error.InvalidExpiry,
+        };
+    }
+
+    fn relativeDeadline(duration: i64, scale: i64) error{InvalidExpiry}!i64 {
+        const milliseconds = std.math.mul(i64, duration, scale) catch return error.InvalidExpiry;
+        return std.math.add(i64, Memory.unixMillis(), milliseconds) catch error.InvalidExpiry;
+    }
+
+    fn expire(self: *Handler, key: ZType, value: ZType, absolute: bool) Result {
+        if (key != .str) return .{ .err = error.KeyNotString };
+        const expiry = parseExpiry(value) catch |err| return .{ .err = err };
+        const deadline = if (expiry <= 0 or absolute)
+            @max(expiry, 0)
+        else
+            relativeDeadline(expiry, 1000) catch |err| return .{ .err = err };
+        if (!self.context.resources.memory.expireAt(key.str, deadline)) return .{ .ok = .{ .int = 0 } };
+        self.appendCommand(&.{ .{ .str = "PEXPIREAT" }, key, .{ .int = deadline } }) catch |err|
+            return .{ .err = err };
+        return .{ .ok = .{ .int = 1 } };
     }
 
     /// Deletes an existing key and records the mutation; returns `NotFound` if absent.
@@ -298,7 +362,9 @@ pub const Handler = struct {
         self.context.resources.memory.copy(entries[0].str, entries[1].str, replace) catch |err| {
             return .{ .err = err };
         };
-        self.appendMutation() catch |err| return .{ .err = err };
+        // Replay may still have the destination's historical, now-expired value.
+        self.appendCommand(&.{ .{ .str = "COPY" }, entries[0], entries[1], .{ .str = "REPLACE" } }) catch |err|
+            return .{ .err = err };
         return .{ .ok = .{ .str = "OK" } };
     }
 

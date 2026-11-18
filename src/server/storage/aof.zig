@@ -227,6 +227,13 @@ fn flushQueued(self: *Self) void {
 pub fn replay(self: *Self) !void {
     if (self.strategy == .no) return;
 
+    const memory = self.context.resources.memory;
+    memory.fabric.replaying = true;
+    defer {
+        memory.fabric.replaying = false;
+        memory.purgeExpired();
+    }
+
     const journal = try fs.cwd().openFile(self.path, .{ .mode = .read_only });
     defer journal.close();
 
@@ -253,6 +260,7 @@ pub fn replay(self: *Self) !void {
     var replay_context = self.context;
     replay_context.resources.aof = null;
     var handler: Commands.Handler = .init(self.allocator, replay_context);
+    handler.replaying = true;
 
     var replayed_commands: usize = 0;
     while (true) {
@@ -268,6 +276,7 @@ pub fn replay(self: *Self) !void {
         };
 
         defer self.allocator.free(command_bytes);
+        defer protocol.reset();
 
         var command_stream = fixed_buffer_stream.fixedBufferStream(command_bytes);
         const command_set = protocol.serialize(command_stream.reader()) catch continue;
@@ -365,8 +374,14 @@ pub fn rewrite(self: *Self) void {
     };
     defer handler.deinit();
 
+    // A compacted journal is a full baseline, not a delta on an older snapshot.
+    self.rewrite_buffer.appendSlice("*1\r\n$5\r\nFLUSH\r\n\x03") catch |err| {
+        self.context.resources.logger.err("# Failed to append AOF baseline: {}", .{err});
+        return;
+    };
     while (iterator.next()) |item| {
-        self.rewrite_buffer.appendSlice("*3\r\n$3\r\nSET\r\n") catch |err| {
+        const header = if (item.expired_at == 0) "*3\r\n$3\r\nSET\r\n" else "*5\r\n$3\r\nSET\r\n";
+        self.rewrite_buffer.appendSlice(header) catch |err| {
             self.context.resources.logger.log(
                 .Error,
                 "# Failed to append command header to rewrite buffer: {}",
@@ -409,6 +424,12 @@ pub fn rewrite(self: *Self) void {
             return;
         };
 
+        if (item.expired_at != 0) {
+            self.rewrite_buffer.print("$4\r\nPXAT\r\n:{d}\r\n", .{item.expired_at}) catch |err| {
+                self.context.resources.logger.err("# Failed to append AOF expiry: {}", .{err});
+                return;
+            };
+        }
         self.rewrite_buffer.append(consts.EXT_CHAR) catch |err| {
             self.context.resources.logger.log(
                 .Error,

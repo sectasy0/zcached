@@ -10,8 +10,12 @@ const Heap = std.heap.DebugAllocator(.{
 });
 
 pub const Entry = struct {
-    expired_at: u64 = 0,
+    expired_at: i64 = 0, // Unix milliseconds; zero means persistent.
     value: types.ZType,
+
+    pub fn isExpired(self: Entry, now: i64) bool {
+        return self.expired_at != 0 and self.expired_at <= now;
+    }
 };
 
 pub const Map = std.StringHashMap(Entry);
@@ -19,6 +23,7 @@ pub const Map = std.StringHashMap(Entry);
 map: Map,
 lock: sync.RwLock = .{},
 heap: Heap,
+expiring: usize = 0,
 
 /// Initialize in place: the map's allocator points into this shard.
 pub fn init(self: *Shard, backing_allocator: std.mem.Allocator, capacity: u32) !void {
@@ -51,12 +56,13 @@ pub fn put(self: *Shard, key: []const u8, entry: Entry) !void {
             old.?.len == incoming.?.len)
         {
             @memmove(@constCast(old.?), incoming.?);
-            stored.expired_at = entry.expired_at;
+            self.setExpiry(stored, entry.expired_at);
             return;
         }
         const value = try types.ztype_copy(entry.value, self.heap.allocator());
         types.ztype_free(&stored.value, self.heap.allocator());
-        stored.* = .{ .value = value, .expired_at = entry.expired_at };
+        stored.value = value;
+        self.setExpiry(stored, entry.expired_at);
         return;
     }
 
@@ -67,14 +73,34 @@ pub fn put(self: *Shard, key: []const u8, entry: Entry) !void {
     errdefer allocator.free(owned_key);
 
     try self.map.put(owned_key, .{ .value = value, .expired_at = entry.expired_at });
+    if (entry.expired_at != 0) self.expiring += 1;
+}
+
+pub fn setExpiry(self: *Shard, entry: *Entry, deadline: i64) void {
+    if (entry.expired_at != 0) self.expiring -= 1;
+    entry.expired_at = deadline;
+    if (deadline != 0) self.expiring += 1;
 }
 
 /// Caller holds this shard's exclusive lock.
 pub fn delete(self: *Shard, key: []const u8) bool {
     var entry = self.map.fetchRemove(key) orelse return false;
+    if (entry.value.expired_at != 0) self.expiring -= 1;
     self.heap.allocator().free(entry.key);
     types.ztype_free(&entry.value.value, self.heap.allocator());
     return true;
+}
+
+pub fn purgeExpired(self: *Shard, now: i64) void {
+    var iter = self.map.iterator();
+    while (self.expiring != 0) {
+        const entry = iter.next() orelse break;
+        if (!entry.value_ptr.isExpired(now)) continue;
+        self.heap.allocator().free(entry.key_ptr.*);
+        types.ztype_free(&entry.value_ptr.value, self.heap.allocator());
+        self.map.removeByPtr(entry.key_ptr);
+        self.expiring -= 1;
+    }
 }
 
 /// Caller holds this shard's exclusive lock.
@@ -86,6 +112,7 @@ pub fn flush(self: *Shard) void {
         types.ztype_free(&entry.value_ptr.value, allocator);
     }
     self.map.clearRetainingCapacity();
+    self.expiring = 0;
 }
 
 pub fn deinit(self: *Shard) void {

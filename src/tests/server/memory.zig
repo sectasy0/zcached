@@ -93,6 +93,42 @@ fn initializeReservedShards(allocator: std.mem.Allocator) !void {
     defer fabric.deinit();
 }
 
+test "expired entries are invisible, reclaimable and do not block cross-shard copy" {
+    const allocator = std.testing.allocator;
+    var fabric = try Fabric.init(allocator, .{ .shard_count = 3 });
+    defer fabric.deinit();
+    var src_buf: [64]u8 = undefined;
+    var dst_buf: [64]u8 = undefined;
+    const source = try keyForShard(&fabric, 0, &src_buf);
+    const dest = try keyForShard(&fabric, 2, &dst_buf);
+    const now = Fabric.unixMillis();
+    try fabric.putExpiring(source, .{ .str = "live" }, now + 60_000);
+    try fabric.putExpiring(dest, .{ .str = "expired" }, now - 1);
+    try fabric.putExpiring("expired", .{ .str = "extra storage" }, now - 1);
+    try std.testing.expectEqual(@as(usize, 1), fabric.size());
+    try std.testing.expectError(error.NotFound, fabric.get(dest));
+    try std.testing.expectError(error.NotFound, fabric.getCopy(dest, allocator));
+    try std.testing.expectError(error.NotFound, fabric.valueSize(dest));
+    try std.testing.expectError(error.NotFound, fabric.rename(dest, "absent"));
+    var keys = try fabric.keys(allocator);
+    defer keys.deinit();
+    try std.testing.expectEqual(@as(usize, 1), keys.items.len);
+    try std.testing.expectEqualStrings(source, keys.items[0].str);
+
+    const used = fabric.memoryUsed();
+    fabric.purgeExpired();
+    try std.testing.expect(fabric.memoryUsed() < used);
+    // Replace a logically absent value even before the next purge.
+    try fabric.putExpiring(dest, .{ .str = "expired" }, now - 1);
+    try fabric.copy(source, dest, false);
+    try std.testing.expectEqualStrings("live", (try fabric.get(dest)).str);
+    const entry = fabric.shards[2].map.get(dest).?;
+    try std.testing.expectEqual(now + 60_000, entry.expired_at);
+    try fabric.rename(dest, "renamed");
+    const ren_shard = fabric.shardIndex("renamed");
+    try std.testing.expectEqual(entry.expired_at, fabric.shards[ren_shard].map.get("renamed").?.expired_at);
+}
+
 test "fabric frees previously initialized shards when reserving another shard fails" {
     try std.testing.checkAllAllocationFailures(std.testing.allocator, initializeReservedShards, .{});
 }

@@ -36,6 +36,8 @@ is fixed for the lifetime of the store.
 map capacities but excluding allocator metadata. Zero falls back to the legacy
 `.max_memory`; both default to zero (unlimited). As before, writes are rejected
 once the current usage reaches the limit, so an accepted write can exceed it.
+AOF recovery temporarily bypasses the limit to replay historical writes without
+dropping data. The limit applies again to new writes after recovery.
 COPY and RENAME lock both shards in index order and copy data into the
 destination's allocator before committing. FLUSH, key enumeration, snapshots,
 and AOF rewrites coordinate all shards for a consistent view. Iterators hold
@@ -91,6 +93,14 @@ Returns `PONG`. This command is often used to test if a connection is still aliv
 echo "*1\r\n\$4\r\nPING\r\n\x03" | netcat -N localhost 7556
 ```
 
+#### Key expiration
+
+Use `SET key value EX 60` for a 60-second lifetime or `SET key value PX 500`
+for 500 ms. For an existing key, use `EXPIRE key 60` to set its lifetime,
+`TTL key` to read the remaining seconds, or `PERSIST key` to remove its expiry.
+`TTL` returns `-1` for a key without expiry and `-2` for a missing or expired
+key. Expiration deadlines survive snapshot and AOF restores.
+
 ## Running Tests
 Test cases live under [`src/tests/`](src/tests/), grouped by subsystem and
 kept separate from implementation files.
@@ -105,6 +115,9 @@ non-zero status. Use `zig build test-io` to run only the native I/O tests.
 Test-runner arguments can be passed after `--`, for example
 `zig build test -- --seed=0x1234`. Zig 0.17's build run steps forward these
 arguments directly.
+
+Run `zig build e2e` to exercise the wire protocol on port 7556 over plaintext
+and TLS, including key expiry and snapshot/AOF recovery across server restarts.
 
 ## Benchmark
 

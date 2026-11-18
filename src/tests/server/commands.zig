@@ -8,6 +8,58 @@ const ZType = @import("../../protocol/types.zig").ZType;
 const sets = @import("../../protocol/types.zig").sets;
 const commands = @import("../../server/processing/commands.zig");
 
+fn runCommand(handler: *commands.Handler, items: []const ZType) !commands.Handler.Result {
+    var command: std.array_list.Managed(ZType) = .init(handler.allocator);
+    defer command.deinit();
+    try command.appendSlice(items);
+    return handler.process(&command);
+}
+
+test "TTL commands set, replace and clear expiry with Redis integer responses" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    var handler = commands.Handler.init(fixture.allocator, fixture.context());
+    const key: ZType = .{ .str = "key" };
+    const value: ZType = .{ .str = "value" };
+    const ttl = &.{ ZType{ .str = "TTL" }, key };
+    const persist = &.{ ZType{ .str = "PERSIST" }, key };
+    try std.testing.expectEqual(@as(i64, -2), (try runCommand(&handler, ttl)).ok.int);
+    try std.testing.expectEqual(@as(i64, 0), (try runCommand(&handler, persist)).ok.int);
+    _ = try runCommand(&handler, &.{ .{ .str = "SET" }, key, value, .{ .str = "pX" }, .{ .str = "60000" } });
+    const remaining = (try runCommand(&handler, ttl)).ok.int;
+    try std.testing.expect(remaining > 0 and remaining <= 60);
+    try std.testing.expectEqual(@as(i64, 1), (try runCommand(&handler, persist)).ok.int);
+    try std.testing.expectEqual(@as(i64, 0), (try runCommand(&handler, persist)).ok.int);
+    try std.testing.expectEqual(@as(i64, -1), (try runCommand(&handler, ttl)).ok.int);
+
+    try std.testing.expectEqualStrings("OK", (try runCommand(&handler, &.{ .{ .str = "SET" }, key, value, .{ .str = "EX" }, .{ .int = 90 } })).ok.sstr);
+    try std.testing.expect((try runCommand(&handler, ttl)).ok.int > 60);
+    try std.testing.expectEqualStrings("OK", (try runCommand(&handler, &.{ .{ .str = "SET" }, key, value })).ok.sstr);
+    try std.testing.expectEqual(@as(i64, -1), (try runCommand(&handler, ttl)).ok.int);
+    try std.testing.expectEqual(@as(i64, 1), (try runCommand(&handler, &.{ .{ .str = "EXPIRE" }, key, .{ .int = 60 } })).ok.int);
+    try std.testing.expect((try runCommand(&handler, ttl)).ok.int > 0);
+    try std.testing.expectEqual(@as(i64, 1), (try runCommand(&handler, &.{ .{ .str = "EXPIRE" }, key, .{ .int = 0 } })).ok.int);
+    try std.testing.expectEqual(@as(i64, 0), (try runCommand(&handler, &.{ .{ .str = "EXPIRE" }, key, .{ .int = 60 } })).ok.int);
+    try std.testing.expectEqual(@as(i64, -2), (try runCommand(&handler, ttl)).ok.int);
+}
+
+test "invalid expiry cannot overwrite an existing value" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    try fixture.memory.?.put("key", .{ .str = "old" });
+    var handler = commands.Handler.init(fixture.allocator, fixture.context());
+    const key: ZType = .{ .str = "key" };
+    for ([_]ZType{ .{ .int = 0 }, .{ .int = -1 }, .{ .int = std.math.maxInt(i64) }, .{ .str = "NaN" } }) |duration| {
+        const result = try runCommand(&handler, &.{ .{ .str = "SET" }, key, .{ .str = "new" }, .{ .str = "EX" }, duration });
+        try std.testing.expectEqual(error.InvalidExpiry, result.err);
+    }
+    try std.testing.expectEqual(error.UnknownCommand, (try runCommand(&handler, &.{ .{ .str = "PEXPIREAT" }, key, .{ .int = 1 } })).err);
+    try std.testing.expectEqualStrings("old", (try fixture.memory.?.get("key")).str);
+    try std.testing.expectEqual(@as(i64, -1), fixture.memory.?.ttl("key"));
+}
+
 // Confirms SET returns OK and stores the supplied value.
 test "should handle SET command" {
     var fixture = try ContextFixture.init();

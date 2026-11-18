@@ -6,6 +6,48 @@ const fixtures = @import("../fixtures.zig");
 const ContextFixture = fixtures.ContextFixture;
 const Handler = @import("../../server/storage/persistance.zig");
 
+test "snapshots restore live deadlines and skip expired records" {
+    const allocator = std.testing.allocator;
+    const path = try std.fmt.allocPrint(allocator, "./tmp/persist-ttl-{d}", .{runtime_io.timestampNanoseconds()});
+    defer allocator.free(path);
+    try fs.cwd().makePath(path);
+    defer fs.cwd().deleteTree(path) catch {};
+    const dir = try fs.cwd().openDir(path, .{});
+    defer dir.close();
+    {
+        const file = try dir.createFile("dump_1.zcpf", .{});
+        defer file.close();
+        try file.writeAll("zcpf2%1\r\n$4\r\npast\r\n:1\r\n:1\r\n");
+    }
+
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    fixture.persistance.?.path = path;
+    const memory = &fixture.memory.?;
+    try fixture.persistance.?.load(memory);
+    try std.testing.expectEqual(@as(i64, 0), memory.size());
+
+    const deadline = @import("../../server/storage/memory.zig").unixMillis() + 60_000;
+    try memory.putExpiring("live", .{ .int = 42 }, deadline);
+    try memory.putExpiring("past", .{ .int = 1 }, 1);
+    try memory.put("permanent", .{ .int = 2 });
+    _ = try memory.save();
+    memory.flush();
+    try fixture.persistance.?.load(memory);
+    try std.testing.expectEqual(@as(i64, 2), memory.size());
+    try std.testing.expectEqual(@as(i64, -1), memory.ttl("permanent"));
+    var iter = memory.iterator();
+    defer iter.deinit();
+    while (iter.next()) |entry| {
+        if (!std.mem.eql(u8, entry.key_ptr.*, "live")) continue;
+        try std.testing.expectEqual(deadline, entry.expired_at);
+        try std.testing.expectEqual(@as(i64, 42), entry.value_ptr.int);
+        return;
+    }
+    return error.MissingKey;
+}
+
 test "scheduled snapshots use configured directory and prune only older snapshots" {
     const allocator = std.testing.allocator;
     const path = try std.fmt.allocPrint(allocator, "./tmp/persist-scheduled-{d}", .{runtime_io.timestampNanoseconds()});

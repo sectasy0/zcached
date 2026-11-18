@@ -42,6 +42,7 @@ pub fn handle(out: anytype, err: anyerror, args: Args, logger: *Logger) !void {
         error.NotWhitelisted => try out.writeAll("-NOAUTH not whitelisted\r\n"),
         error.SaveFailure => try out.writeAll("-NOSAVE error while saving data\r\n"),
         error.InvalidLength => try out.writeAll("-INVAL invalid length\r\n"),
+        error.InvalidExpiry => try out.writeAll("-ERR invalid expire time\r\n"),
         error.BusyKey => try out.writeAll("-BUSYKEY key already exists\r\n"),
         else => try out.writeAll("-ERR unexpected\r\n"),
     };

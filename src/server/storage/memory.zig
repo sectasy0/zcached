@@ -30,6 +30,28 @@ pub fn put(self: *Memory, key: []const u8, value: types.ZType) !void {
     return self.fabric.put(key, value);
 }
 
+pub const unixMillis = Fabric.unixMillis;
+
+pub fn putExpiring(self: *Memory, key: []const u8, value: types.ZType, deadline: i64) !void {
+    return self.fabric.putExpiring(key, value, deadline);
+}
+
+pub fn expireAt(self: *Memory, key: []const u8, deadline: i64) bool {
+    return self.fabric.expireAt(key, deadline);
+}
+
+pub fn persist(self: *Memory, key: []const u8) bool {
+    return self.fabric.persist(key);
+}
+
+pub fn ttl(self: *Memory, key: []const u8) i64 {
+    return self.fabric.ttl(key);
+}
+
+pub fn purgeExpired(self: *Memory) void {
+    self.fabric.purgeExpired();
+}
+
 /// Returns a borrowed value; do not retain it across concurrent mutations.
 pub fn get(self: *Memory, key: []const u8) !types.ZType {
     return self.fabric.get(key);
