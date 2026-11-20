@@ -1,6 +1,5 @@
 //! Routes operations to shards and coordinates cross-shard operations.
 const std = @import("std");
-const sync = @import("sync");
 const runtime_io = @import("runtime_io");
 const types = @import("../../protocol/types.zig");
 const Config = @import("../config.zig");
@@ -10,7 +9,7 @@ const Fabric = @This();
 shards: []Shard,
 allocator: std.mem.Allocator,
 limit: usize,
-limit_lock: sync.Mutex = .{},
+used_bytes: std.atomic.Value(usize),
 // Startup replay reconstructs historical mutations before applying today's deadlines.
 replaying: bool = false,
 
@@ -36,10 +35,13 @@ pub fn init(allocator: std.mem.Allocator, config: Config.Memory) !Fabric {
         try shard.init(allocator, capacity);
         initialized += 1;
     }
+    var used_bytes: usize = 0;
+    for (shards) |*shard| used_bytes += shard.heap.total_requested_bytes;
     return .{
         .shards = shards,
         .allocator = allocator,
         .limit = config.limit,
+        .used_bytes = .init(used_bytes),
     };
 }
 
@@ -53,17 +55,21 @@ fn shardFor(self: *Fabric, key: []const u8) *Shard {
 
 /// Reports live requested bytes, including map capacities but excluding heap metadata.
 pub fn memoryUsed(self: *Fabric) usize {
-    var total: usize = 0;
-    for (self.shards) |*shard| {
-        shard.lock.lockShared();
-        total += shard.heap.total_requested_bytes;
-        shard.lock.unlockShared();
+    return self.used_bytes.load(.monotonic);
+}
+
+fn updateMemoryUsed(self: *Fabric, shard: *Shard, previous: usize) void {
+    const current = shard.heap.total_requested_bytes;
+    if (current >= previous) {
+        _ = self.used_bytes.fetchAdd(current - previous, .monotonic);
+    } else {
+        _ = self.used_bytes.fetchSub(previous - current, .monotonic);
     }
-    return total;
 }
 
 fn checkLimit(self: *Fabric) !void {
     // Historical records can temporarily retain keys that did not coexist live.
+    // Concurrent writes may all pass this advisory check before their allocations are accounted.
     if (self.replaying or self.limit == 0 or self.memoryUsed() < self.limit) return;
     self.purgeExpired();
     if (self.memoryUsed() >= self.limit) return error.MemoryLimitExceeded;
@@ -74,12 +80,12 @@ pub fn put(self: *Fabric, key: []const u8, value: types.ZType) !void {
 }
 
 pub fn putExpiring(self: *Fabric, key: []const u8, value: types.ZType, deadline: i64) !void {
-    if (self.limit != 0) self.limit_lock.lock();
-    defer if (self.limit != 0) self.limit_lock.unlock();
     try self.checkLimit();
     const shard = self.shardFor(key);
     shard.lock.lock();
     defer shard.lock.unlock();
+    const previous = shard.heap.total_requested_bytes;
+    defer self.updateMemoryUsed(shard, previous);
     try shard.put(key, .{ .value = value, .expired_at = deadline });
 }
 
@@ -93,6 +99,8 @@ pub fn expireAt(self: *Fabric, key: []const u8, deadline: i64) bool {
     const shard = self.shardFor(key);
     shard.lock.lock();
     defer shard.lock.unlock();
+    const previous = shard.heap.total_requested_bytes;
+    defer self.updateMemoryUsed(shard, previous);
     const entry = shard.map.getPtr(key) orelse return false;
     const now = self.expiryTime();
     if (entry.isExpired(now)) {
@@ -138,7 +146,9 @@ pub fn purgeExpired(self: *Fabric) void {
         shard.lock.unlockShared();
         if (!has_expiry) continue;
         shard.lock.lock();
+        const previous = shard.heap.total_requested_bytes;
         shard.purgeExpired(now);
+        self.updateMemoryUsed(shard, previous);
         shard.lock.unlock();
     }
 }
@@ -181,6 +191,8 @@ pub fn delete(self: *Fabric, key: []const u8) bool {
     const shard = self.shardFor(key);
     shard.lock.lock();
     defer shard.lock.unlock();
+    const previous = shard.heap.total_requested_bytes;
+    defer self.updateMemoryUsed(shard, previous);
     const was_live = self.liveEntry(shard, key) != null;
     _ = shard.delete(key);
     return was_live;
@@ -195,7 +207,11 @@ pub fn flush(self: *Fabric) void {
             self.shards[index].lock.unlock();
         }
     }
-    for (self.shards) |*shard| shard.flush();
+    for (self.shards) |*shard| {
+        const previous = shard.heap.total_requested_bytes;
+        shard.flush();
+        self.updateMemoryUsed(shard, previous);
+    }
 }
 
 pub fn size(self: *Fabric) usize {
@@ -235,8 +251,6 @@ pub fn copy(self: *Fabric, source: []const u8, destination: []const u8, replace:
 }
 
 fn transfer(self: *Fabric, source: []const u8, destination: []const u8, replace: bool, move: bool) !void {
-    if (self.limit != 0) self.limit_lock.lock();
-    defer if (self.limit != 0) self.limit_lock.unlock();
     if (!move or destination.len > source.len) try self.checkLimit();
 
     const source_index = self.shardIndex(source);
@@ -247,6 +261,12 @@ fn transfer(self: *Fabric, source: []const u8, destination: []const u8, replace:
     defer first.lock.unlock();
     if (first != second) second.lock.lock();
     defer if (first != second) second.lock.unlock();
+    const first_previous = first.heap.total_requested_bytes;
+    const second_previous = if (first != second) second.heap.total_requested_bytes else 0;
+    defer {
+        self.updateMemoryUsed(first, first_previous);
+        if (first != second) self.updateMemoryUsed(second, second_previous);
+    }
 
     const source_shard = &self.shards[source_index];
     const destination_shard = &self.shards[destination_index];
