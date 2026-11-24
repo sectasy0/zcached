@@ -38,14 +38,14 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io, context: Context) !Server 
 
 /// Starts the listener and worker runtimes, then joins started workers on shutdown.
 pub fn run(self: *Server, io: std.Io) void {
-    self.context.resources.logger.info("# starting zcached server on tcp://{any} | Workers {}", .{
+    self.context.resources.logger.info("# starting zcached server on tcp://{any} | workers={}", .{
         self.context.config.address,
         self.context.config.workers,
     });
     self.transport.listen(self.context.config.getAddress()) catch |err| {
         self.context.resources.logger.err(
-            "# failed to run server listener: {any}",
-            .{err},
+            "# startup failed: listener on tcp://{any}: {any}",
+            .{ self.context.config.address, err },
         );
         return;
     };
@@ -65,20 +65,30 @@ pub fn run(self: *Server, io: std.Io) void {
         worker.* = .{};
         worker.start(io, self.allocator, runWorker, .{self}) catch |err| {
             self.context.resources.logger.err(
-                "# failed to start server worker runtime: {any}",
-                .{err},
+                "# startup failed: worker {}/{} runtime: {any}",
+                .{ started + 1, self.context.config.workers, err },
             );
             return;
         };
         started += 1;
     }
+    self.context.resources.logger.info(
+        "# zcached is ready on tcp://{any} | workers={} | tls={}",
+        .{
+            self.context.config.address,
+            started,
+            self.context.config.tls.enabled,
+        },
+    );
 
     while (self.context.running.load(.seq_cst)) {
         io.sleep(.fromMilliseconds(100), .awake) catch |err| {
-            self.context.resources.logger.err("# supervisor sleep failed: {any}", .{err});
+            self.context.resources.logger.err("# supervisor stopped: sleep failed: {any}", .{err});
             return;
         };
     }
+
+    self.context.resources.logger.info("# zcached shutting down; stopping network workers", .{});
 }
 
 /// Runs the per-worker accept task and supervises it until shutdown.

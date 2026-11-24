@@ -101,7 +101,9 @@ Acceptance criteria:
   to a small, documented password-based model.
 - ◐ Add request-size and aggregate response limits that are safe under malformed
   or pipelined input.
-- ◐ Complete graceful shutdown and startup diagnostics.
+- ✅ Graceful shutdown and startup diagnostics are implemented: startup failures
+  identify the lifecycle phase, network readiness is logged, SIGTERM/SIGINT are
+  distinguished, worker shutdown is coordinated, and AOF is flushed on exit.
 - ◐ Harden TLS configuration, certificate validation, and security-focused
   default settings.
 - ◐ Publish an operational guide covering logs, resource limits, snapshots, AOF,

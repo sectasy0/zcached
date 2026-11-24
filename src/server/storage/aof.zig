@@ -619,9 +619,11 @@ pub fn deinit(self: *Self) void {
     self.mutex.unlock();
     if (rewrite_thread) |thread| thread.join();
 
-    self.flush() catch |err| {
-        self.context.resources.logger.err("# failed to flush AOF during shutdown: {any}", .{err});
-    };
+    if (self.flush()) {
+        self.context.resources.logger.info("# AOF shutdown flush complete", .{});
+    } else |err| {
+        self.context.resources.logger.err("# shutdown incomplete: failed to flush AOF: {any}", .{err});
+    }
     self.buffer.deinit();
     self.rewrite_buffer.deinit();
     self.queue.deinit();

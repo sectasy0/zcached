@@ -25,6 +25,13 @@ pub const panic = std.debug.FullPanic(panicHandler);
 
 /// Indicates whether the server should continue accepting and serving work.
 var running: std.atomic.Value(bool) = .init(true);
+/// Records the reason why the process entered its shutdown path.
+var shutdown_reason: std.atomic.Value(u8) = .init(0);
+const ShutdownReason = enum(u8) {
+    none = 0,
+    sigterm = 1,
+    sigint = 2,
+};
 /// Selects leak-checking debug allocation in safety builds.
 const debug_allocator = builtin.mode == .debug or builtin.mode == .safe;
 
@@ -36,8 +43,11 @@ fn appendAOFCommand(ptr: *anyopaque, command: []const @import("protocol/types.zi
 
 /// Requests graceful shutdown after a termination signal.
 fn handleSig(sig: std.posix.SIG) callconv(.c) void {
-    _ = sig; // unused, but required by the signal handler signature
-    // we want to stop the server gracefully, and also flush any pending logs
+    shutdown_reason.store(switch (sig) {
+        .INT => @intFromEnum(ShutdownReason.sigint),
+        .TERM => @intFromEnum(ShutdownReason.sigterm),
+        else => @intFromEnum(ShutdownReason.none),
+    }, .seq_cst);
     running.store(false, .seq_cst);
 }
 
@@ -112,7 +122,7 @@ pub fn main(init: std.process.Init) void {
 
     var evented_io: runtime_io.Evented = undefined;
     evented_io.init(allocator) catch |err| {
-        std.log.err("# failed to initialize evented I/O: {s}", .{@errorName(err)});
+        std.log.err("# startup failed: evented I/O initialization: {s}", .{@errorName(err)});
         std.process.exit(1);
     };
     defer {
@@ -131,7 +141,7 @@ pub fn main(init: std.process.Init) void {
         result.args.@"log-path",
         result.args.sout,
     ) catch |err| {
-        std.log.err("# failed to initialize logger: {any}", .{err});
+        std.log.err("# startup failed: logger initialization: {any}", .{err});
         return;
     };
     defer logger.deinit();
@@ -150,7 +160,7 @@ pub fn main(init: std.process.Init) void {
         result.args.@"config-path",
         result.args.@"log-path",
     ) catch |err| {
-        logger.err("# failed to load config: {any}", .{err});
+        logger.err("# startup failed: configuration load: {any}", .{err});
         return;
     };
     defer config.deinit();
@@ -167,7 +177,7 @@ pub fn main(init: std.process.Init) void {
         &logger,
         null,
     ) catch |err| {
-        logger.err("# failed to init persistance.Handler: {any}", .{err});
+        logger.err("# startup failed: snapshot handler initialization: {any}", .{err});
         return;
     };
     defer persister.deinit();
@@ -177,18 +187,18 @@ pub fn main(init: std.process.Init) void {
         config,
         &persister,
     ) catch |err| {
-        logger.err("# failed to initialize memory: {any}", .{err});
+        logger.err("# startup failed: memory initialization: {any}", .{err});
         return;
     };
     defer memory.deinit();
 
     agent.kickoff() catch |err| {
-        logger.err("# failed to initialize background agent: {any}", .{err});
+        logger.err("# startup failed: background agent initialization: {any}", .{err});
         return;
     };
     defer agent.stop();
     logger.start(&agent) catch |err| {
-        std.log.err("# failed to schedule logger flush: {any}", .{err});
+        std.log.err("# startup failed: logger flush scheduling: {any}", .{err});
         return;
     };
 
@@ -216,7 +226,7 @@ pub fn main(init: std.process.Init) void {
     };
 
     var aof = AOF.init(allocator, context) catch |err| {
-        logger.err("# failed to initialize AOF: {any}", .{err});
+        logger.err("# startup failed: AOF initialization: {any}", .{err});
         return;
     };
     defer aof.deinit();
@@ -230,28 +240,34 @@ pub fn main(init: std.process.Init) void {
     };
 
     var expiry_task = agent.scheduleCancelable(Memory.purgeExpired, .{&memory}, 1) catch |err| {
-        logger.err("# failed to schedule key expiry: {any}", .{err});
+        logger.err("# startup failed: key-expiry scheduling: {any}", .{err});
         return;
     };
     defer expiry_task.deinit();
 
     aof.start() catch |err| {
-        logger.err("# failed to schedule AOF flush: {any}", .{err});
+        logger.err("# startup failed: AOF flush scheduling: {any}", .{err});
         return;
     };
     persister.start(&agent, &memory) catch |err| {
-        logger.err("# failed to schedule snapshots: {any}", .{err});
+        logger.err("# startup failed: snapshot scheduling: {any}", .{err});
         return;
     };
     defer persister.stop();
 
     {
         var server = NetworkServer.init(allocator, evented_io.io(), context) catch |err| {
-            logger.err("# failed to initialize server: {any}", .{err});
+            logger.err("# startup failed: network server initialization: {any}", .{err});
             return;
         };
         defer server.deinit();
         server.run(evented_io.io());
+
+        switch (@as(ShutdownReason, @enumFromInt(shutdown_reason.load(.seq_cst)))) {
+            .sigterm => logger.info("# shutdown requested by SIGTERM", .{}),
+            .sigint => logger.info("# shutdown requested by SIGINT", .{}),
+            .none => logger.info("# server supervisor stopped; beginning graceful shutdown", .{}),
+        }
     }
 }
 
