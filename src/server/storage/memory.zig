@@ -85,6 +85,10 @@ pub fn size(self: *Memory) i64 {
     return @intCast(self.fabric.size());
 }
 
+pub fn memoryUsed(self: *Memory) usize {
+    return self.fabric.memoryUsed();
+}
+
 pub fn save(self: *Memory) !usize {
     return self.persister.save(self);
 }

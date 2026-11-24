@@ -36,7 +36,7 @@ the C API, corruption handling, and release hardening remain incomplete.
   responses.
 - ◐ Document argument validation and error-response behavior consistently.
 - ◐ Finalize the public command set and mark internal commands as non-public.
-- ❌ Add `INFO`, `COMMAND`, and `CLIENT` commands for basic introspection.
+- ✅ Added `INFO`, `COMMAND`, and `CLIENT` commands for basic introspection.
 - ❌ Add the remaining standard cache operations required by the 1.0 API:
   `MSETNX`, `INCR`, `DECR`, `APPEND`, and `STRLEN`.
 - ◐ Resolve the status of supported data types. The implementation must either

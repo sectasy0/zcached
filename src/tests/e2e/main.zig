@@ -227,6 +227,9 @@ fn runTests(socket: anytype) !void {
         false,
     );
 
+    try expectCommand(socket, &.{ "COMMAND", "COUNT" }, "COMMAND COUNT", ":23\r\n");
+    try expectCommand(socket, &.{ "CLIENT", "ID" }, "CLIENT ID", ":0\r\n");
+
     try sendAndExpect(
         socket,
         "*3\r\n$3\r\nSET\r\n$9\r\nmycounter\r\n:42\r\n\x03",

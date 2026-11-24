@@ -5,6 +5,7 @@ const fixtures = @import("../fixtures.zig");
 const ContextFixture = fixtures.ContextFixture;
 
 const ZType = @import("../../protocol/types.zig").ZType;
+const types = @import("../../protocol/types.zig");
 const sets = @import("../../protocol/types.zig").sets;
 const commands = @import("../../server/processing/commands.zig");
 
@@ -13,6 +14,27 @@ fn runCommand(handler: *commands.Handler, items: []const ZType) !commands.Handle
     defer command.deinit();
     try command.appendSlice(items);
     return handler.process(&command);
+}
+
+test "INFO, COMMAND and CLIENT provide server introspection" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    var handler = commands.Handler.init(std.testing.allocator, fixture.context());
+
+    var info = try runCommand(&handler, &.{.{ .str = "INFO" }});
+    defer types.ztype_free(&info.ok, std.testing.allocator);
+    try std.testing.expect(std.mem.indexOf(u8, info.ok.str, "zcached_version:0.0.1") != null);
+
+    try std.testing.expectEqual(@as(i64, 23), (try runCommand(&handler, &.{ .{ .str = "COMMAND" }, .{ .str = "COUNT" } })).ok.int);
+    var command_result = try runCommand(&handler, &.{.{ .str = "COMMAND" }});
+    try std.testing.expect(command_result == .ok);
+    try std.testing.expectEqual(@as(usize, 23), command_result.ok.array.items.len);
+    types.ztype_free(&command_result.ok, std.testing.allocator);
+
+    try std.testing.expectEqualStrings("id=0 addr=unknown name=\r\n", (try runCommand(&handler, &.{ .{ .str = "CLIENT" }, .{ .str = "LIST" } })).ok.str);
+    try std.testing.expectEqual(@as(i64, 0), (try runCommand(&handler, &.{ .{ .str = "CLIENT" }, .{ .str = "ID" } })).ok.int);
+    try std.testing.expectEqual(error.InvalidCommand, (try runCommand(&handler, &.{ .{ .str = "CLIENT" }, .{ .str = "SETNAME" }, .{ .str = "cache" } })).err);
 }
 
 test "GSET returns the inserted value and does not overwrite on a hit" {

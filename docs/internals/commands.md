@@ -12,6 +12,35 @@ Checks if the server is running.
 PING
 ```
 
+### INFO
+
+Returns server and key-space metadata as a bulk string.
+
+```sh
+INFO
+```
+
+The response includes the zcached version, configured worker and client limits,
+TLS status, key count, and estimated storage memory usage.
+
+### COMMAND
+
+Returns the public command names or the command count.
+
+```sh
+COMMAND
+COMMAND COUNT
+```
+
+### CLIENT
+
+Returns basic connection metadata.
+
+```sh
+CLIENT LIST
+CLIENT ID
+```
+
 ### GET
 
 **Available since**: 0.0.1\

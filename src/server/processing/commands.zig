@@ -60,6 +60,12 @@ const CommandType = enum {
     ECHO,
     /// Copy a value to another key, optionally replacing its contents.
     COPY,
+    /// Return server metadata in Redis-style text sections.
+    INFO,
+    /// Describe supported commands or return command counts.
+    COMMAND,
+    /// Return basic client connection metadata.
+    CLIENT,
 };
 
 /// Executes commands against the shared application context.
@@ -152,6 +158,12 @@ pub const Handler = struct {
                 if (command_set.items.len < 3) return .{ .err = error.InvalidCommand };
                 return self.copy(command_set.items[1..command_set.items.len]);
             },
+            .INFO => {
+                if (command_set.items.len > 1) return .{ .err = error.InvalidCommand };
+                return self.info();
+            },
+            .COMMAND => return self.commandList(command_set.items[1..]),
+            .CLIENT => return self.clientInfo(command_set.items[1..]),
             .MGET => return self.mget(command_set.items[1..command_set.items.len]),
             .MSET => return self.mset(command_set.items[1..command_set.items.len]),
             .PING => return .{ .ok = .{ .sstr = "PONG" } },
@@ -387,6 +399,60 @@ pub const Handler = struct {
         return .{ .ok = .{ .str = "OK" } };
     }
 
+    /// Returns server identity and key-space/resource metadata.
+    fn info(self: *Handler) Result {
+        const text = std.fmt.allocPrint(
+            self.allocator,
+            "# Server\r\nzcached_version:0.0.1\r\nworkers:{d}\r\nmax_clients:{d}\r\ntls_enabled:{s}\r\n\r\n# Keyspace\r\ndb_keys:{d}\r\nused_memory:{d}\r\n",
+            .{
+                self.context.config.workers,
+                self.context.config.max_clients,
+                if (self.context.config.tls.enabled) "1" else "0",
+                self.context.resources.memory.size(),
+                self.context.resources.memory.memoryUsed(),
+            },
+        ) catch |err| return .{ .err = err };
+        return .{ .ok = .{ .str = text } };
+    }
+
+    /// Lists public commands or reports the command count.
+    fn commandList(self: *Handler, args: []ZType) Result {
+        const names = [_][]const u8{
+            "PING", "GET", "SET", "GSET", "EXPIRE", "TTL", "PERSIST", "PEXPIREAT",
+            "DELETE", "FLUSH", "MGET", "MSET", "DBSIZE", "SAVE", "KEYS", "LASTSAVE",
+            "SIZEOF", "RENAME", "ECHO", "COPY", "INFO", "COMMAND", "CLIENT",
+        };
+        if (args.len == 1 and args[0] == .str and std.ascii.eqlIgnoreCase(args[0].str, "COUNT")) {
+            return .{ .ok = .{ .int = @intCast(names.len) } };
+        }
+        if (args.len != 0) return .{ .err = error.InvalidCommand };
+
+        var result = ZType.Array.initCapacity(self.allocator, names.len) catch |err|
+            return .{ .err = err };
+        errdefer {
+            var owned: ZType = .{ .array = result };
+            types.ztype_free(&owned, self.allocator);
+        }
+        for (names) |name| {
+            result.appendAssumeCapacity(.{ .str = self.allocator.dupe(u8, name) catch |err| return .{ .err = err } });
+        }
+        return .{ .ok = .{ .array = result } };
+    }
+
+    /// Returns basic connection metadata for the supported CLIENT subcommands.
+    fn clientInfo(self: *Handler, args: []ZType) Result {
+        _ = self;
+        if (args.len == 1 and args[0] == .str) {
+            if (std.ascii.eqlIgnoreCase(args[0].str, "LIST")) {
+                return .{ .ok = .{ .str = "id=0 addr=unknown name=\r\n" } };
+            }
+            if (std.ascii.eqlIgnoreCase(args[0].str, "ID")) {
+                return .{ .ok = .{ .int = 0 } };
+            }
+        }
+        return .{ .err = error.InvalidCommand };
+    }
+
     /// Appends the currently processed command to AOF, if one is configured.
     fn appendMutation(self: *Handler) !void {
         const command = self.pending_command orelse return error.InvalidCommand;
@@ -405,7 +471,7 @@ pub const Handler = struct {
         const command_type = utils.enumTypeFromStr(CommandType, command_set.items[0].str) orelse return;
 
         switch (command_type) {
-            .GET, .GSET, .KEYS => types.ztype_free(&result.ok, self.allocator),
+            .GET, .GSET, .KEYS, .INFO, .COMMAND => types.ztype_free(&result.ok, self.allocator),
             .MGET => self.freeMapValues(&result.ok.map),
             else => return,
         }
