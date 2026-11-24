@@ -355,6 +355,8 @@ trusted source before trusting the individual archive hashes.
 
 ## Documentation
 - For the 1.0.0 development roadmap, see the [roadmap](docs/roadmap.md).
+- For compatibility guarantees, see the
+  [backward-compatibility policy](docs/compatibility.md).
 - For release history, see the [release_history.md](docs/release_history.md)
 - For building/installation process please refer to the [installation.md](docs/installation.md)
 - For supported types and their encodings, see the [types.md](docs/internals/types.md)

@@ -46,8 +46,8 @@ the C API, corruption handling, and release hardening remain incomplete.
 - ✅ Documented the scalar and compound values supported by the protocol and
   storage, including unsupported empty/binary string parser cases and the lack
   of set-specific member commands.
-- ❌ Establish backward-compatibility rules for commands, response types, and
-  configuration fields.
+- ✅ Established backward-compatibility rules for commands, response types,
+  and configuration fields in the [compatibility policy](compatibility.md).
 
 Acceptance criteria:
 
