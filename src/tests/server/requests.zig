@@ -122,5 +122,5 @@ test "GET serializes stored values directly into the connection output" {
     connection.tx_accumulator.clearRetainingCapacity();
     try fixture.memory.?.putExpiring("key", .{ .str = "value" }, 1);
     processor.process(&connection, @constCast("*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n"));
-    try std.testing.expectEqualStrings("-ERR 'key' not found\r\n\x03", connection.tx_accumulator.items);
+    try std.testing.expectEqualStrings("-NOT_FOUND\r\n\x03", connection.tx_accumulator.items);
 }

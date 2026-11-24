@@ -1,136 +1,59 @@
 const stdlib = @import("std");
 const std = struct {
     pub const testing = stdlib.testing;
-    pub const array_list = stdlib.array_list;
+    pub const fmt = stdlib.fmt;
     pub const io = struct {
         pub const fixedBufferStream = @import("../../protocol/fixed_buffer_stream.zig").fixedBufferStream;
     };
 };
 const Logger = @import("../../server/logger.zig");
-const ZType = @import("../../protocol/types.zig").ZType;
-
-const BUFF_SIZE: u8 = 150;
-
 const errors = @import("../../server/processing/errors.zig");
 
-// Checks the unprocessable error reply and protocol terminator.
-test "Unprocessable" {
-    var buffer: [BUFF_SIZE]u8 = undefined;
+fn expectReply(err: anyerror, expected: []const u8) !void {
+    var buffer: [128]u8 = undefined;
     var stream = std.io.fixedBufferStream(&buffer);
-
-    const out_writer = stream.writer().any();
-
     var logger = try Logger.init(std.testing.allocator, null, null, false);
     defer logger.deinit();
-    try errors.handle(out_writer, error.Unprocessable, .{}, &logger);
 
-    try std.testing.expectEqualStrings("-ERR unprocessable\r\n\x03", stream.getWritten());
+    try errors.handle(stream.writer().any(), err, &logger);
+    try std.testing.expectEqualStrings(expected, stream.getWritten());
 }
 
-// Checks an unknown-command reply when command context is absent.
-test "UnknownCommand" {
-    var buffer: [BUFF_SIZE]u8 = undefined;
-    var stream = std.io.fixedBufferStream(&buffer);
-    const out_writer = stream.writer().any();
-
-    var logger = try Logger.init(std.testing.allocator, null, null, false);
-    defer logger.deinit();
-    var array = std.array_list.Managed(ZType).initCapacity(std.testing.allocator, 0) catch {
-        return error.AllocatorError;
+test "error replies contain only stable error codes" {
+    const cases = [_]struct {
+        err: anyerror,
+        code: []const u8,
+    }{
+        .{ .err = error.Unprocessable, .code = "UNPROCESSABLE" },
+        .{ .err = error.UnknownCommand, .code = "UNKNOWN_COMMAND" },
+        .{ .err = error.InvalidType, .code = "INVALID_TYPE" },
+        .{ .err = error.InvalidKey, .code = "KEY_NOT_STRING" },
+        .{ .err = error.KeyNotString, .code = "KEY_NOT_STRING" },
+        .{ .err = error.InvalidCommand, .code = "INVALID_COMMAND" },
+        .{ .err = error.InvalidArgs, .code = "INVALID_ARGUMENTS" },
+        .{ .err = error.NotFound, .code = "NOT_FOUND" },
+        .{ .err = error.MaxClientsReached, .code = "MAX_CLIENTS_REACHED" },
+        .{ .err = error.PayloadExceeded, .code = "PAYLOAD_EXCEEDED" },
+        .{ .err = error.NotWhitelisted, .code = "NOT_WHITELISTED" },
+        .{ .err = error.SaveFailure, .code = "SAVE_FAILURE" },
+        .{ .err = error.InvalidLength, .code = "INVALID_LENGTH" },
+        .{ .err = error.InvalidExpiry, .code = "INVALID_EXPIRY" },
+        .{ .err = error.BusyKey, .code = "BUSY_KEY" },
+        .{ .err = error.Unexpected, .code = "INTERNAL_ERROR" },
     };
-    const args = errors.buildArgs(&array);
-    try errors.handle(out_writer, error.UnknownCommand, args, &logger);
 
-    try std.testing.expectEqualStrings("-ERR unknown command\r\n\x03", stream.getWritten());
+    for (cases) |case| {
+        const expected = try std.fmt.allocPrint(
+            std.testing.allocator,
+            "-{s}\r\n\x03",
+            .{case.code},
+        );
+        defer std.testing.allocator.free(expected);
+        try expectReply(case.err, expected);
+    }
 }
 
-// Checks the unknown-command reply includes the supplied command name.
-test "UnknownCommand with command name" {
-    var buffer: [BUFF_SIZE]u8 = undefined;
-    var stream = std.io.fixedBufferStream(&buffer);
-
-    const out_writer = stream.writer().any();
-
-    var logger = try Logger.init(std.testing.allocator, null, null, false);
-    defer logger.deinit();
-    var array = std.array_list.Managed(ZType).initCapacity(std.testing.allocator, 1) catch {
-        return error.AllocatorError;
-    };
-    try array.append(.{ .str = "help" });
-    defer array.deinit();
-
-    const args = errors.buildArgs(&array);
-    try errors.handle(out_writer, error.UnknownCommand, args, &logger);
-
-    try std.testing.expectFmt(
-        stream.getWritten(),
-        "-ERR unknown command '{s}'\r\n\x03",
-        .{"help"},
-    );
-}
-
-// Checks unmapped errors use the generic error reply.
-test "unexpected error" {
-    var buffer: [BUFF_SIZE]u8 = undefined;
-    var stream = std.io.fixedBufferStream(&buffer);
-    const out_writer = stream.writer().any();
-
-    var logger = try Logger.init(std.testing.allocator, null, null, false);
-    defer logger.deinit();
-    try errors.handle(out_writer, error.Unexpected, .{}, &logger);
-
-    try std.testing.expectEqualStrings("-ERR unexpected\r\n\x03", stream.getWritten());
-}
-
-// Checks the client-limit error maps to its expected reply.
-test "max clients reached" {
-    var buffer: [BUFF_SIZE]u8 = undefined;
-    var stream = std.io.fixedBufferStream(&buffer);
-    const out_writer = stream.writer().any();
-
-    var logger = try Logger.init(std.testing.allocator, null, null, false);
-    defer logger.deinit();
-    try errors.handle(out_writer, error.MaxClientsReached, .{}, &logger);
-
-    try std.testing.expectEqualStrings("-ERR max number of clients reached\r\n\x03", stream.getWritten());
-}
-
-// Checks a not-found reply includes the supplied key.
-test "NotFound with key name" {
-    var buffer: [BUFF_SIZE]u8 = undefined;
-    var stream = std.io.fixedBufferStream(&buffer);
-
-    const out_writer = stream.writer().any();
-
-    var logger = try Logger.init(std.testing.allocator, null, null, false);
-    defer logger.deinit();
-    var array = std.array_list.Managed(ZType).initCapacity(std.testing.allocator, 2) catch {
-        return error.AllocatorError;
-    };
-    try array.append(.{ .str = "help" });
-    try array.append(.{ .str = "user_cache_12345" });
-    defer array.deinit();
-
-    const args = errors.buildArgs(&array);
-    try errors.handle(out_writer, error.NotFound, args, &logger);
-
-    try std.testing.expectFmt(
-        stream.getWritten(),
-        "-ERR '{s}' not found\r\n\x03",
-        .{"user_cache_12345"},
-    );
-}
-
-// Checks the destination-exists error maps to its expected reply.
-test "BusyKey" {
-    var buffer: [BUFF_SIZE]u8 = undefined;
-    var stream = std.io.fixedBufferStream(&buffer);
-
-    const out_writer = stream.writer().any();
-
-    var logger = try Logger.init(std.testing.allocator, null, null, false);
-    defer logger.deinit();
-    try errors.handle(out_writer, error.BusyKey, .{}, &logger);
-
-    try std.testing.expectEqualStrings("-BUSYKEY key already exists\r\n\x03", stream.getWritten());
+test "error replies never include request-controlled text" {
+    try expectReply(error.UnknownCommand, "-UNKNOWN_COMMAND\r\n\x03");
+    try expectReply(error.NotFound, "-NOT_FOUND\r\n\x03");
 }

@@ -1,6 +1,28 @@
 ## Supported commands
 This documentation page provides a comprehesive guid to the commands supported by zcached, including their usage and sytanx.
 
+Command errors use the common `-<CODE>\r\n` response followed by the
+zcached frame terminator. Replies contain stable error codes only; they do not
+include descriptive text or request-provided values.
+
+| Code | Meaning |
+| --- | --- |
+| `UNKNOWN_COMMAND` | Command is not recognized. |
+| `INVALID_TYPE` | A value has an unsupported type. |
+| `KEY_NOT_STRING` | A key must be a string. |
+| `INVALID_COMMAND` | Command syntax or arity is invalid. |
+| `INVALID_ARGUMENTS` | Command arguments are invalid. |
+| `NOT_FOUND` | The requested key does not exist. |
+| `BUSY_KEY` | The destination key already exists. |
+| `INVALID_EXPIRY` | An expiration value is invalid. |
+| `INVALID_LENGTH` | A protocol length is invalid. |
+| `PAYLOAD_EXCEEDED` | The request payload exceeds its configured limit. |
+| `MAX_CLIENTS_REACHED` | The connection limit has been reached. |
+| `NOT_WHITELISTED` | The client address is not allowed. |
+| `SAVE_FAILURE` | A snapshot could not be saved. |
+| `UNPROCESSABLE` | The request could not be parsed. |
+| `INTERNAL_ERROR` | An unexpected error occurred. |
+
 ### PING
 
 **Available since**: 0.0.1\

@@ -44,9 +44,9 @@ fn appendAOFCommand(ptr: *anyopaque, command: []const @import("protocol/types.zi
 /// Requests graceful shutdown after a termination signal.
 fn handleSig(sig: std.posix.SIG) callconv(.c) void {
     shutdown_reason.store(switch (sig) {
-        .INT => @intFromEnum(ShutdownReason.sigint),
-        .TERM => @intFromEnum(ShutdownReason.sigterm),
-        else => @intFromEnum(ShutdownReason.none),
+        .INT => @backingInt(ShutdownReason.sigint),
+        .TERM => @backingInt(ShutdownReason.sigterm),
+        else => @backingInt(ShutdownReason.none),
     }, .seq_cst);
     running.store(false, .seq_cst);
 }
@@ -263,7 +263,7 @@ pub fn main(init: std.process.Init) void {
         defer server.deinit();
         server.run(evented_io.io());
 
-        switch (@as(ShutdownReason, @enumFromInt(shutdown_reason.load(.seq_cst)))) {
+        switch (@as(ShutdownReason, @fromBackingInt(@intCast(shutdown_reason.load(.seq_cst))))) {
             .sigterm => logger.info("# shutdown requested by SIGTERM", .{}),
             .sigint => logger.info("# shutdown requested by SIGINT", .{}),
             .none => logger.info("# server supervisor stopped; beginning graceful shutdown", .{}),

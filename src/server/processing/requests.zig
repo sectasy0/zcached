@@ -87,12 +87,12 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
     const reader = stream.reader();
 
     const result: ZType = self.protocol.serialize(reader) catch |err| {
-        self.sendError(connection, err, .{});
+        self.sendError(connection, err);
         return;
     };
 
     if (result != .array) {
-        self.sendError(connection, error.UnknownCommand, .{});
+        self.sendError(connection, error.UnknownCommand);
         return;
     }
 
@@ -106,9 +106,7 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
 
     var cmd_result = self.cmd_handler.process(command_set);
     if (cmd_result != .ok) {
-        const args = errors.buildArgs(command_set);
-
-        self.failCommand(connection, command_set, cmd_result.err, args);
+        self.failCommand(connection, cmd_result.err);
         return;
     }
 
@@ -117,12 +115,12 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
     const start = connection.tx_accumulator.items.len;
     Deserializer.write(&connection.tx_accumulator, cmd_result.ok) catch |err| {
         connection.tx_accumulator.shrinkRetainingCapacity(start);
-        self.sendError(connection, err, .{});
+        self.sendError(connection, err);
         return;
     };
     connection.tx_accumulator.append(consts.EXT_CHAR) catch |err| {
         connection.tx_accumulator.shrinkRetainingCapacity(start);
-        self.sendError(connection, err, .{});
+        self.sendError(connection, err);
         return;
     };
 
@@ -135,13 +133,12 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
 /// Rolls back partial output before reporting lookup, serialization, or terminator errors.
 fn processGet(self: *Processor, connection: *Connection, command_set: *const std.array_list.Managed(ZType)) void {
     const output_start = connection.tx_accumulator.items.len;
-    const args = errors.buildArgs(command_set);
     if (command_set.items.len < 2) {
-        self.failCommand(connection, command_set, error.InvalidCommand, args);
+        self.failCommand(connection, error.InvalidCommand);
         return;
     }
     if (command_set.items[1] != .str) {
-        self.failCommand(connection, command_set, error.KeyNotString, args);
+        self.failCommand(connection, error.KeyNotString);
         return;
     }
 
@@ -151,13 +148,13 @@ fn processGet(self: *Processor, connection: *Connection, command_set: *const std
         appendSerializedValue,
     ) catch |err| {
         connection.tx_accumulator.shrinkRetainingCapacity(output_start);
-        self.failCommand(connection, command_set, err, args);
+        self.failCommand(connection, err);
         return;
     };
 
     connection.tx_accumulator.append(consts.EXT_CHAR) catch |err| {
         connection.tx_accumulator.shrinkRetainingCapacity(output_start);
-        self.sendError(connection, err, .{});
+        self.sendError(connection, err);
         return;
     };
 
@@ -166,18 +163,16 @@ fn processGet(self: *Processor, connection: *Connection, command_set: *const std
     }
 }
 
-/// Sends a command error and logs which decoded command failed.
+/// Sends a command error and logs the error code without request-controlled text.
 fn failCommand(
     self: *Processor,
     connection: *Connection,
-    command_set: *const std.array_list.Managed(ZType),
     err: anyerror,
-    args: errors.Args,
 ) void {
-    self.sendError(connection, err, args);
-    self.context.resources.logger.err(
-        "* failed to process command: {s}",
-        .{command_set.items[0].str},
+    self.sendError(connection, err);
+    self.context.resources.logger.warn(
+        "event=command_failed error={s}",
+        .{@errorName(err)},
     );
 }
 
@@ -194,9 +189,9 @@ fn appendSerializedValue(output: *std.array_list.Managed(u8), value: ZType) !voi
 }
 
 /// Writes an error response; failures to write are logged because this path cannot return them.
-fn sendError(self: *Processor, connection: *Connection, err: anyerror, args: errors.Args) void {
-    errors.handle(connection.out(), err, args, self.context.resources.logger) catch |write_error| {
-        self.context.resources.logger.err("* failed to send error: {any}", .{write_error});
+fn sendError(self: *Processor, connection: *Connection, err: anyerror) void {
+    errors.handle(connection.out(), err, self.context.resources.logger) catch |write_error| {
+        self.context.resources.logger.err("event=error_response_write_failed error={s}", .{@errorName(write_error)});
     };
 }
 

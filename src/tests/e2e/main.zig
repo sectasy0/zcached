@@ -298,15 +298,15 @@ fn testExpiry(socket: anytype) !void {
     try expectCommand(socket, &.{ "PERSIST", "src" }, "PERSIST missing key", ":0\r\n");
     try expectCommand(socket, &.{ "SET", "src", "value", "EX", "60" }, "SET with seconds", "+OK\r\n");
     try expectTtlRange(socket, "src", 55, 60);
-    try expectCommand(socket, &.{ "SET", "src", "changed", "PX", "0" }, "zero SET expiry is rejected", "-ERR invalid expire time\r\n");
-    try expectCommand(socket, &.{ "SET", "src", "changed", "EX", "9223372036854775807" }, "overflowing SET expiry is rejected", "-ERR invalid expire time\r\n");
+    try expectCommand(socket, &.{ "SET", "src", "changed", "PX", "0" }, "zero SET expiry is rejected", "-INVALID_EXPIRY\r\n");
+    try expectCommand(socket, &.{ "SET", "src", "changed", "EX", "9223372036854775807" }, "overflowing SET expiry is rejected", "-INVALID_EXPIRY\r\n");
     try expectCommand(socket, &.{ "GET", "src" }, "rejected SET leaves the value unchanged", "$5\r\nvalue\r\n");
     try expectTtlRange(socket, "src", 55, 60);
 
     try expectCommand(socket, &.{ "EXPIRE", "src", "90" }, "EXPIRE changes the deadline", ":1\r\n");
     try expectTtlRange(socket, "src", 85, 90);
     try expectCommand(socket, &.{ "COPY", "src", "target" }, "COPY with TTL", "$2\r\nOK\r\n");
-    try expectCommand(socket, &.{ "COPY", "src", "target" }, "COPY rejects an occupied target", "-BUSYKEY key already exists\r\n");
+    try expectCommand(socket, &.{ "COPY", "src", "target" }, "COPY rejects an occupied target", "-BUSY_KEY\r\n");
     try expectCommand(socket, &.{ "RENAME", "target", "moved" }, "RENAME with TTL", "+OK\r\n");
     try expectTtlRange(socket, "moved", 85, 90);
     try expectCommand(socket, &.{ "TTL", "target" }, "TTL after RENAME removed the source", ":-2\r\n");
@@ -316,7 +316,7 @@ fn testExpiry(socket: anytype) !void {
     try expectCommand(socket, &.{ "SET", "src", "value" }, "plain SET overwrites expiring key", "+OK\r\n");
     try expectCommand(socket, &.{ "TTL", "src" }, "plain SET clears TTL", ":-1\r\n");
     try expectCommand(socket, &.{ "EXPIRE", "src", "0" }, "EXPIRE zero deletes the key", ":1\r\n");
-    try expectCommand(socket, &.{ "GET", "src" }, "GET after immediate expiry", "-ERR 'src' not found\r\n");
+    try expectCommand(socket, &.{ "GET", "src" }, "GET after immediate expiry", "-NOT_FOUND\r\n");
     try expectCommand(socket, &.{ "EXPIRE", "moved", "60" }, "EXPIRE before MSET", ":1\r\n");
     try expectCommand(socket, &.{ "MSET", "moved", "value" }, "MSET overwrites expiring key", "+OK\r\n");
     try expectCommand(socket, &.{ "TTL", "moved" }, "MSET clears TTL", ":-1\r\n");
@@ -335,7 +335,7 @@ fn testExpiry(socket: anytype) !void {
         }
         runtime_io.sleepNanoseconds(20 * std.time.ns_per_ms);
     }
-    try expectCommand(socket, &.{ "GET", "brief" }, "GET hides an expired key", "-ERR 'brief' not found\r\n");
+    try expectCommand(socket, &.{ "GET", "brief" }, "GET hides an expired key", "-NOT_FOUND\r\n");
     try expectCommand(socket, &.{ "MGET", "brief" }, "MGET returns null for an expired key", "%1\r\n$5\r\nbrief\r\n_\r\n");
     try expectCommand(socket, &.{"KEYS"}, "KEYS omits expired keys", "*1\r\n$5\r\nmoved\r\n");
     try expectCommand(socket, &.{"DBSIZE"}, "DBSIZE omits expired keys", ":1\r\n");
@@ -394,7 +394,7 @@ fn testExpiryRecovery(mode: enum { snapshot, aof }) !void {
                 try expectTtlRange(&socket, "live", 1, 57);
                 try expectCommand(&socket, &.{ "TTL", "keep" }, "PERSIST survives restart", ":-1\r\n");
                 try expectCommand(&socket, &.{ "TTL", "offline" }, "offline expiry survives restart", ":-2\r\n");
-                try expectCommand(&socket, &.{ "GET", "offline" }, "offline expiry is not resurrected", "-ERR 'offline' not found\r\n");
+                try expectCommand(&socket, &.{ "GET", "offline" }, "offline expiry is not resurrected", "-NOT_FOUND\r\n");
             }
         }
         const term = try stopServer(&child);
@@ -417,7 +417,7 @@ fn deleteAndGet(socket: anytype) !void {
         socket,
         "*2\r\n$3\r\nGET\r\n$9\r\nmycounter\r\n\x03",
         "GET mycounter after DELETE",
-        "-ERR 'mycounter' not found\r\n",
+        "-NOT_FOUND\r\n",
         false,
     );
 }
@@ -444,7 +444,7 @@ fn flushAndGet(socket: anytype) !void {
         socket,
         "*2\r\n$3\r\nGET\r\n$9\r\nmycounter\r\n\x03",
         "GET mycounter after FLUSH",
-        "-ERR 'mycounter' not found\r\n",
+        "-NOT_FOUND\r\n",
         false,
     );
 }
@@ -572,7 +572,7 @@ fn sizeOf(socket: anytype) !void {
         socket,
         "*2\r\n$6\r\nSIZEOF\r\n$11\r\nnonexistent\r\n\x03",
         "SIZEOF nonexistent",
-        "-ERR 'nonexistent' not found\r\n",
+        "-NOT_FOUND\r\n",
         false,
     );
 }
@@ -601,7 +601,7 @@ fn rename(socket: anytype) !void {
         socket,
         "*2\r\n$3\r\nGET\r\n$4\r\nkey1\r\n\x03",
         "GET key1 after RENAME",
-        "-ERR 'key1' not found\r\n",
+        "-NOT_FOUND\r\n",
         false,
     );
 }
@@ -720,7 +720,7 @@ fn testAdditionalTypes(socket: anytype) !void {
         socket,
         "*2\r\n$3\r\nGET\r\n$7\r\nnullkey\r\n\x03",
         "GET nullkey after DELETE",
-        "-ERR 'nullkey' not found\r\n",
+        "-NOT_FOUND\r\n",
         false,
     );
 
@@ -757,7 +757,7 @@ fn testAdditionalTypes(socket: anytype) !void {
         socket,
         "*2\r\n$3\r\nGET\r\n$5\r\narray\r\n\x03",
         "GET array after DELETE",
-        "-ERR 'array' not found\r\n",
+        "-NOT_FOUND\r\n",
         false,
     );
 
@@ -794,7 +794,7 @@ fn testAdditionalTypes(socket: anytype) !void {
         socket,
         "*2\r\n$3\r\nGET\r\n$3\r\nmap\r\n\x03",
         "GET map after DELETE",
-        "-ERR 'map' not found\r\n",
+        "-NOT_FOUND\r\n",
         false,
     );
 }

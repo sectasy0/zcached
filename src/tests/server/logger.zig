@@ -28,6 +28,31 @@ test "minimum log severity filters messages without disabling payload logging" {
     try std.testing.expect(std.mem.indexOf(u8, log, "kept payload") != null);
 }
 
+test "logger removes legacy decoration prefixes from messages" {
+    const path = "./tmp/normalized-log-prefixes.log";
+    fs.cwd().deleteFile(path) catch {};
+    var logger = try Logger.init(std.testing.allocator, null, path, false);
+    defer {
+        logger.deinit();
+        fs.cwd().deleteFile(path) catch {};
+    }
+
+    logger.info("# startup event", .{});
+    logger.warn("* client event", .{});
+
+    var file = try fs.cwd().openFile(path, .{ .mode = .read_only });
+    defer file.close();
+    var buffer: [512]u8 = undefined;
+    const size = (try file.stat()).size;
+    try std.testing.expect(size <= buffer.len);
+    const read_size = try file.readAll(buffer[0..size]);
+    try std.testing.expectEqual(size, read_size);
+    try std.testing.expect(std.mem.indexOf(u8, buffer[0..read_size], "] startup event\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, buffer[0..read_size], "] client event\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, buffer[0..read_size], "] # ") == null);
+    try std.testing.expect(std.mem.indexOf(u8, buffer[0..read_size], "] * ") == null);
+}
+
 test "queued logger dispatch preserves levels and owns event payloads" {
     const allocator = std.testing.allocator;
     const path = "./tmp/queued-network-payload.log";

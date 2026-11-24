@@ -96,7 +96,7 @@ pub fn init(
     const t_size = utils.timestampf(&timestamp);
 
     std.debug.print(
-        "INFO [{s}] * logger initialized, log_path: {s}\n",
+        "INFO [{s}] event=logger_initialized log_path={s}\n",
         .{ timestamp[0..t_size], logger.log_path },
     );
 
@@ -191,7 +191,13 @@ pub fn log(self: *Logger, level: LogLevel, comptime format: []const u8, args: an
 /// Appends a timestamped severity prefix and formatted message.
 fn appendLog(self: *Logger, level: LogLevel, comptime format: []const u8, args: anytype) !void {
     try self.appendPrefix(level);
-    try self.buffer.print(format ++ "\n", args);
+    const normalized_format = comptime blk: {
+        if (std.mem.startsWith(u8, format, "# ") or std.mem.startsWith(u8, format, "* ")) {
+            break :blk format[2..];
+        }
+        break :blk format;
+    };
+    try self.buffer.print(normalized_format ++ "\n", args);
 }
 
 /// Appends the cached or freshly formatted timestamp and severity label.

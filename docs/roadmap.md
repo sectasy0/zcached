@@ -34,7 +34,9 @@ the C API, corruption handling, and release hardening remain incomplete.
 
 - ❌ Freeze a complete protocol specification for RESP-compatible requests and
   responses.
-- ◐ Document argument validation and error-response behavior consistently.
+- ✅ Command errors return stable codes without descriptive or request-provided
+  text; diagnostic logs share the timestamp/severity format and strip legacy
+  decoration markers.
 - ◐ Finalize the public command set and mark internal commands as non-public.
 - ✅ Added `INFO`, `COMMAND`, and `CLIENT` commands for basic introspection.
 - ❌ Add the remaining standard cache operations required by the 1.0 API:
