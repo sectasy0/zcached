@@ -339,6 +339,20 @@ allocation and leak checks.
 With no memory limit, writes skip Fabric's limit check and its mutex. Each
 shard still uses its own allocator.
 
+## Release verification
+
+Versioned Git tags trigger release archives for Linux x86_64 and macOS ARM64.
+Plaintext and TLS server binaries are included in each archive.
+
+Verify a downloaded archive against the release manifest:
+
+```bash
+sha256sum -c SHA256SUMS
+```
+
+Always verify `SHA256SUMS` itself through the GitHub Release UI or another
+trusted source before trusting the individual archive hashes.
+
 ## Documentation
 - For the 1.0.0 development roadmap, see the [roadmap](docs/roadmap.md).
 - For release history, see the [release_history.md](docs/release_history.md)

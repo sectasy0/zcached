@@ -1,0 +1,103 @@
+name: Publish release artifacts
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux-x86_64
+            runner: ubuntu-latest
+          - os: macos-arm64
+            runner: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Zig
+        uses: ./.github/actions/install
+
+      - name: Install OpenSSL
+        if: runner.os == 'macOS'
+        run: brew install openssl
+
+      - name: Configure macOS SDK
+        if: runner.os == 'macOS'
+        run: echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
+
+      - name: Build plain release
+        run: zig build -Doptimize=ReleaseFast
+
+      - name: Build TLS release
+        if: runner.os == 'Linux'
+        run: zig build -Dtls-enabled=true -Doptimize=ReleaseFast
+
+      - name: Build TLS release
+        if: runner.os == 'macOS'
+        run: |
+          OPENSSL_DIR="$(brew --prefix openssl)" zig build -Dtls-enabled=true -Doptimize=ReleaseFast
+
+      - name: Create release archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          staging="${RUNNER_TEMP}/zcached-${{ github.ref_name }}-${{ matrix.os }}"
+          mkdir -p "$staging"
+          cp zig-out/bin/zcached "$staging/"
+          cp zig-out/bin/zcached_tls "$staging/"
+          cp README.md LICENSE zcached.conf.zon "$staging/"
+
+          archive="zcached-${{ github.ref_name }}-${{ matrix.os }}.tar.gz"
+          tar -C "$staging" -czf "$archive" .
+
+      - name: Upload release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: zcached-${{ matrix.os }}
+          path: zcached-${{ github.ref_name }}-${{ matrix.os }}.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    needs: package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download release archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: zcached-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          sha256sum -- *.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            gh release upload "${{ github.ref_name }}" dist/* --clobber
+          else
+            gh release create "${{ github.ref_name }}" \
+              --verify-tag \
+              --title "zcached ${{ github.ref_name }}" \
+              dist/*
+          fi

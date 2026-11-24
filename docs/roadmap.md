@@ -214,11 +214,11 @@ Acceptance criteria:
 - ✅ Native Linux/macOS build workflows exist.
 - ✅ Docker packaging and Docker image publishing on releases exist.
 - ◐ Installation, command, type, network, and benchmark documentation exists.
+- ✅ Release workflows package Linux and macOS archives and publish a combined
+  SHA-256 manifest named `SHA256SUMS`.
 
 ### Remaining
 
-- ❌ Produce signed or checksummed release artifacts where the target platform
-  supports it.
 - ◐ Publish Linux and macOS builds plus an official Docker image.
 - ❌ Package the C API headers and shared/static libraries.
 - ◐ Add a complete user guide and migration guide.
