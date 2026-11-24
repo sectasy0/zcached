@@ -71,7 +71,8 @@ CLIENT ID
 **Available since**: 0.0.1\
 **Time complexity**: O(1)
 
-Get the value associated with key, returns `not found` error if key not found. Key should be always string.
+Gets the value associated with a string key. Returns `-NOT_FOUND` if the key
+does not exist.
 
 ```sh
 GET <key>
@@ -125,9 +126,12 @@ deadlines rather than restarting the original lifetime during recovery.
 ### DELETE
 
 **Available since**: 0.0.1\
-**Time complexity**: O(N) where N is the number of keys that will be removed. When a key to remove holds a value other than a string, the individual complexity for this key is O(M) where M is the number of elements in the list, set, sorted set or hash. Removing a single key that holds a string value is O(1).
+**Time complexity**: O(M) for a key holding a compound value, where M is the
+number of nested array, map, or set elements that must be freed. Scalar values
+are removed in O(1).
 
-Delete a key and its associated value. If everythings is okay `OK` returned, if not found `not found` error.
+Deletes a key and its associated value. Returns `OK` on success or
+`-NOT_FOUND` if the key does not exist.
 
 ```sh
 DELETE <key>
@@ -160,9 +164,9 @@ DBSIZE
 **Available since**: 0.0.1\
 **Time complexity**: O(N) where N is the total number of keys in databases
 
-The `SAVE` commands performs a `synchronous` save of the dataset producing a point in time snapshot of all the data inside the zcached instance, in the form of an zcpf file.
-
-For asynchronous save check `asave` (not implemented yet).
+`SAVE` performs a synchronous save of the dataset, producing a point-in-time
+snapshot of all data in the zcached instance in `.zcpf` format. There is no
+asynchronous `ASAVE` command.
 
 ```sh
 SAVE
@@ -173,7 +177,9 @@ SAVE
 **Available since**: 0.0.1\
 **Time complexity**: O(N) where N is the number of keys to retrieve
 
-Returns the values of all specified keys. For every key that does not hold a string value or does not exist, the special value `null` is returned. Because of this, the operation never fails.
+Returns the values of all specified keys. For every key that does not exist,
+the special value `null` is returned. Existing values are returned regardless
+of their stored type.
 
 ```sh
 MGET <key1> <key...>
@@ -184,7 +190,8 @@ MGET <key1> <key...>
 **Available since**: 0.0.1\
 **Time complexity**: O(N) where N is the number of keys to set
 
-Sets the given keys to their respective values. MSET replaces existing values with new values, just as regular SET. See MSETNX if you don't want to overwrite existing values.
+Sets the given keys to their respective values. `MSET` replaces existing
+values just like `SET`. There is no `MSETNX` command.
 
 ```sh
 MSET key value [key value ...]
@@ -227,7 +234,7 @@ The size is calculated according to the following criteria:
 | String / Simple string     | Length of the string.                 |
 | Array                      | Number of elements in the array.      |
 | Map                        | The count of key-value pairs.         |
-| Set (not implemented yet)  | Number of elements in the set.        |
+| Ordered / unordered set    | Number of elements in the set.        |
 | Integer                    | Number of bytes the integer occupies. |
 | Float                      | Number of bytes the float occupies.   |
 | Null                       | Always zero.                          |

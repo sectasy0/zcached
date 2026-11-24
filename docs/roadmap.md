@@ -43,9 +43,9 @@ the C API, corruption handling, and release hardening remain incomplete.
 - ✅ Added `INFO`, `COMMAND`, and `CLIENT` commands for basic introspection.
 - ❌ Add the remaining standard cache operations required by the 1.0 API:
   `MSETNX`, `INCR`, `DECR`, `APPEND`, and `STRLEN`.
-- ◐ Resolve the status of supported data types. The implementation must either
-  support sets and any other advertised types or remove them from the public
-  documentation.
+- ✅ Documented the scalar and compound values supported by the protocol and
+  storage, including unsupported empty/binary string parser cases and the lack
+  of set-specific member commands.
 - ❌ Establish backward-compatibility rules for commands, response types, and
   configuration fields.
 

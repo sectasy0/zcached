@@ -15,7 +15,7 @@ Crafted using Zig, a versatile, modern, compiled programming language, `zcached`
 - **Zero-Dependency Architecture**: Entirely built using Zig, ensuring seamless execution across systems with a Zig compiler, enhancing portability (except openssl, but it's optional).
 - **Lightweight Design**: Engineered for efficiency, `zcached` boasts a small memory footprint and minimal CPU usage, optimizing performance while conserving resources.
 - **Optimized Efficiency**: Prioritizing swift data handling, `zcached` ensures prompt operations to cater to diverse application needs.
-- **Diverse Data Type Support**: Accommodates various data structures like strings, integers, floats, and lists, enhancing utility across different use cases.
+- **Protocol Value Support**: Stores scalar and compound values, including strings, integers, floats, booleans, nulls, arrays, string-keyed maps, and ordered or unordered sets. Set values are supported, but there are no set-specific member commands.
 - **Concurrent I/O**: Networking uses Zig's `std.Io.net` interface with cancellable connection tasks and backpressure. TLS uses OpenSSL memory BIOs, so encrypted socket traffic also goes through `std.Io`.
 - **TLS Support**: Ensures secure data transmission with encryption, protecting data integrity and confidentiality during client-server communication.
 

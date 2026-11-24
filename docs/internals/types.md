@@ -1,78 +1,122 @@
-## Supported data types
+# Protocol and stored value types
 
-### Simple strings
-Simple strings are encoded as (+) followed by the string content and terminated by CRLF (\r\n). To send binary-safe strings, use bulk strings.
-```
-+<content>\r\n
-```
+The protocol codec supports scalar and compound values. Commands are sent as
+arrays; values may be nested inside arrays, maps, and sets. Storage keys must be
+strings. Stored values support strings, simple strings, integers, floats,
+booleans, nulls, arrays, maps, ordered sets, and unordered sets. Error values
+are protocol response data and cannot be stored.
 
-### Strings
-Represents a binary-safe strings. They are encoded as follows:
+## Scalar values
 
-```
+### Bulk strings
+
+Bulk strings use the `$` marker and a byte length:
+
+```text
 $<length>\r\n<content>\r\n
 ```
 
-The empty string's encoding is:
+The encoder supports empty strings. The current request parser only accepts
+non-empty, line-terminated content and does not validate the declared length;
+embedded CRLF and empty bulk strings are therefore not supported in requests.
+Do not rely on bulk strings being binary-safe until the parser is fixed.
 
+### Simple strings
+
+Simple strings use the `+` marker:
+
+```text
++<content>\r\n
 ```
-$0\r\n\r\n
-```
+
+They are line-oriented, non-empty values. They are primarily used for simple
+protocol responses.
 
 ### Integers
-CRLF terminated strings that represent a base-10, 64-bit signed integer. They are encoded as follows:
-```
-:[<+|->]<value>\r\n
+
+Signed 64-bit decimal integers use the `:` marker:
+
+```text
+:[+|-]<value>\r\n
 ```
 
 ### Floats
-Float type is a double precision 64-bit floating point number. Fractional part is optional. They are encoded as follows:
-```
-,[<+|->]<integral>[.<fractional>][<E|e>[sign]<exponent>]\r\n
+
+Floats are IEEE 754 double-precision values. Fractional and exponent parts are
+optional:
+
+```text
+,[+|-]<value>[.<fraction>][e[+|-]<exponent>]\r\n
 ```
 
 ### Booleans
-Booleans are encoded as follows:
-```
-#<t|f>\r\n
+
+Booleans use `#t` and `#f`:
+
+```text
+#t\r\n
+#f\r\n
 ```
 
 ### Null
-The `null` type represents a non-existent value. It is encoded as follows:
-```
+
+Null values use the `_` marker:
+
+```text
 _\r\n
 ```
 
+## Compound values
+
 ### Arrays
-Client requests are sent as arrays of bulk strings. The first element of the array is the command name, the rest are the arguments.
-```
-*<length>\r\n<first>\r\n<second>
+
+Arrays contain a count followed by that many recursively encoded values:
+
+```text
+*<count>\r\n<value>...
 ```
 
-So an empty Array is just the following:
-```
-*0\r\n
+Empty arrays are supported. Client commands are arrays whose first value is the
+command name.
+
+### Maps
+
+Maps contain a count followed by string-key/value pairs. Values can be nested
+compound types:
+
+```text
+%<count>\r\n<key>\r\n<value>...
 ```
 
-### Maps aka HashMaps
-Maps are encoded as arrays of key-value pairs. The first element of the pair is the key, the second is the value.
-```
-%<length>\r\n<first key>\r\n<first value>\r\n<second key>\r\n<second value>
+Map keys must be bulk or simple strings. The current parser rejects empty maps.
+
+### Ordered sets
+
+Ordered sets contain unique values and preserve insertion order:
+
+```text
+/<count>\r\n<value>...
 ```
 
-### Unordered Set
-An unordered set is encoded similarly to arrays, with unique values and no guaranteed order.
+### Unordered sets
 
-```
-~<length>\r\n<first>\r\n><second>
-```
-### Ordered Set
-An ordered set is encoded similarly to arrays, with unique values and a guaranteed order.
-```
-/<length>\r\n<first>\r\n<second>
+Unordered sets contain unique values with no guaranteed iteration order:
+
+```text
+~<count>\r\n<value>...
 ```
 
-### Errors
+Both set types can be stored and retrieved as values, but there are no
+set-specific commands for modifying their members.
+
+## Errors
+
+Server errors use a code-only response followed by the zcached frame
+terminator:
+
+```text
+-<ERROR_CODE>\r\n
 ```
--<error message>\r\n
-```
+
+The protocol parser also has an error-value variant for client-side
+compatibility. It is not a storable value.
