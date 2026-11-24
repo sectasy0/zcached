@@ -15,6 +15,36 @@ fn runCommand(handler: *commands.Handler, items: []const ZType) !commands.Handle
     return handler.process(&command);
 }
 
+test "GSET returns the inserted value and does not overwrite on a hit" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    const memory = &fixture.memory.?;
+    var handler = commands.Handler.init(std.testing.allocator, fixture.context());
+    var command = std.array_list.Managed(ZType).init(handler.allocator);
+    defer command.deinit();
+    try command.appendSlice(&.{ .{ .str = "gSeT" }, .{ .str = "key" }, .{ .str = "first" } });
+
+    {
+        var result = handler.process(&command);
+        try std.testing.expect(result == .ok);
+        defer handler.free(&command, &result);
+        try std.testing.expectEqualStrings("first", result.ok.str);
+    }
+
+    command.items[2] = .{ .str = "second" };
+    memory.fabric.limit = memory.fabric.memoryUsed();
+    var result = handler.process(&command);
+    try std.testing.expect(result == .ok);
+    defer handler.free(&command, &result);
+    try std.testing.expectEqualStrings("first", (try memory.get("key")).str);
+    try std.testing.expect(memory.delete("key"));
+    try std.testing.expectEqualStrings("first", result.ok.str);
+
+    try std.testing.expectEqual(error.InvalidCommand, (try runCommand(&handler, command.items[0..2])).err);
+    try std.testing.expectEqual(error.KeyNotString, (try runCommand(&handler, &.{ command.items[0], .{ .int = 1 }, command.items[2] })).err);
+}
+
 test "TTL commands set, replace and clear expiry with Redis integer responses" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();

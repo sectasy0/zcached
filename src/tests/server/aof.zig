@@ -52,8 +52,9 @@ fn processCommand(
     var command = std.array_list.Managed(ZType).init(allocator);
     defer command.deinit();
     try command.appendSlice(items);
-    const result = handler.process(&command);
+    var result = handler.process(&command);
     try std.testing.expect(result == .ok);
+    handler.free(&command, &result);
 }
 
 fn keyDeadline(fixture: *ContextFixture, key: []const u8) !i64 {
@@ -63,6 +64,38 @@ fn keyDeadline(fixture: *ContextFixture, key: []const u8) !i64 {
         if (std.mem.eql(u8, entry.key_ptr.*, key)) return entry.expired_at;
     }
     return error.NotFound;
+}
+
+test "AOF records GSET only when it replaces a missing or expired key" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    const path = try uniquePath(fixture.allocator);
+    defer fixture.allocator.free(path);
+    defer fs.cwd().deleteFile(path) catch {};
+    try configureAOF(&fixture, path, .always);
+    var context = fixture.context();
+    var aof = try AOF.init(fixture.allocator, context);
+    defer aof.deinit();
+    context.resources.aof = .{ .ptr = &aof, .append_command = appendAOFCommand };
+    var handler = Commands.Handler.init(fixture.allocator, context);
+    const memory = &fixture.memory.?;
+    const key: ZType = .{ .str = "key" };
+    try aof.appendCommand(&.{ .{ .str = "SET" }, key, .{ .int = 1 }, .{ .str = "PXAT" }, .{ .int = 1 } });
+    try memory.putExpiring(key.str, .{ .int = 1 }, 1);
+    const original_size = try fileSize(path);
+
+    try processCommand(&handler, fixture.allocator, &.{ .{ .str = "GSET" }, key, .{ .int = 2 } });
+    try std.testing.expectEqual(@as(i64, -1), memory.ttl(key.str));
+    const inserted_size = try fileSize(path);
+    try std.testing.expect(inserted_size > original_size);
+    try processCommand(&handler, fixture.allocator, &.{ .{ .str = "GSET" }, key, .{ .int = 3 } });
+    try std.testing.expectEqual(inserted_size, try fileSize(path));
+
+    memory.flush();
+    try aof.replay();
+    try std.testing.expectEqual(@as(i64, 2), (try memory.get(key.str)).int);
+    try std.testing.expectEqual(@as(i64, -1), memory.ttl(key.str));
 }
 
 test "AOF preserves absolute TTLs through replay and compaction" {

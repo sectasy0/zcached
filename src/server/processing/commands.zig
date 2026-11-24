@@ -29,6 +29,7 @@ const CommandType = enum {
     GET,
     /// Store a value at a key.
     SET,
+    GSET,
     /// Set the expiration time for a key.
     /// Returns 1 if the timeout was set, 0 if the key does not exist.
     EXPIRE,
@@ -107,6 +108,10 @@ pub const Handler = struct {
             },
             .SET => {
                 return self.set(command_set.items[1..]);
+            },
+            .GSET => {
+                if (command_set.items.len != 3) return .{ .err = error.InvalidCommand };
+                return self.getOrSet(command_set.items[1], command_set.items[2]);
             },
             .EXPIRE, .PEXPIREAT => {
                 if (command_type == .PEXPIREAT and !self.replaying) return .{ .err = error.UnknownCommand };
@@ -200,6 +205,20 @@ pub const Handler = struct {
                 return .{ .err = err };
         }
         return .{ .ok = .{ .sstr = "OK" } };
+    }
+
+    fn getOrSet(self: *Handler, key: ZType, fallback: ZType) Result {
+        if (key != .str) return .{ .err = error.KeyNotString };
+        var result = self.context.resources.memory.getOrSet(key.str, fallback, self.allocator) catch |err|
+            return .{ .err = err };
+        if (result.inserted) {
+            // Replay must apply the write even if an expired historical value still exists.
+            self.appendCommand(&.{ .{ .str = "SET" }, key, fallback }) catch |err| {
+                types.ztype_free(&result.value, self.allocator);
+                return .{ .err = err };
+            };
+        }
+        return .{ .ok = result.value };
     }
 
     fn parseExpiry(value: ZType) error{InvalidExpiry}!i64 {
@@ -386,7 +405,7 @@ pub const Handler = struct {
         const command_type = utils.enumTypeFromStr(CommandType, command_set.items[0].str) orelse return;
 
         switch (command_type) {
-            .GET, .KEYS => types.ztype_free(&result.ok, self.allocator),
+            .GET, .GSET, .KEYS => types.ztype_free(&result.ok, self.allocator),
             .MGET => self.freeMapValues(&result.ok.map),
             else => return,
         }

@@ -89,6 +89,37 @@ pub fn putExpiring(self: *Fabric, key: []const u8, value: types.ZType, deadline:
     try shard.put(key, .{ .value = value, .expired_at = deadline });
 }
 
+pub const GetOrSetResult = struct {
+    value: types.ZType,
+    inserted: bool,
+};
+
+/// Returns an owned copy of the value, inserting the fallback if absent.
+pub fn getOrSet(self: *Fabric, key: []const u8, fallback: types.ZType, allocator: std.mem.Allocator) !GetOrSetResult {
+    if (self.getCopy(key, allocator)) |value| {
+        return .{ .value = value, .inserted = false };
+    } else |err| {
+        if (err != error.NotFound) return err;
+    }
+
+    // The limit check may purge shards, so run it outside the lock and recheck the key.
+    const admission = self.checkLimit();
+    const shard = self.shardFor(key);
+    shard.lock.lock();
+    defer shard.lock.unlock();
+    if (self.liveEntry(shard, key)) |entry| {
+        return .{ .value = try types.ztype_copy(entry.value, allocator), .inserted = false };
+    }
+    try admission;
+    if (fallback == .err) return error.InvalidValue;
+    var result = try types.ztype_copy(fallback, allocator);
+    errdefer types.ztype_free(&result, allocator);
+    const previous = shard.heap.total_requested_bytes;
+    defer self.updateMemoryUsed(shard, previous);
+    try shard.put(key, .{ .value = fallback });
+    return .{ .value = result, .inserted = true };
+}
+
 fn liveEntry(self: *const Fabric, shard: *const Shard, key: []const u8) ?Shard.Entry {
     const entry = shard.map.get(key) orelse return null;
     if (entry.expired_at != 0 and entry.isExpired(self.expiryTime())) return null;

@@ -36,6 +36,16 @@ SET <key> <value> [EX <seconds> | PX <milliseconds>]
 The lifetime must be a positive integer when specified. An ordinary `SET`
 (or `MSET`) clears the previous expiry, even when replacing an equal value.
 
+### GSET
+
+```sh
+GSET <key> <value>
+```
+
+Returns the existing value without changing it or its expiry. If the string key
+is missing or expired, atomically stores the supplied value without an expiry
+and returns the stored value, just like `GET` after the insert.
+
 ### EXPIRE
 
 `EXPIRE <key> <seconds>` updates the lifetime of an existing key. Returns `1`

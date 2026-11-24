@@ -61,6 +61,10 @@ pub fn getCopy(self: *Memory, key: []const u8, allocator: std.mem.Allocator) !ty
     return self.fabric.getCopy(key, allocator);
 }
 
+pub fn getOrSet(self: *Memory, key: []const u8, fallback: types.ZType, allocator: std.mem.Allocator) !Fabric.GetOrSetResult {
+    return self.fabric.getOrSet(key, fallback, allocator);
+}
+
 pub fn withValue(self: *Memory, key: []const u8, context: anytype, callback: anytype) !void {
     return self.fabric.withValue(key, context, callback);
 }
