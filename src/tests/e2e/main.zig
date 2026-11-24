@@ -227,7 +227,7 @@ fn runTests(socket: anytype) !void {
         false,
     );
 
-    try expectCommand(socket, &.{ "COMMAND", "COUNT" }, "COMMAND COUNT", ":23\r\n");
+    try expectCommand(socket, &.{ "COMMAND", "COUNT" }, "COMMAND COUNT", ":22\r\n");
     try expectCommand(socket, &.{ "CLIENT", "ID" }, "CLIENT ID", ":0\r\n");
 
     try sendAndExpect(

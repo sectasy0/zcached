@@ -37,6 +37,8 @@ the C API, corruption handling, and release hardening remain incomplete.
 - ✅ Command errors return stable codes without descriptive or request-provided
   text; diagnostic logs share the timestamp/severity format and strip legacy
   decoration markers.
+- ✅ Marked `PEXPIREAT` as an internal AOF replay record and excluded it from
+  the public command listing.
 - ◐ Finalize the public command set and mark internal commands as non-public.
 - ✅ Added `INFO`, `COMMAND`, and `CLIENT` commands for basic introspection.
 - ❌ Add the remaining standard cache operations required by the 1.0 API:

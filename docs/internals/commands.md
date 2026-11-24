@@ -23,6 +23,9 @@ include descriptive text or request-provided values.
 | `UNPROCESSABLE` | The request could not be parsed. |
 | `INTERNAL_ERROR` | An unexpected error occurred. |
 
+`PEXPIREAT` is an internal AOF replay record, not a public command. Clients
+cannot invoke it directly, and `COMMAND` does not list it.
+
 ### PING
 
 **Available since**: 0.0.1\

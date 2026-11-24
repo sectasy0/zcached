@@ -26,10 +26,13 @@ test "INFO, COMMAND and CLIENT provide server introspection" {
     defer types.ztype_free(&info.ok, std.testing.allocator);
     try std.testing.expect(std.mem.indexOf(u8, info.ok.str, "zcached_version:0.0.1") != null);
 
-    try std.testing.expectEqual(@as(i64, 23), (try runCommand(&handler, &.{ .{ .str = "COMMAND" }, .{ .str = "COUNT" } })).ok.int);
+    try std.testing.expectEqual(@as(i64, 22), (try runCommand(&handler, &.{ .{ .str = "COMMAND" }, .{ .str = "COUNT" } })).ok.int);
     var command_result = try runCommand(&handler, &.{.{ .str = "COMMAND" }});
     try std.testing.expect(command_result == .ok);
-    try std.testing.expectEqual(@as(usize, 23), command_result.ok.array.items.len);
+    try std.testing.expectEqual(@as(usize, 22), command_result.ok.array.items.len);
+    for (command_result.ok.array.items) |name| {
+        try std.testing.expect(!std.ascii.eqlIgnoreCase(name.str, "PEXPIREAT"));
+    }
     types.ztype_free(&command_result.ok, std.testing.allocator);
 
     try std.testing.expectEqualStrings("id=0 addr=unknown name=\r\n", (try runCommand(&handler, &.{ .{ .str = "CLIENT" }, .{ .str = "LIST" } })).ok.str);

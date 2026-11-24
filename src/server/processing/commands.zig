@@ -418,9 +418,10 @@ pub const Handler = struct {
     /// Lists public commands or reports the command count.
     fn commandList(self: *Handler, args: []ZType) Result {
         const names = [_][]const u8{
-            "PING",   "GET",    "SET",  "GSET", "EXPIRE", "TTL",     "PERSIST", "PEXPIREAT",
-            "DELETE", "FLUSH",  "MGET", "MSET", "DBSIZE", "SAVE",    "KEYS",    "LASTSAVE",
-            "SIZEOF", "RENAME", "ECHO", "COPY", "INFO",   "COMMAND", "CLIENT",
+            "PING",     "GET",    "SET",    "GSET", "EXPIRE", "TTL",  "PERSIST",
+            "DELETE",   "FLUSH",  "MGET",   "MSET", "DBSIZE", "SAVE", "KEYS",
+            "LASTSAVE", "SIZEOF", "RENAME", "ECHO", "COPY",   "INFO", "COMMAND",
+            "CLIENT",
         };
         if (args.len == 1 and args[0] == .str and std.ascii.eqlIgnoreCase(args[0].str, "COUNT")) {
             return .{ .ok = .{ .int = @intCast(names.len) } };
