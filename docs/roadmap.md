@@ -1,0 +1,263 @@
+# zcached 1.0.0 Roadmap
+
+The 1.0.0 release should provide a stable, production-capable cache server,
+a documented wire protocol, persistent storage with predictable recovery, and
+a supported C API for client integration.
+
+This roadmap describes goals and acceptance criteria for 1.0.0. It does not
+commit to a delivery date.
+
+## Status legend
+
+- ✅ Ready in the current implementation
+- ◐ Partially implemented or verified
+- ❌ Not implemented or not yet proven complete
+- 🧪 Implemented with automated coverage
+
+**Overall status:** pre-1.0 implementation; core storage, network, TLS, snapshots,
+and AOF are substantially advanced, while protocol completion, authentication,
+the C API, corruption handling, and release hardening remain incomplete.
+
+## 1. Protocol and command stability
+
+**Status:** ◐ partially complete
+
+### Implemented
+
+- ✅ A RESP-compatible command parser and the core command set are implemented.
+- 🧪 Unit and E2E coverage exists for commands, expiration, copy/rename,
+  multiple-key operations, and the newly added `GSET`.
+- ◐ Command behavior is documented in [commands.md](internals/commands.md).
+- 🧪 CI runs unit and E2E suites on Linux and macOS.
+
+### Remaining
+
+- ❌ Freeze a complete protocol specification for RESP-compatible requests and
+  responses.
+- ◐ Document argument validation and error-response behavior consistently.
+- ◐ Finalize the public command set and mark internal commands as non-public.
+- ❌ Add `INFO`, `COMMAND`, and `CLIENT` commands for basic introspection.
+- ❌ Add the remaining standard cache operations required by the 1.0 API:
+  `MSETNX`, `INCR`, `DECR`, `APPEND`, and `STRLEN`.
+- ◐ Resolve the status of supported data types. The implementation must either
+  support sets and any other advertised types or remove them from the public
+  documentation.
+- ❌ Establish backward-compatibility rules for commands, response types, and
+  configuration fields.
+
+Acceptance criteria:
+
+- Every public command has syntax, behavior, complexity, and error
+  documentation.
+- Command tests cover valid inputs, invalid arity, wrong types, expiry, and
+  persistence behavior.
+- The wire protocol has conformance tests independent of server internals.
+
+## 2. Storage and persistence
+
+**Status:** ◐ partially complete
+
+### Implemented
+
+- ✅ Timestamped `.zcpf` snapshots with atomic replacement and retention.
+- ✅ Snapshot and AOF TTL metadata using absolute deadlines.
+- ✅ AOF flush strategies and background AOF rewrite.
+- 🧪 Snapshot, replay, rewrite, expiry, and TTL unit/E2E coverage exists.
+
+### Remaining
+
+- ❌ Define snapshot and AOF formats as stable or explicitly versioned formats.
+- ❌ Add integrity and corruption handling for snapshot and AOF files.
+- ◐ Implement asynchronous save support (`ASAVE`); AOF rewrite is implemented.
+- ◐ Apply snapshot retention consistently and document precedence between
+  snapshots and AOF recovery.
+- ❌ Add crash-recovery tests covering abrupt process termination and disk-full
+  or partially written files.
+- 🧪 Verify TTL, `COPY`, `RENAME`, `GSET`, and replay behavior across the
+  available persistence modes.
+
+Acceptance criteria:
+
+- Snapshots and AOF recovery pass repeated restart and crash tests.
+- Startup reports a clear, actionable error for corrupt or incompatible files.
+- Persistence format compatibility is documented for 1.0.0 upgrades.
+
+## 3. Security and operational behavior
+
+**Status:** ◐ partially complete
+
+### Implemented
+
+- ✅ TLS support is available for server and E2E client builds.
+- ✅ Per-worker client limits, idle/request timeouts, and pending-response
+  limits are implemented.
+- ✅ IP whitelisting and configurable memory/request-related limits exist.
+- 🧪 Linux and macOS TLS builds and network timeout tests run in CI.
+
+### Remaining
+
+- ❌ Add authentication, including `AUTH` and a supported password configuration.
+- ❌ Add ACL or role configuration, or explicitly keep 1.0.0 authentication scoped
+  to a small, documented password-based model.
+- ◐ Add request-size and aggregate response limits that are safe under malformed
+  or pipelined input.
+- ◐ Complete graceful shutdown and startup diagnostics.
+- ◐ Harden TLS configuration, certificate validation, and security-focused
+  default settings.
+- ◐ Publish an operational guide covering logs, resource limits, snapshots, AOF,
+  Docker, systemd, and monitoring.
+
+Acceptance criteria:
+
+- TLS and authentication have positive and negative integration tests.
+- Boundaries for active connections, pending responses, input size, memory,
+  and request timeouts are documented.
+- The server shuts down cleanly without invalidating persistence guarantees.
+
+## 4. C API and official client
+
+**Status:** ❌ not started
+
+### Implemented
+
+- ❌ No public C API or stable C header is currently present.
+- ❌ No C ABI or C client artifacts are built by Zig.
+
+### Remaining
+
+The release will include a supported C API, with its ABI and behavior covered
+by separate documentation and conformance tests.
+
+Proposed surface:
+
+```c
+zcached_client *zcached_connect(const zcached_options *options);
+void zcached_close(zcached_client *client);
+
+int zcached_ping(zcached_client *client);
+int zcached_get(zcached_client *client, const char *key,
+                zcached_string *value);
+int zcached_set(zcached_client *client, const char *key,
+                const zcached_string *value);
+int zcached_delete(zcached_client *client, const char *key);
+
+zcached_pipeline *zcached_pipeline_create(zcached_client *client);
+int zcached_pipeline_add(zcached_pipeline *pipeline,
+                         zcached_request *request);
+int zcached_pipeline_execute(zcached_pipeline *pipeline);
+void zcached_pipeline_free(zcached_pipeline *pipeline);
+```
+
+The final API may differ during API review, but 1.0.0 must provide:
+
+- ❌ Stable public headers and ABI versioning.
+- ❌ A small handle-based client API without exposing protocol internals.
+- ❌ Connection pooling or a documented pattern for sharing work across threads.
+- ❌ Automatic reconnect policy and configurable connect, read, write, and idle
+  timeouts.
+- ❌ RESP serialization, pipelining, TLS, and ordered response handling.
+- ❌ Explicit ownership rules for strings, results, errors, and pipelines.
+- ❌ Thread-safety documentation for each exported type.
+- ❌ Shared library and static library builds.
+- ❌ C examples for basic commands and pipelining.
+- ❌ Bindings or examples for a Zig client if a separate C ABI is not sufficient
+  for supported ecosystem use.
+
+Acceptance criteria:
+
+- The C API passes client/server integration tests over plaintext and TLS.
+- API names, ABI versions, exported symbols, and ownership rules are
+  documented.
+- Network failures, timeouts, reconnects, and partial pipeline responses have
+  deterministic behavior and tests.
+- A downstream C program can build and link against a packaged release.
+
+## 5. Reliability and performance
+
+**Status:** ◐ partially complete
+
+### Implemented
+
+- 🧪 Unit, native I/O, benchmark, profiler, network, and E2E tests are in the
+  build/test system.
+- 🧪 Tests and E2E suites run on Linux and macOS in GitHub Actions.
+- ✅ Benchmark and profiling tools are implemented and documented.
+- ✅ Linux and macOS plaintext/TLS builds run in CI.
+
+### Remaining
+
+- ◐ Run unit, protocol, network, AOF, snapshot, E2E, and C API suites in CI.
+- ◐ Add race, allocator, and resource-leak detection to relevant build modes.
+- ❌ Add long-running soak tests and high-concurrency stress tests.
+- ◐ Test Linux and macOS on x86_64 and aarch64 where supported.
+- ◐ Test Debug, ReleaseSafe, and ReleaseFast builds.
+- ◐ Publish benchmark methodology and regression thresholds.
+- ◐ Define acceptable behavior for memory limits, client limits, malformed
+  requests, and backpressure.
+
+Acceptance criteria:
+
+- Release builds pass on every supported platform and architecture.
+- No known crashes or resource leaks remain in release-blocking tests.
+- Benchmarks show no unapproved regressions against the 1.0 baseline.
+- The benchmark report distinguishes throughput, tail latency, and host
+  resources.
+
+## 6. Packaging and documentation
+
+**Status:** ◐ partially complete
+
+### Implemented
+
+- ✅ Native Linux/macOS build workflows exist.
+- ✅ Docker packaging and Docker image publishing on releases exist.
+- ◐ Installation, command, type, network, and benchmark documentation exists.
+
+### Remaining
+
+- ❌ Produce signed or checksummed release artifacts where the target platform
+  supports it.
+- ◐ Publish Linux and macOS builds plus an official Docker image.
+- ❌ Package the C API headers and shared/static libraries.
+- ◐ Add a complete user guide and migration guide.
+- ❌ Add a 1.0.0 changelog and update the release history.
+- ◐ Document supported platforms, Zig requirements, OpenSSL requirements, and
+  container requirements.
+- ◐ Add examples for server startup, persistence, TLS, C API usage, and ZON
+  configuration.
+
+Acceptance criteria:
+
+- A clean-environment installation follows documented steps without
+  repository-only assumptions.
+- Docker and native builds start, serve requests, recover persistence data, and
+  expose the C API consistently.
+- Public documentation contains no instructions for features that are not
+  implemented.
+
+## 7. Release process
+
+1. Freeze the protocol and C API for the release candidate.
+2. Publish `1.0.0-rc.1` for interoperability and packaging feedback.
+3. Run the complete test matrix and 24-hour soak tests.
+4. Resolve release-blocking protocol, persistence, security, and ABI issues.
+5. Publish migration notes, changelog, source archive, packages, Docker image,
+   and C API artifacts.
+6. Tag and publish stable `1.0.0`.
+
+## 1.0.0 exit criteria
+
+The 1.0.0 release is ready when all of the following are true:
+
+- Public commands and wire responses are documented and stable.
+- Authentication and TLS behavior are supported and tested.
+- Snapshot and AOF recovery are predictable and crash-safe.
+- Public persistence formats have compatibility guarantees.
+- The C API has a stable, versioned ABI and documented ownership rules.
+- The C API works in plaintext and TLS integration tests.
+- Native and Docker releases pass clean-environment tests.
+- The full suite passes on every supported platform.
+- No known release-blocking data-loss, memory-safety, protocol, or security
+  defects remain.
+- Benchmark and soak-test baselines are published.
+- The release includes migration, upgrade, and support documentation.
