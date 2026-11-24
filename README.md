@@ -60,7 +60,15 @@ shared shard locks and must be released with `deinit()`, even on early exit.
   the AOF**; snapshots are backups and are not an automatic fallback for a
   missing journal. Disable AOF to start from a snapshot.
 - `.log.level` filters operational messages (`.debug`, `.info`, `.warning`,
-  `.@"error"`). `log_network_payloads` separately controls payload logs.
+  `.@"error"`). `log_network_payloads` separately controls payload logs and is
+  disabled by default because request and response data may contain secrets.
+- TLS is disabled by default. Build with `zig build -Dtls-enabled=true`, then
+  set `.tls.enabled = true`, `.tls.cert_path` to a PEM certificate chain
+  (server certificate first), and `.tls.key_path` to its matching private key.
+  Client-certificate verification is optional: `.peer` verifies a supplied
+  certificate, while `.fail_if_no_peer_cert` also requires one. Either mode
+  requires `.ca_path` to a PEM CA bundle. `.none` remains the default, so
+  ordinary TLS clients do not need client certificates.
 
 ## Usage
 While `zcached` lacks a CLI, you can utilize nc (netcat) from the terminal to send commands to the server.
@@ -133,7 +141,7 @@ latency is **not divided by its request count**. The final partial batch is
 included as one sample. Connection setup and preloading are excluded.
 
 To compare network payload logging on and off, set `.log_network_payloads` in
-the server config to `true` or `false` (the default is `true`). Restart the
+the server config to `true` or `false` (the default is `false`). Restart the
 server and run the exact same benchmark for each setting. Keep the workload,
 build mode, worker count, AOF strategy, and storage paths the same; use a fresh
 log/data directory for each run. This setting only controls per-request and
@@ -361,6 +369,8 @@ trusted source before trusting the individual archive hashes.
 - For building/installation process please refer to the [installation.md](docs/installation.md)
 - For supported types and their encodings, see the [types.md](docs/internals/types.md)
 - For supported commands, see the [commands.md](docs/internals/commands.md)
+- For snapshot and AOF format guarantees, see the
+  [persistence format policy](docs/internals/persistence_formats.md).
 - For network tasks, buffer ownership, copy paths, TLS, and shutdown behavior,
   see the [network architecture](docs/internals/network_architecture.md).
 

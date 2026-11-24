@@ -35,6 +35,7 @@ pub fn init(io: std.Io, options: Options) !StreamServer {
     var result: StreamServer = .{ .io = io, .options = options };
     if (comptime build_options.tls_enabled) {
         if (options.tls.enabled) {
+            try options.tls.validate();
             result.tls_ctx = try secure.Context.init(
                 options.tls.key_path orelse return error.InvalidTLSConfig,
                 options.tls.cert_path orelse return error.InvalidTLSConfig,
@@ -42,6 +43,8 @@ pub fn init(io: std.Io, options: Options) !StreamServer {
                 options.tls.verify_mode,
             );
         }
+    } else if (options.tls.enabled) {
+        return error.TLSNotAvailable;
     }
     return result;
 }

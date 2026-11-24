@@ -29,11 +29,13 @@ pub const ContextFixture = struct {
 
     pub fn init() !ContextFixture {
         const allocator: std.mem.Allocator = std.testing.allocator;
+        var config = try Config.load(allocator, null, null);
+        config.tls.enabled = false;
 
         return ContextFixture{
             .allocator = allocator,
             .logger = try Logger.init(allocator, null, null, false),
-            .config = try Config.load(allocator, null, null),
+            .config = config,
             .persistance = null,
             .memory = null,
             .agent = try .init(allocator, &running),

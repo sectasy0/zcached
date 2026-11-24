@@ -466,9 +466,15 @@ TLS `close_notify` appears as `SSL_ERROR_ZERO_RETURN` and ends a read normally;
 raw TCP EOF while TLS expects ciphertext is `TLSUnexpectedEof`.
 
 Certificate/key paths, optional CA, and peer verification mode come from
-`Config.TLSConfig`. The E2E `upgradeClient` helper deliberately disables server
-certificate verification; it is a test convenience, not a production client
-security policy.
+`Config.TLSConfig`. The server loads a PEM certificate chain and matching
+private key. TLS configuration is rejected at startup if credentials are
+missing, paths are empty or contain NUL, or client-certificate verification is
+selected without a CA bundle. `peer` verifies a supplied client certificate
+but does not require one; `fail_if_no_peer_cert` requires and verifies it.
+Client-certificate verification is disabled by default, so enabling TLS alone
+does not enable mutual TLS. The E2E `upgradeClient` helper deliberately
+disables server certificate verification; it is a test convenience, not a
+production client security policy.
 
 ## Admission control and backpressure
 

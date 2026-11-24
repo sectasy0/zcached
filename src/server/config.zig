@@ -110,27 +110,43 @@ pub const AgentConfig = struct {
 pub const TLSConfig = struct {
     /// Whether TLS is enabled for the server.
     enabled: bool = false,
-    /// Path to the certificate file
-    // Path to the certificate file
+    /// Path to a PEM server certificate chain file, with the leaf certificate first.
     cert_path: ?[]const u8 = null,
-    /// Path to the private key file
-    // Path to the private key file
+    /// Path to the PEM private key matching the server certificate.
     key_path: ?[]const u8 = null,
-    /// Path to the CA certificate file
-    // Path to the CA certificate file
+    /// Path to a PEM CA bundle used to validate client certificates.
     ca_path: ?[]const u8 = null,
-    /// Whether to verify peer certificates
-    // Whether to verify peer certificates
-    // If true, the server will verify the peer's certificate against the CA certificate.
+    /// Whether to request and verify client certificates during the TLS handshake.
     verify_mode: TLSConfig.VerifyMode = .none,
 
     /// Available peer certificate verification modes.
     pub const VerifyMode = enum {
-        none, // No verification
-        peer, // Verify peer's certificate
-        fail_if_no_peer_cert, // Fail if no peer certificate is provided
-        client_once, // Verify client certificate once
+        /// Do not request or verify client certificates.
+        none,
+        /// Verify a provided client certificate, but allow clients without one.
+        peer,
+        /// Require and verify a client certificate.
+        fail_if_no_peer_cert,
+        /// Verify a provided client certificate once; does not require one.
+        client_once,
     };
+
+    /// Rejects incomplete or unsafe TLS settings before opening certificate files.
+    pub fn validate(self: TLSConfig) !void {
+        if (!self.enabled) return;
+
+        const cert_path = self.cert_path orelse return error.InvalidTLSConfig;
+        const key_path = self.key_path orelse return error.InvalidTLSConfig;
+        if (!validTLSPath(cert_path) or !validTLSPath(key_path)) return error.InvalidTLSConfig;
+        if (self.ca_path) |path| {
+            if (!validTLSPath(path)) return error.InvalidTLSConfig;
+        }
+        if (self.verify_mode != .none and self.ca_path == null) return error.InvalidTLSConfig;
+    }
+
+    fn validTLSPath(path: []const u8) bool {
+        return path.len > 0 and std.mem.indexOfScalar(u8, path, 0) == null;
+    }
 
     /// Configuration keys recognized in the TLS section.
     const Fields = enum {
@@ -158,8 +174,8 @@ max_memory: usize = 0, // 0 means unlimited, value in bytes
 client_buffer: usize = 4096, // its resized if more space is requied
 /// Number of worker threads.
 workers: usize = 4,
-/// Whether request and response payloads are included in logs.
-log_network_payloads: bool = true,
+/// Whether request and response payloads are included in logs; disabled by default.
+log_network_payloads: bool = false,
 
 /// Settings for append-only persistence.
 aof: AOFConfig = .{},

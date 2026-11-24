@@ -121,7 +121,9 @@ the key is missing, expired, or already persistent.
 hidden immediately from reads and enumeration, and reclaimed in the background.
 Snapshots continue to read the original `zcpf` format; snapshots containing
 expiry metadata use `zcpf2`. Both snapshots and AOF store absolute Unix
-deadlines rather than restarting the original lifetime during recovery.
+deadlines rather than restarting the original lifetime during recovery. See
+[persistence format compatibility](persistence_formats.md) for the on-disk
+format details and upgrade guarantees.
 
 ### DELETE
 

@@ -40,7 +40,7 @@ pub const Context = struct {
             const caz = try std.mem.printSentinel(&ca_buffer, "{s}", .{path}, 0);
             if (openssl.SSL_CTX_load_verify_locations(ctx, caz.ptr, null) != 1) return error.CALoadFailure;
         }
-        if (openssl.SSL_CTX_use_certificate_file(ctx, certz.ptr, openssl.SSL_FILETYPE_PEM) != 1) return error.CertFailure;
+        if (openssl.SSL_CTX_use_certificate_chain_file(ctx, certz.ptr) != 1) return error.CertFailure;
         if (openssl.SSL_CTX_use_PrivateKey_file(ctx, keyz.ptr, openssl.SSL_FILETYPE_PEM) != 1) return error.KeyFailure;
         if (openssl.SSL_CTX_check_private_key(ctx) != 1) return error.InvalidKey;
         return .{ .ctx = ctx };

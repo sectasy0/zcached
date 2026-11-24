@@ -23,16 +23,16 @@ test "config default values ipv4" {
     try std.testing.expectEqual(config.max_clients, 512);
     try std.testing.expectEqual(config.workers, 4);
     try std.testing.expectEqual(config.client_buffer, 4096);
-    try std.testing.expect(config.log_network_payloads);
+    try std.testing.expect(!config.log_network_payloads);
     try std.testing.expectEqual(config.max_request_size, 10 * 1024 * 1024);
     try std.testing.expectEqual(config.max_memory, 0);
 }
 
-test "config can disable network payload logging" {
+test "config can enable network payload logging explicitly" {
     var config_file = try ConfigFile.init(testPath(@src().line));
     const override: []const u8 =
         \\ .{
-        \\     .log_network_payloads = false,
+        \\     .log_network_payloads = true,
         \\ }
     ;
 
@@ -42,7 +42,37 @@ test "config can disable network payload logging" {
     var config = try Config.load(std.testing.allocator, config_file.path, null);
     defer config.deinit();
 
-    try std.testing.expect(!config.log_network_payloads);
+    try std.testing.expect(config.log_network_payloads);
+}
+
+test "TLS config requires server credentials and a CA for client verification" {
+    const TLSConfig = Config.TLSConfig;
+    const valid_encryption: TLSConfig = .{
+        .enabled = true,
+        .cert_path = "server-chain.pem",
+        .key_path = "server-key.pem",
+    };
+    try valid_encryption.validate();
+
+    const invalid_configs = [_]TLSConfig{
+        .{ .enabled = true },
+        .{ .enabled = true, .cert_path = "", .key_path = "server-key.pem" },
+        .{ .enabled = true, .cert_path = "server-chain.pem", .key_path = "server-key.pem", .verify_mode = .peer },
+        .{ .enabled = true, .cert_path = "server-chain.pem", .key_path = "server-key.pem", .verify_mode = .fail_if_no_peer_cert },
+        .{ .enabled = true, .cert_path = "server-chain.pem", .key_path = "server-key.pem", .ca_path = "" },
+    };
+    for (invalid_configs) |config| {
+        try std.testing.expectError(error.InvalidTLSConfig, config.validate());
+    }
+
+    const mutual_tls: TLSConfig = .{
+        .enabled = true,
+        .cert_path = "server-chain.pem",
+        .key_path = "server-key.pem",
+        .ca_path = "client-ca.pem",
+        .verify_mode = .fail_if_no_peer_cert,
+    };
+    try mutual_tls.validate();
 }
 
 test "config loads memory sharding settings alongside legacy memory limit" {

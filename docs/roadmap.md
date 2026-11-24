@@ -22,16 +22,11 @@ the C API, corruption handling, and release hardening remain incomplete.
 
 **Status:** ◐ partially complete
 
-### Implemented
-
 - ✅ A RESP-compatible command parser and the core command set are implemented.
 - 🧪 Unit and E2E coverage exists for commands, expiration, copy/rename,
   multiple-key operations, and the newly added `GSET`.
 - ◐ Command behavior is documented in [commands.md](internals/commands.md).
 - 🧪 CI runs unit and E2E suites on Linux and macOS.
-
-### Remaining
-
 - ❌ Freeze a complete protocol specification for RESP-compatible requests and
   responses.
 - ✅ Command errors return stable codes without descriptive or request-provided
@@ -61,16 +56,13 @@ Acceptance criteria:
 
 **Status:** ◐ partially complete
 
-### Implemented
-
 - ✅ Timestamped `.zcpf` snapshots with atomic replacement and retention.
 - ✅ Snapshot and AOF TTL metadata using absolute deadlines.
 - ✅ AOF flush strategies and background AOF rewrite.
 - 🧪 Snapshot, replay, rewrite, expiry, and TTL unit/E2E coverage exists.
-
-### Remaining
-
-- ❌ Define snapshot and AOF formats as stable or explicitly versioned formats.
+- ✅ Documented snapshot versions `zcpf`/`zcpf2` and the headerless AOF v1
+  format, with 1.x compatibility and future format-change rules in the
+  [persistence format policy](internals/persistence_formats.md).
 - ❌ Add integrity and corruption handling for snapshot and AOF files.
 - ◐ Implement asynchronous save support (`ASAVE`); AOF rewrite is implemented.
 - ◐ Apply snapshot retention consistently and document precedence between
@@ -90,16 +82,11 @@ Acceptance criteria:
 
 **Status:** ◐ partially complete
 
-### Implemented
-
 - ✅ TLS support is available for server and E2E client builds.
 - ✅ Per-worker client limits, idle/request timeouts, and pending-response
   limits are implemented.
 - ✅ IP whitelisting and configurable memory/request-related limits exist.
 - 🧪 Linux and macOS TLS builds and network timeout tests run in CI.
-
-### Remaining
-
 - ❌ Add authentication, including `AUTH` and a supported password configuration.
 - ❌ Add ACL or role configuration, or explicitly keep 1.0.0 authentication scoped
   to a small, documented password-based model.
@@ -108,8 +95,10 @@ Acceptance criteria:
 - ✅ Graceful shutdown and startup diagnostics are implemented: startup failures
   identify the lifecycle phase, network readiness is logged, SIGTERM/SIGINT are
   distinguished, worker shutdown is coordinated, and AOF is flushed on exit.
-- ◐ Harden TLS configuration, certificate validation, and security-focused
-  default settings.
+- ✅ TLS now validates credential and CA requirements at startup, loads PEM
+  certificate chains, rejects TLS requests in plaintext-only builds, and
+  disables payload logging by default. Client-certificate verification remains
+  opt-in to preserve ordinary TLS client compatibility.
 - ◐ Publish an operational guide covering logs, resource limits, snapshots, AOF,
   Docker, systemd, and monitoring.
 
@@ -123,13 +112,6 @@ Acceptance criteria:
 ## 4. C API and official client
 
 **Status:** ❌ not started
-
-### Implemented
-
-- ❌ No public C API or stable C header is currently present.
-- ❌ No C ABI or C client artifacts are built by Zig.
-
-### Remaining
 
 The release will include a supported C API, with its ABI and behavior covered
 by separate documentation and conformance tests.
@@ -182,16 +164,11 @@ Acceptance criteria:
 
 **Status:** ◐ partially complete
 
-### Implemented
-
 - 🧪 Unit, native I/O, benchmark, profiler, network, and E2E tests are in the
   build/test system.
 - 🧪 Tests and E2E suites run on Linux and macOS in GitHub Actions.
 - ✅ Benchmark and profiling tools are implemented and documented.
 - ✅ Linux and macOS plaintext/TLS builds run in CI.
-
-### Remaining
-
 - ◐ Run unit, protocol, network, AOF, snapshot, E2E, and C API suites in CI.
 - ◐ Add race, allocator, and resource-leak detection to relevant build modes.
 - ❌ Add long-running soak tests and high-concurrency stress tests.
@@ -213,16 +190,11 @@ Acceptance criteria:
 
 **Status:** ◐ partially complete
 
-### Implemented
-
 - ✅ Native Linux/macOS build workflows exist.
 - ✅ Docker packaging and Docker image publishing on releases exist.
 - ◐ Installation, command, type, network, and benchmark documentation exists.
 - ✅ Release workflows package Linux and macOS archives and publish a combined
   SHA-256 manifest named `SHA256SUMS`.
-
-### Remaining
-
 - ◐ Publish Linux and macOS builds plus an official Docker image.
 - ❌ Package the C API headers and shared/static libraries.
 - ◐ Add a complete user guide and migration guide.

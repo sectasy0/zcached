@@ -16,6 +16,13 @@ test "StreamServer listens on an ephemeral port and closes cleanly" {
     try std.testing.expect(server.listener == null);
 }
 
+test "StreamServer rejects TLS when built without TLS support" {
+    try std.testing.expectError(
+        error.TLSNotAvailable,
+        StreamServer.init(std.testing.io, .{ .tls = .{ .enabled = true } }),
+    );
+}
+
 test "Stream reader keeps pipelined frames buffered and reports transport errors" {
     const io = std.testing.io;
     var server = try StreamServer.init(io, .{});

@@ -26,10 +26,12 @@ cd zcached
 ```
 **3. Build the project.**
 ```bash
-# provide -Dtls-enabled=true to build zcached with tls
+# Build the plaintext server (TLS remains unavailable in this binary).
 zig build
 # Production build: optimized code and the scalable SMP allocator.
 zig build -Doptimize=ReleaseFast
+# Build and install the TLS-enabled server variant.
+zig build -Dtls-enabled=true
 ```
 Debug and ReleaseSafe builds retain the debug allocator and leak checks.
 
