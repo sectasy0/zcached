@@ -26,13 +26,21 @@ include descriptive text or request-provided values.
 | `UNPROCESSABLE` | The request could not be parsed. |
 | `INTERNAL_ERROR` | An unexpected error occurred. |
 
+Unless a command documents a different error, a missing or extra argument
+returns `-INVALID_COMMAND`, a non-string key returns `-KEY_NOT_STRING`, and an
+unsupported value type returns `-INVALID_TYPE`. Empty `MGET` and malformed
+multi-key syntax in `MSET` or `MSETNX` return `-INVALID_ARGUMENTS`. Missing
+storage keys return `-NOT_FOUND` when the command is lookup-oriented; commands
+with an explicitly documented integer return for missing keys use that result
+instead.
+
 `PEXPIREAT` is an internal AOF replay record, not a public command. Clients
 cannot invoke it directly, and `COMMAND` does not list it.
 
 ### PING
 
 **Available since**: 0.0.1\
-**Time complexity**: O(1)
+**Time complexity**: O(M), where M is the encoded size of the stored value
 
 Checks if the server is running.
 
@@ -41,6 +49,8 @@ PING
 ```
 
 ### INFO
+
+**Time complexity**: O(N), where N is the number of live keys
 
 Returns server and key-space metadata as a bulk string.
 
@@ -53,6 +63,8 @@ TLS status, key count, and estimated storage memory usage.
 
 ### COMMAND
 
+**Time complexity**: O(C) for the list, O(1) for `COUNT`
+
 Returns the public command names or the command count.
 
 ```sh
@@ -61,6 +73,8 @@ COMMAND COUNT
 ```
 
 ### CLIENT
+
+**Time complexity**: O(1)
 
 Returns basic connection metadata.
 
@@ -72,7 +86,8 @@ CLIENT ID
 ### GET
 
 **Available since**: 0.0.1\
-**Time complexity**: O(1)
+**Time complexity**: O(M), where M is the copied value size; O(1) for scalar
+values
 
 Gets the value associated with a string key. Returns `-NOT_FOUND` if the key
 does not exist.
@@ -96,6 +111,9 @@ The lifetime must be a positive integer when specified. An ordinary `SET`
 
 ### GSET
 
+**Time complexity**: O(M), where M is the size of a compound stored value; O(1)
+for scalar values
+
 ```sh
 GSET <key> <value>
 ```
@@ -106,16 +124,22 @@ and returns the stored value, just like `GET` after the insert.
 
 ### EXPIRE
 
+**Time complexity**: O(1)
+
 `EXPIRE <key> <seconds>` updates the lifetime of an existing key. Returns `1`
 on success or `0` if the key is missing or already expired. A non-positive
 lifetime deletes the key immediately.
 
 ### TTL
 
+**Time complexity**: O(1)
+
 `TTL <key>` returns the remaining lifetime rounded to the nearest second, `-1`
 for a persistent key, or `-2` for a missing or expired key.
 
 ### PERSIST
+
+**Time complexity**: O(1)
 
 `PERSIST <key>` removes an existing expiry and returns `1`. It returns `0` if
 the key is missing, expired, or already persistent.
@@ -145,7 +169,8 @@ DELETE <key>
 ### FLUSH
 
 **Available since**: 0.0.1\
-**Time complexity**: O(N) where N is the total number of keys in databases
+**Time complexity**: O(N + M), where N is the number of keys and M is the total
+nested value count to free
 
 Delete all the keys from database. This command never fails.
 
@@ -156,7 +181,7 @@ FLUSH
 ### DBSIZE
 
 **Available since**: 0.0.1\
-**Time complexity**: O(1)
+**Time complexity**: O(N), where N is the number of live keys across all shards
 
 Returns the number of keys in the database.
 
@@ -167,7 +192,8 @@ DBSIZE
 ### SAVE
 
 **Available since**: 0.0.1\
-**Time complexity**: O(N) where N is the total number of keys in databases
+**Time complexity**: O(N + M), where N is the number of keys and M is the total
+serialized value size
 
 `SAVE` performs a synchronous save of the dataset, producing a point-in-time
 snapshot of all data in the zcached instance in `.zcpf` format. There is no
@@ -180,7 +206,8 @@ SAVE
 ### MGET
 
 **Available since**: 0.0.1\
-**Time complexity**: O(N) where N is the number of keys to retrieve
+**Time complexity**: O(N + M), where N is the number of keys and M is the total
+copied value size
 
 Returns the values of all specified keys. For every key that does not exist,
 the special value `null` is returned. Existing values are returned regardless
@@ -193,7 +220,8 @@ MGET <key1> <key...>
 ### MSET
 
 **Available since**: 0.0.1\
-**Time complexity**: O(N) where N is the number of keys to set
+**Time complexity**: O(N + M), where N is the number of pairs and M is the total
+copied value size
 
 Sets the given keys to their respective values. `MSET` replaces existing
 values just like `SET`.
@@ -203,6 +231,9 @@ MSET key value [key value ...]
 ```
 
 ### MSETNX
+
+**Time complexity**: O(N + M), where N is the number of pairs and M is the
+total copied value size
 
 Atomically sets the given key/value pairs only if none of the keys exists.
 Returns `1` when all pairs are stored, or `0` when any key already exists. In
@@ -215,6 +246,8 @@ MSETNX key value [key value ...]
 
 ### INCR
 
+**Time complexity**: O(L), where L is the stored integer's decimal length
+
 Atomically increments the integer value at a key by one and returns the new
 value. Missing keys start at zero. Integer-valued bulk strings are accepted and
 remain stored as strings. Expiry is preserved, and non-integer values or
@@ -226,6 +259,8 @@ INCR key
 
 ### DECR
 
+**Time complexity**: O(L), where L is the stored integer's decimal length
+
 Atomically decrements an integer value by one. Its missing-key, type, overflow,
 and expiry behavior is the same as `INCR`.
 
@@ -234,6 +269,9 @@ DECR key
 ```
 
 ### APPEND
+
+**Time complexity**: O(L + S), where L is the existing length and S is the
+appended byte length
 
 Appends the supplied string to a stored string and returns the new byte length.
 If the key does not exist, it is created with the supplied value. The existing
@@ -306,7 +344,8 @@ ECHO <Message>
 ### RENAME
 
 **Available since**: 0.1.0\
-**Time complexity**: O(1)
+**Time complexity**: O(M), where M is the copied nested value size; O(1) for
+scalar values
 
 The `RENAME` command renames an existing key to a new key. 
 If the new key already exists, it will be overwritten by the old key's value.

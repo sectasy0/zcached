@@ -41,6 +41,44 @@ test "INFO, COMMAND and CLIENT provide server introspection" {
     try std.testing.expectEqual(error.InvalidCommand, (try runCommand(&handler, &.{ .{ .str = "CLIENT" }, .{ .str = "SETNAME" }, .{ .str = "cache" } })).err);
 }
 
+test "public commands reject unsupported extra arguments" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    var handler = commands.Handler.init(std.testing.allocator, fixture.context());
+
+    const cases = [_][]const ZType{
+        &.{ .{ .str = "PING" }, .{ .str = "extra" } },
+        &.{ .{ .str = "GET" }, .{ .str = "key" }, .{ .str = "extra" } },
+        &.{ .{ .str = "DELETE" }, .{ .str = "key" }, .{ .str = "extra" } },
+        &.{ .{ .str = "SIZEOF" }, .{ .str = "key" }, .{ .str = "extra" } },
+        &.{ .{ .str = "RENAME" }, .{ .str = "from" }, .{ .str = "to" }, .{ .str = "extra" } },
+        &.{ .{ .str = "ECHO" }, .{ .str = "value" }, .{ .str = "extra" } },
+        &.{ .{ .str = "DBSIZE" }, .{ .str = "extra" } },
+        &.{ .{ .str = "SAVE" }, .{ .str = "extra" } },
+        &.{ .{ .str = "KEYS" }, .{ .str = "extra" } },
+        &.{ .{ .str = "FLUSH" }, .{ .str = "extra" } },
+        &.{ .{ .str = "LASTSAVE" }, .{ .str = "extra" } },
+        &.{ .{ .str = "INFO" }, .{ .str = "extra" } },
+    };
+    for (cases) |command| {
+        try std.testing.expectEqual(error.InvalidCommand, (try runCommand(&handler, command)).err);
+    }
+    try std.testing.expectEqual(error.InvalidArgs, (try runCommand(&handler, &.{.{ .str = "MGET" }})).err);
+}
+
+test "DELETE rejects a non-string key" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    var handler = commands.Handler.init(std.testing.allocator, fixture.context());
+
+    try std.testing.expectEqual(error.KeyNotString, (try runCommand(&handler, &.{
+        .{ .str = "DELETE" },
+        .{ .int = 1 },
+    })).err);
+}
+
 test "GSET returns the inserted value and does not overwrite on a hit" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -680,45 +718,45 @@ test "should handle SIZEOF command" {
     var result = cmd_handler.process(&command_set);
     try helper.expectEqualZTypes(result.ok, .{ .int = 10 });
 
-    try command_set.insert(1, .{ .str = "simple-str-key" });
+    command_set.items[1] = .{ .str = "simple-str-key" };
     result = cmd_handler.process(&command_set);
     try helper.expectEqualZTypes(result.ok, .{ .int = 17 });
 
     // Numbers
 
-    try command_set.insert(1, .{ .str = "float-key" });
+    command_set.items[1] = .{ .str = "float-key" };
     result = cmd_handler.process(&command_set);
     try helper.expectEqualZTypes(result.ok, .{ .int = 8 });
 
-    try command_set.insert(1, .{ .str = "int-key" });
+    command_set.items[1] = .{ .str = "int-key" };
     result = cmd_handler.process(&command_set);
     try helper.expectEqualZTypes(result.ok, .{ .int = 8 });
 
     // Bool / Null
 
-    try command_set.insert(1, .{ .str = "bool-key" });
+    command_set.items[1] = .{ .str = "bool-key" };
     result = cmd_handler.process(&command_set);
     try helper.expectEqualZTypes(result.ok, .{ .int = 1 });
 
-    try command_set.insert(1, .{ .str = "null-key" });
+    command_set.items[1] = .{ .str = "null-key" };
     result = cmd_handler.process(&command_set);
     try helper.expectEqualZTypes(result.ok, .{ .int = 0 });
 
     // Map / Array
 
-    try command_set.insert(1, .{ .str = "map-key" });
+    command_set.items[1] = .{ .str = "map-key" };
     result = cmd_handler.process(&command_set);
     try helper.expectEqualZTypes(result.ok, .{ .int = 1 });
 
-    try command_set.insert(1, .{ .str = "array-key" });
+    command_set.items[1] = .{ .str = "array-key" };
     result = cmd_handler.process(&command_set);
     try helper.expectEqualZTypes(result.ok, .{ .int = 2 });
 
-    try command_set.insert(1, .{ .str = "set-key" });
+    command_set.items[1] = .{ .str = "set-key" };
     result = cmd_handler.process(&command_set);
     try helper.expectEqualZTypes(result.ok, .{ .int = 1 });
 
-    try command_set.insert(1, .{ .str = "uset-key" });
+    command_set.items[1] = .{ .str = "uset-key" };
     result = cmd_handler.process(&command_set);
     try helper.expectEqualZTypes(result.ok, .{ .int = 1 });
 }
@@ -759,7 +797,7 @@ test "should handle ECHO command" {
     try helper.expectEqualZTypes(result.ok, .{ .str = "Hello World!" });
 
     // Simple string case.
-    try command_set.insert(1, .{ .sstr = "Hello Mars!" });
+    command_set.items[1] = .{ .sstr = "Hello Mars!" };
     result = cmd_handler.process(&command_set);
     try helper.expectEqualZTypes(result.ok, .{ .sstr = "Hello Mars!" });
 }
@@ -860,7 +898,7 @@ test "should RENAME return error.KeyNotString" {
     try std.testing.expectEqual(result.err, error.KeyNotString);
 
     // To test second key.
-    try command_set.insert(1, .{ .str = "testkey" });
+    command_set.items[1] = .{ .str = "testkey" };
     result = cmd_handler.process(&command_set);
     try std.testing.expectEqual(result.err, error.KeyNotString);
 }
@@ -943,13 +981,16 @@ test "should COPY return error.KeyNotString" {
     try command_set.append(.{ .float = 0.2 });
     try command_set.append(.{ .float = 0.3 });
 
-    for (1..4) |index| {
-        // Replace float parameter with a string and see if the next one returns an error.
-        const result = cmd_handler.process(&command_set);
-        try std.testing.expectEqual(result.err, error.KeyNotString);
+    var result = cmd_handler.process(&command_set);
+    try std.testing.expectEqual(result.err, error.KeyNotString);
 
-        try command_set.insert(index, .{ .str = "strparam" });
-    }
+    command_set.items[1] = .{ .str = "strparam" };
+    result = cmd_handler.process(&command_set);
+    try std.testing.expectEqual(result.err, error.KeyNotString);
+
+    command_set.items[2] = .{ .str = "strparam" };
+    result = cmd_handler.process(&command_set);
+    try std.testing.expectEqual(result.err, error.KeyNotString);
 }
 
 // Checks COPY without REPLACE rejects an existing destination.

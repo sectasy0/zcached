@@ -20,12 +20,13 @@ the C API, corruption handling, and release hardening remain incomplete.
 
 ## 1. Protocol and command stability
 
-**Status:** ◐ partially complete
+**Status:** ✅ complete
 
 - ✅ A RESP-compatible command parser and the core command set are implemented.
 - 🧪 Unit and E2E coverage exists for commands, expiration, copy/rename,
   multiple-key operations, and the newly added `GSET`.
-- ◐ Command behavior is documented in [commands.md](internals/commands.md).
+- ✅ Command syntax, behavior, complexity, responses, and validation errors are
+  documented in [commands.md](internals/commands.md).
 - 🧪 CI runs unit and E2E suites on Linux and macOS.
 - ✅ Froze the RESP-compatible request and response format in the
   [wire protocol specification](internals/protocol.md).
@@ -34,7 +35,8 @@ the C API, corruption handling, and release hardening remain incomplete.
   decoration markers.
 - ✅ Marked `PEXPIREAT` as an internal AOF replay record and excluded it from
   the public command listing.
-- ◐ Finalize the public command set and mark internal commands as non-public.
+- ✅ Finalized the public command set and excluded internal replay commands from
+  the public command listing.
 - ✅ Added `INFO`, `COMMAND`, and `CLIENT` commands for basic introspection.
 - ✅ Added the remaining standard cache operations required by the 1.0 API:
   `MSETNX`, `INCR`, `DECR`, `APPEND`, and `SIZEOF` (zcached's string-size

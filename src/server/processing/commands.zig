@@ -117,7 +117,7 @@ pub const Handler = struct {
 
         try switch (command_type) {
             .GET => {
-                if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
+                if (command_set.items.len != 2) return .{ .err = error.InvalidCommand };
                 return self.get(command_set.items[1]);
             },
             .SET => {
@@ -143,19 +143,19 @@ pub const Handler = struct {
                 return .{ .ok = .{ .int = 1 } };
             },
             .DELETE => {
-                if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
+                if (command_set.items.len != 2) return .{ .err = error.InvalidCommand };
                 return self.delete(command_set.items[1]);
             },
             .SIZEOF => {
-                if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
+                if (command_set.items.len != 2) return .{ .err = error.InvalidCommand };
                 return self.sizeof(command_set.items[1]);
             },
             .RENAME => {
-                if (command_set.items.len < 3) return .{ .err = error.InvalidCommand };
+                if (command_set.items.len != 3) return .{ .err = error.InvalidCommand };
                 return self.rename(command_set.items[1], command_set.items[2]);
             },
             .ECHO => {
-                if (command_set.items.len < 2) return .{ .err = error.InvalidCommand };
+                if (command_set.items.len != 2) return .{ .err = error.InvalidCommand };
                 switch (command_set.items[1]) {
                     .str => |text| return .{ .ok = .{ .str = text } },
                     .sstr => |text| return .{ .ok = .{ .sstr = text } },
@@ -164,6 +164,7 @@ pub const Handler = struct {
             },
             .COPY => {
                 if (command_set.items.len < 3) return .{ .err = error.InvalidCommand };
+                if (command_set.items.len > 4) return .{ .err = error.InvalidCommand };
                 return self.copy(command_set.items[1..command_set.items.len]);
             },
             .INFO => {
@@ -172,7 +173,10 @@ pub const Handler = struct {
             },
             .COMMAND => return self.commandList(command_set.items[1..]),
             .CLIENT => return self.clientInfo(command_set.items[1..]),
-            .MGET => return self.mget(command_set.items[1..command_set.items.len]),
+            .MGET => {
+                if (command_set.items.len < 2) return .{ .err = error.InvalidArgs };
+                return self.mget(command_set.items[1..command_set.items.len]);
+            },
             .MSET => return self.mset(command_set.items[1..command_set.items.len]),
             .MSETNX => return self.msetnx(command_set.items[1..]),
             .INCR => {
@@ -187,16 +191,30 @@ pub const Handler = struct {
                 if (command_set.items.len != 3) return .{ .err = error.InvalidCommand };
                 return self.append(command_set.items[1], command_set.items[2]);
             },
-            .PING => return .{ .ok = .{ .sstr = "PONG" } },
-            .DBSIZE => return .{
-                .ok = .{ .int = self.context.resources.memory.size() },
+            .PING => {
+                if (command_set.items.len != 1) return .{ .err = error.InvalidCommand };
+                return .{ .ok = .{ .sstr = "PONG" } };
             },
-            .LASTSAVE => return .{
-                .ok = .{ .int = self.context.resources.memory.last_save.load(.monotonic) },
+            .DBSIZE => {
+                if (command_set.items.len != 1) return .{ .err = error.InvalidCommand };
+                return .{ .ok = .{ .int = self.context.resources.memory.size() } };
             },
-            .SAVE => return self.save(),
-            .KEYS => return self.zkeys(),
-            .FLUSH => return self.flush(),
+            .LASTSAVE => {
+                if (command_set.items.len != 1) return .{ .err = error.InvalidCommand };
+                return .{ .ok = .{ .int = self.context.resources.memory.last_save.load(.monotonic) } };
+            },
+            .SAVE => {
+                if (command_set.items.len != 1) return .{ .err = error.InvalidCommand };
+                return self.save();
+            },
+            .KEYS => {
+                if (command_set.items.len != 1) return .{ .err = error.InvalidCommand };
+                return self.zkeys();
+            },
+            .FLUSH => {
+                if (command_set.items.len != 1) return .{ .err = error.InvalidCommand };
+                return self.flush();
+            },
         };
     }
 
@@ -282,6 +300,7 @@ pub const Handler = struct {
 
     /// Deletes an existing key and records the mutation; returns `NotFound` if absent.
     fn delete(self: *Handler, key: ZType) Result {
+        if (key != .str) return .{ .err = error.KeyNotString };
         const result = self.context.resources.memory.delete(key.str);
 
         if (result) {
