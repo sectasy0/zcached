@@ -89,6 +89,49 @@ pub fn putExpiring(self: *Fabric, key: []const u8, value: types.ZType, deadline:
     try shard.put(key, .{ .value = value, .expired_at = deadline });
 }
 
+/// Atomically stores all alternating key/value entries only when every key is absent.
+pub fn putAllIfAbsent(self: *Fabric, entries: []const types.ZType) !bool {
+    if (entries.len == 0 or entries.len & 1 == 1) return error.InvalidArgs;
+    const initial_admission = self.checkLimit();
+    var pair_index: usize = 0;
+    while (pair_index < entries.len) : (pair_index += 2) {
+        if (entries[pair_index] != .str) return error.KeyNotString;
+    }
+
+    for (self.shards) |*shard| shard.lock.lock();
+    defer {
+        var index = self.shards.len;
+        while (index > 0) {
+            index -= 1;
+            self.shards[index].lock.unlock();
+        }
+    }
+
+    var previous = try self.allocator.alloc(usize, self.shards.len);
+    defer self.allocator.free(previous);
+    for (self.shards, 0..) |*shard, index| previous[index] = shard.heap.total_requested_bytes;
+    defer for (self.shards, 0..) |*shard, index| self.updateMemoryUsed(shard, previous[index]);
+
+    pair_index = 0;
+    while (pair_index < entries.len) : (pair_index += 2) {
+        const key = entries[pair_index].str;
+        if (self.liveEntry(self.shardFor(key), key) != null) return false;
+    }
+    try initial_admission;
+
+    var stored: usize = 0;
+    errdefer while (stored > 0) {
+        stored -= 2;
+        const key = entries[stored].str;
+        _ = self.shardFor(key).delete(key);
+    };
+    while (stored < entries.len) : (stored += 2) {
+        const key = entries[stored].str;
+        try self.shardFor(key).put(key, .{ .value = entries[stored + 1] });
+    }
+    return true;
+}
+
 pub const GetOrSetResult = struct {
     value: types.ZType,
     inserted: bool,
@@ -196,6 +239,70 @@ pub fn getCopy(self: *Fabric, key: []const u8, allocator: std.mem.Allocator) !ty
     shard.lock.lockShared();
     defer shard.lock.unlockShared();
     return types.ztype_copy((self.liveEntry(shard, key) orelse return error.NotFound).value, allocator);
+}
+
+/// Atomically increments or decrements an integer-compatible value.
+pub fn increment(self: *Fabric, key: []const u8, delta: i64) !i64 {
+    const initial_admission = self.checkLimit();
+    const shard = self.shardFor(key);
+    shard.lock.lock();
+    defer shard.lock.unlock();
+    const previous = shard.heap.total_requested_bytes;
+    defer self.updateMemoryUsed(shard, previous);
+
+    const entry = self.liveEntry(shard, key);
+    const current: i64 = if (entry) |stored| switch (stored.value) {
+        .int => |value| value,
+        .str, .sstr => |value| std.fmt.parseInt(i64, value, 10) catch return error.InvalidType,
+        else => return error.InvalidType,
+    } else blk: {
+        try initial_admission;
+        break :blk 0;
+    };
+    const result = std.math.add(i64, current, delta) catch return error.InvalidType;
+    if (entry) |stored| switch (stored.value) {
+        .str => {
+            const text = try std.fmt.allocPrint(self.allocator, "{d}", .{result});
+            defer self.allocator.free(text);
+            try shard.put(key, .{ .value = .{ .str = text }, .expired_at = stored.expired_at });
+        },
+        .sstr => {
+            const text = try std.fmt.allocPrint(self.allocator, "{d}", .{result});
+            defer self.allocator.free(text);
+            try shard.put(key, .{ .value = .{ .sstr = text }, .expired_at = stored.expired_at });
+        },
+        else => try shard.put(key, .{ .value = .{ .int = result }, .expired_at = stored.expired_at }),
+    } else try shard.put(key, .{ .value = .{ .int = result } });
+    return result;
+}
+
+/// Atomically appends bytes to a string value and returns the resulting length.
+pub fn append(self: *Fabric, key: []const u8, suffix: []const u8) !usize {
+    const initial_admission = self.checkLimit();
+    const shard = self.shardFor(key);
+    shard.lock.lock();
+    defer shard.lock.unlock();
+    const previous = shard.heap.total_requested_bytes;
+    defer self.updateMemoryUsed(shard, previous);
+
+    const entry = self.liveEntry(shard, key);
+    const current = if (entry) |stored| switch (stored.value) {
+        .str, .sstr => |value| value,
+        else => return error.InvalidType,
+    } else blk: {
+        try initial_admission;
+        break :blk "";
+    };
+    const length = std.math.add(usize, current.len, suffix.len) catch return error.InvalidLength;
+    const combined = try self.allocator.alloc(u8, length);
+    defer self.allocator.free(combined);
+    @memcpy(combined[0..current.len], current);
+    @memcpy(combined[current.len..], suffix);
+    if (entry) |stored| switch (stored.value) {
+        .sstr => try shard.put(key, .{ .value = .{ .sstr = combined }, .expired_at = stored.expired_at }),
+        else => try shard.put(key, .{ .value = .{ .str = combined }, .expired_at = stored.expired_at }),
+    } else try shard.put(key, .{ .value = .{ .str = combined } });
+    return length;
 }
 
 pub fn withValue(self: *Fabric, key: []const u8, context: anytype, callback: anytype) !void {

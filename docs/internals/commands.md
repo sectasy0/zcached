@@ -193,10 +193,51 @@ MGET <key1> <key...>
 **Time complexity**: O(N) where N is the number of keys to set
 
 Sets the given keys to their respective values. `MSET` replaces existing
-values just like `SET`. There is no `MSETNX` command.
+values just like `SET`.
 
 ```sh
 MSET key value [key value ...]
+```
+
+### MSETNX
+
+Atomically sets the given key/value pairs only if none of the keys exists.
+Returns `1` when all pairs are stored, or `0` when any key already exists. In
+the latter case no value is changed or inserted. Repeated keys in one request
+are evaluated as part of the same atomic operation.
+
+```sh
+MSETNX key value [key value ...]
+```
+
+### INCR
+
+Atomically increments the integer value at a key by one and returns the new
+value. Missing keys start at zero. Integer-valued bulk strings are accepted and
+remain stored as strings. Expiry is preserved, and non-integer values or
+integer overflow return `-INVALID_TYPE`.
+
+```sh
+INCR key
+```
+
+### DECR
+
+Atomically decrements an integer value by one. Its missing-key, type, overflow,
+and expiry behavior is the same as `INCR`.
+
+```sh
+DECR key
+```
+
+### APPEND
+
+Appends the supplied string to a stored string and returns the new byte length.
+If the key does not exist, it is created with the supplied value. The existing
+expiry is preserved; non-string values return `-INVALID_TYPE`.
+
+```sh
+APPEND key value
 ```
 
 ### KEYS
@@ -228,7 +269,8 @@ LASTSAVE
 **Available since**: 0.1.0\
 **Time complexity**: O(1)
 
-Returns the size of the specified key based on its type. 
+Returns the size of the specified key based on its type. `SIZEOF` is the
+zcached name for the string-length operation commonly called `STRLEN`.
 The size is calculated according to the following criteria:
 
 | Type                       | Description                           |

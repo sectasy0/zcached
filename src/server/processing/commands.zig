@@ -44,6 +44,14 @@ const CommandType = enum {
     MGET,
     /// Store multiple key/value pairs.
     MSET,
+    /// Store multiple key/value pairs only when all keys are absent.
+    MSETNX,
+    /// Increment an integer-compatible value.
+    INCR,
+    /// Decrement an integer-compatible value.
+    DECR,
+    /// Append bytes to a string value.
+    APPEND,
     /// Return the number of stored keys.
     DBSIZE,
     /// Persist the current in-memory state.
@@ -166,6 +174,19 @@ pub const Handler = struct {
             .CLIENT => return self.clientInfo(command_set.items[1..]),
             .MGET => return self.mget(command_set.items[1..command_set.items.len]),
             .MSET => return self.mset(command_set.items[1..command_set.items.len]),
+            .MSETNX => return self.msetnx(command_set.items[1..]),
+            .INCR => {
+                if (command_set.items.len != 2) return .{ .err = error.InvalidCommand };
+                return self.increment(command_set.items[1], 1);
+            },
+            .DECR => {
+                if (command_set.items.len != 2) return .{ .err = error.InvalidCommand };
+                return self.increment(command_set.items[1], -1);
+            },
+            .APPEND => {
+                if (command_set.items.len != 3) return .{ .err = error.InvalidCommand };
+                return self.append(command_set.items[1], command_set.items[2]);
+            },
             .PING => return .{ .ok = .{ .sstr = "PONG" } },
             .DBSIZE => return .{
                 .ok = .{ .int = self.context.resources.memory.size() },
@@ -345,6 +366,40 @@ pub const Handler = struct {
         return .{ .ok = .{ .sstr = "OK" } };
     }
 
+    /// Atomically stores all pairs only when every requested key is absent.
+    fn msetnx(self: *Handler, entries: []ZType) Result {
+        if (entries.len == 0 or entries.len & 1 == 1) return .{ .err = error.InvalidArgs };
+        var index: usize = 0;
+        while (index < entries.len) : (index += 2) {
+            if (entries[index] != .str) return .{ .err = error.KeyNotString };
+        }
+        const inserted = self.context.resources.memory.putAllIfAbsent(entries) catch |err|
+            return .{ .err = err };
+        if (!inserted) return .{ .ok = .{ .int = 0 } };
+        self.appendMutation() catch |err| return .{ .err = err };
+        return .{ .ok = .{ .int = 1 } };
+    }
+
+    fn increment(self: *Handler, key: ZType, delta: i64) Result {
+        if (key != .str) return .{ .err = error.KeyNotString };
+        const result = self.context.resources.memory.increment(key.str, delta) catch |err|
+            return .{ .err = err };
+        self.appendMutation() catch |err| return .{ .err = err };
+        return .{ .ok = .{ .int = result } };
+    }
+
+    fn append(self: *Handler, key: ZType, suffix: ZType) Result {
+        if (key != .str) return .{ .err = error.KeyNotString };
+        const suffix_bytes: []const u8 = switch (suffix) {
+            .str, .sstr => |value| value,
+            else => return .{ .err = error.InvalidType },
+        };
+        const length = self.context.resources.memory.append(key.str, suffix_bytes) catch |err|
+            return .{ .err = err };
+        self.appendMutation() catch |err| return .{ .err = err };
+        return .{ .ok = .{ .int = @intCast(length) } };
+    }
+
     /// Returns an owned array containing copies of all storage keys.
     fn zkeys(self: *Handler) Result {
         const result = self.context.resources.memory.keysCopy(self.allocator) catch |err| {
@@ -418,10 +473,10 @@ pub const Handler = struct {
     /// Lists public commands or reports the command count.
     fn commandList(self: *Handler, args: []ZType) Result {
         const names = [_][]const u8{
-            "PING",     "GET",    "SET",    "GSET", "EXPIRE", "TTL",  "PERSIST",
-            "DELETE",   "FLUSH",  "MGET",   "MSET", "DBSIZE", "SAVE", "KEYS",
-            "LASTSAVE", "SIZEOF", "RENAME", "ECHO", "COPY",   "INFO", "COMMAND",
-            "CLIENT",
+            "PING",   "GET",    "SET",  "GSET",    "EXPIRE",   "TTL",    "PERSIST",
+            "DELETE", "FLUSH",  "MGET", "MSET",    "MSETNX",   "INCR",   "DECR",
+            "APPEND", "DBSIZE", "SAVE", "KEYS",    "LASTSAVE", "SIZEOF", "RENAME",
+            "ECHO",   "COPY",   "INFO", "COMMAND", "CLIENT",
         };
         if (args.len == 1 and args[0] == .str and std.ascii.eqlIgnoreCase(args[0].str, "COUNT")) {
             return .{ .ok = .{ .int = @intCast(names.len) } };

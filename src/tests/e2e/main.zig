@@ -135,6 +135,48 @@ fn runServer(tls: bool, config_path: ?[]const u8, log_path: ?[]const u8) !std.pr
     return child;
 }
 
+fn createE2EConfig(path: []const u8, tls: bool) !void {
+    const io = runtime_io.get();
+    var config_buf: [1536]u8 = undefined;
+    const config = if (tls)
+        try std.fmt.bufPrint(
+            &config_buf,
+            \\.{{
+            \\    .address = "{s}", .port = {d}, .workers = 2,
+            \\    .tls = .{{
+            \\        .enabled = true,
+            \\        .cert_path = "./src/tests/e2e/certificate.pem",
+            \\        .key_path = "./src/tests/e2e/private_key.pem",
+            \\        .verify_mode = .none,
+            \\    }},
+            \\    .log_network_payloads = false,
+            \\    .snapshot = .{{ .path = "{s}/snapshots" }},
+            \\    .aof = .{{ .flush_strategy = .no, .path = "{s}/appendonly.aof" }},
+            \\    .whitelist = .{{ "{s}" }},
+            \\}}
+        ,
+            .{ consts.HOST, consts.PORT, path, path, consts.HOST },
+        )
+    else
+        try std.fmt.bufPrint(
+            &config_buf,
+            \\.{{
+            \\    .address = "{s}", .port = {d}, .workers = 2,
+            \\    .tls = .{{ .enabled = false }},
+            \\    .log_network_payloads = false,
+            \\    .snapshot = .{{ .path = "{s}/snapshots" }},
+            \\    .aof = .{{ .flush_strategy = .no, .path = "{s}/appendonly.aof" }},
+            \\    .whitelist = .{{ "{s}" }},
+            \\}}
+        ,
+            .{ consts.HOST, consts.PORT, path, path, consts.HOST },
+        );
+
+    var config_path_buf: [96]u8 = undefined;
+    const config_path = try std.fmt.bufPrint(&config_path_buf, "{s}/config.zon", .{path});
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = config_path, .data = config });
+}
+
 pub fn connectSecure() !SecureStream {
     var socket = try connectUnsecure(SecureStream);
     errdefer socket.close();
@@ -161,7 +203,20 @@ pub fn main() !u8 {
     defer threaded_io.deinit();
     runtime_io.runtime = threaded_io.io();
 
-    var server_process = try runServer(false, null, null);
+    const cwd = std.Io.Dir.cwd();
+    var path_buf: [80]u8 = undefined;
+    const path = try std.fmt.bufPrint(&path_buf, ".zcached-e2e-main-{d}", .{runtime_io.timestampNanoseconds()});
+    try cwd.createDir(runtime_io.get(), path, .default_dir);
+    defer cwd.deleteTree(runtime_io.get(), path) catch |err| {
+        std.debug.print("\nFailed to clean up {s}: {s}\n", .{ path, @errorName(err) });
+    };
+    try createE2EConfig(path, false);
+
+    var config_path_buf: [112]u8 = undefined;
+    var log_path_buf: [112]u8 = undefined;
+    const config_path = try std.fmt.bufPrint(&config_path_buf, "{s}/config.zon", .{path});
+    const log_path = try std.fmt.bufPrint(&log_path_buf, "{s}/server.log", .{path});
+    var server_process = try runServer(false, config_path, log_path);
     errdefer if (server_process.id != null) {
         _ = stopServer(&server_process) catch |err| {
             std.debug.print("Failed to stop server: {s}\n", .{@errorName(err)});
@@ -179,7 +234,8 @@ pub fn main() !u8 {
     // For now it means memory leak or crash
     if (term != .exited or term.exited != 0) std.process.exit(1);
 
-    var secure_server_process = try runServer(true, null, null);
+    try createE2EConfig(path, true);
+    var secure_server_process = try runServer(true, config_path, log_path);
     errdefer if (secure_server_process.id != null) {
         _ = stopServer(&secure_server_process) catch |err| {
             std.debug.print("Failed to stop secure server: {s}\n", .{@errorName(err)});
@@ -227,7 +283,7 @@ fn runTests(socket: anytype) !void {
         false,
     );
 
-    try expectCommand(socket, &.{ "COMMAND", "COUNT" }, "COMMAND COUNT", ":22\r\n");
+    try expectCommand(socket, &.{ "COMMAND", "COUNT" }, "COMMAND COUNT", ":26\r\n");
     try expectCommand(socket, &.{ "CLIENT", "ID" }, "CLIENT ID", ":0\r\n");
 
     try sendAndExpect(
@@ -465,6 +521,70 @@ fn mgetAndMset(socket: anytype) !void {
         "*4\r\n$4\r\nMGET\r\n$4\r\nkey1\r\n$4\r\nkey2\r\n$4\r\nkey3\r\n\x03",
         "MGET multiple keys",
         "%3\r\n$4\r\nkey1\r\n:1\r\n$4\r\nkey2\r\n:2\r\n$4\r\nkey3\r\n:3\r\n",
+        false,
+    );
+
+    try sendAndExpect(
+        socket,
+        "*5\r\n$6\r\nMSETNX\r\n$7\r\ncounter\r\n:40\r\n$7\r\nmessage\r\n$5\r\nhello\r\n\x03",
+        "MSETNX new keys",
+        ":1\r\n",
+        false,
+    );
+    try sendAndExpect(
+        socket,
+        "*5\r\n$6\r\nMSETNX\r\n$4\r\nkey1\r\n:9\r\n$10\r\nnot-created\r\n$5\r\nvalue\r\n\x03",
+        "MSETNX existing key is atomic",
+        ":0\r\n",
+        false,
+    );
+    try sendAndExpect(
+        socket,
+        "*2\r\n$4\r\nINCR\r\n$7\r\ncounter\r\n\x03",
+        "INCR counter",
+        ":41\r\n",
+        false,
+    );
+    try sendAndExpect(
+        socket,
+        "*2\r\n$4\r\nDECR\r\n$7\r\ncounter\r\n\x03",
+        "DECR counter",
+        ":40\r\n",
+        false,
+    );
+    try sendAndExpect(
+        socket,
+        "*3\r\n$6\r\nAPPEND\r\n$7\r\nmessage\r\n$6\r\n world\r\n\x03",
+        "APPEND message",
+        ":11\r\n",
+        false,
+    );
+    try sendAndExpect(
+        socket,
+        "*2\r\n$3\r\nGET\r\n$7\r\nmessage\r\n\x03",
+        "GET appended message",
+        "$11\r\nhello world\r\n",
+        false,
+    );
+    try sendAndExpect(
+        socket,
+        "*2\r\n$3\r\nGET\r\n$10\r\nnot-created\r\n\x03",
+        "MSETNX did not insert another key",
+        "-NOT_FOUND\r\n",
+        false,
+    );
+    try sendAndExpect(
+        socket,
+        "*2\r\n$6\r\nDELETE\r\n$7\r\ncounter\r\n\x03",
+        "DELETE counter",
+        "+OK\r\n",
+        false,
+    );
+    try sendAndExpect(
+        socket,
+        "*2\r\n$6\r\nDELETE\r\n$7\r\nmessage\r\n\x03",
+        "DELETE message",
+        "+OK\r\n",
         false,
     );
 }

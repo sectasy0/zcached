@@ -8,6 +8,7 @@ const ZType = @import("../../protocol/types.zig").ZType;
 const types = @import("../../protocol/types.zig");
 const sets = @import("../../protocol/types.zig").sets;
 const commands = @import("../../server/processing/commands.zig");
+const Memory = @import("../../server/storage/memory.zig");
 
 fn runCommand(handler: *commands.Handler, items: []const ZType) !commands.Handler.Result {
     var command: std.array_list.Managed(ZType) = .init(handler.allocator);
@@ -26,10 +27,10 @@ test "INFO, COMMAND and CLIENT provide server introspection" {
     defer types.ztype_free(&info.ok, std.testing.allocator);
     try std.testing.expect(std.mem.indexOf(u8, info.ok.str, "zcached_version:0.0.1") != null);
 
-    try std.testing.expectEqual(@as(i64, 22), (try runCommand(&handler, &.{ .{ .str = "COMMAND" }, .{ .str = "COUNT" } })).ok.int);
+    try std.testing.expectEqual(@as(i64, 26), (try runCommand(&handler, &.{ .{ .str = "COMMAND" }, .{ .str = "COUNT" } })).ok.int);
     var command_result = try runCommand(&handler, &.{.{ .str = "COMMAND" }});
     try std.testing.expect(command_result == .ok);
-    try std.testing.expectEqual(@as(usize, 22), command_result.ok.array.items.len);
+    try std.testing.expectEqual(@as(usize, 26), command_result.ok.array.items.len);
     for (command_result.ok.array.items) |name| {
         try std.testing.expect(!std.ascii.eqlIgnoreCase(name.str, "PEXPIREAT"));
     }
@@ -436,6 +437,109 @@ test "should handle MSET and return KeyNotString" {
     const result = cmd_handler.process(&command_set);
 
     try std.testing.expectEqual(result.err, error.KeyNotString);
+}
+
+test "MSETNX atomically inserts all pairs or none" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    var handler = commands.Handler.init(fixture.allocator, fixture.context());
+
+    const inserted = try runCommand(&handler, &.{
+        .{ .str = "MSETNX" },
+        .{ .str = "first" },
+        .{ .str = "one" },
+        .{ .str = "second" },
+        .{ .int = 2 },
+    });
+    try std.testing.expectEqual(@as(i64, 1), inserted.ok.int);
+    try std.testing.expectEqualStrings("one", (try fixture.memory.?.get("first")).str);
+    try std.testing.expectEqual(@as(i64, 2), (try fixture.memory.?.get("second")).int);
+
+    const rejected = try runCommand(&handler, &.{
+        .{ .str = "MSETNX" },
+        .{ .str = "second" },
+        .{ .int = 20 },
+        .{ .str = "third" },
+        .{ .str = "three" },
+    });
+    try std.testing.expectEqual(@as(i64, 0), rejected.ok.int);
+    try std.testing.expectError(error.NotFound, fixture.memory.?.get("third"));
+    try std.testing.expectEqual(@as(i64, 2), (try fixture.memory.?.get("second")).int);
+    try std.testing.expectEqual(error.InvalidArgs, (try runCommand(&handler, &.{.{ .str = "MSETNX" }})).err);
+    try std.testing.expectEqual(error.KeyNotString, (try runCommand(&handler, &.{
+        .{ .str = "MSETNX" },
+        .{ .int = 1 },
+        .{ .str = "value" },
+    })).err);
+}
+
+test "INCR and DECR support integers and encoded integer strings" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    var handler = commands.Handler.init(fixture.allocator, fixture.context());
+
+    try std.testing.expectEqual(@as(i64, 1), (try runCommand(&handler, &.{
+        .{ .str = "INCR" },
+        .{ .str = "missing" },
+    })).ok.int);
+    try std.testing.expectEqual(@as(i64, 0), (try runCommand(&handler, &.{
+        .{ .str = "DECR" },
+        .{ .str = "missing" },
+    })).ok.int);
+
+    try fixture.memory.?.put("encoded", .{ .str = "41" });
+    try std.testing.expectEqual(@as(i64, 42), (try runCommand(&handler, &.{
+        .{ .str = "INCR" },
+        .{ .str = "encoded" },
+    })).ok.int);
+    try std.testing.expectEqualStrings("42", (try fixture.memory.?.get("encoded")).str);
+
+    try fixture.memory.?.put("not-integer", .{ .str = "nope" });
+    try std.testing.expectEqual(error.InvalidType, (try runCommand(&handler, &.{
+        .{ .str = "INCR" },
+        .{ .str = "not-integer" },
+    })).err);
+    try fixture.memory.?.put("overflow", .{ .int = std.math.maxInt(i64) });
+    try std.testing.expectEqual(error.InvalidType, (try runCommand(&handler, &.{
+        .{ .str = "INCR" },
+        .{ .str = "overflow" },
+    })).err);
+}
+
+test "APPEND creates strings, extends values, and preserves expiry" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    var handler = commands.Handler.init(fixture.allocator, fixture.context());
+
+    try std.testing.expectEqual(@as(i64, 5), (try runCommand(&handler, &.{
+        .{ .str = "APPEND" },
+        .{ .str = "key" },
+        .{ .str = "hello" },
+    })).ok.int);
+    const deadline = Memory.unixMillis() + 60_000;
+    try fixture.memory.?.putExpiring("key", .{ .str = "hello" }, deadline);
+    try std.testing.expectEqual(@as(i64, 11), (try runCommand(&handler, &.{
+        .{ .str = "APPEND" },
+        .{ .str = "key" },
+        .{ .str = " world" },
+    })).ok.int);
+    try std.testing.expectEqualStrings("hello world", (try fixture.memory.?.get("key")).str);
+    try std.testing.expect(fixture.memory.?.ttl("key") > 0);
+
+    try fixture.memory.?.put("number", .{ .int = 1 });
+    try std.testing.expectEqual(error.InvalidType, (try runCommand(&handler, &.{
+        .{ .str = "APPEND" },
+        .{ .str = "number" },
+        .{ .str = "2" },
+    })).err);
+    try std.testing.expectEqual(error.InvalidType, (try runCommand(&handler, &.{
+        .{ .str = "APPEND" },
+        .{ .str = "key" },
+        .{ .int = 1 },
+    })).err);
 }
 
 // Confirms KEYS returns all stored keys in the expected array.

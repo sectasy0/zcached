@@ -36,6 +36,10 @@ pub fn putExpiring(self: *Memory, key: []const u8, value: types.ZType, deadline:
     return self.fabric.putExpiring(key, value, deadline);
 }
 
+pub fn putAllIfAbsent(self: *Memory, entries: []const types.ZType) !bool {
+    return self.fabric.putAllIfAbsent(entries);
+}
+
 pub fn expireAt(self: *Memory, key: []const u8, deadline: i64) bool {
     return self.fabric.expireAt(key, deadline);
 }
@@ -59,6 +63,14 @@ pub fn get(self: *Memory, key: []const u8) !types.ZType {
 
 pub fn getCopy(self: *Memory, key: []const u8, allocator: std.mem.Allocator) !types.ZType {
     return self.fabric.getCopy(key, allocator);
+}
+
+pub fn increment(self: *Memory, key: []const u8, delta: i64) !i64 {
+    return self.fabric.increment(key, delta);
+}
+
+pub fn append(self: *Memory, key: []const u8, suffix: []const u8) !usize {
+    return self.fabric.append(key, suffix);
 }
 
 pub fn getOrSet(self: *Memory, key: []const u8, fallback: types.ZType, allocator: std.mem.Allocator) !Fabric.GetOrSetResult {

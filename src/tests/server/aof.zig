@@ -258,6 +258,26 @@ test "AOF stores successful mutations and replays them from configured path" {
         .{ .str = "second" },
     });
     try processCommand(&handler, fixture.allocator, &.{
+        .{ .str = "MSETNX" },
+        .{ .str = "counter" },
+        .{ .int = 40 },
+        .{ .str = "message" },
+        .{ .str = "hello" },
+    });
+    try processCommand(&handler, fixture.allocator, &.{
+        .{ .str = "INCR" },
+        .{ .str = "counter" },
+    });
+    try processCommand(&handler, fixture.allocator, &.{
+        .{ .str = "DECR" },
+        .{ .str = "counter" },
+    });
+    try processCommand(&handler, fixture.allocator, &.{
+        .{ .str = "APPEND" },
+        .{ .str = "message" },
+        .{ .str = " world" },
+    });
+    try processCommand(&handler, fixture.allocator, &.{
         .{ .str = "RENAME" },
         .{ .str = "original" },
         .{ .str = "renamed" },
@@ -279,6 +299,8 @@ test "AOF stores successful mutations and replays them from configured path" {
     try std.testing.expectEqualStrings("original-value", (try fixture.memory.?.get("renamed")).str);
     try std.testing.expectEqualStrings("first", (try fixture.memory.?.get("alpha")).str);
     try std.testing.expectEqualStrings("first", (try fixture.memory.?.get("copied")).str);
+    try std.testing.expectEqual(@as(i64, 40), (try fixture.memory.?.get("counter")).int);
+    try std.testing.expectEqualStrings("hello world", (try fixture.memory.?.get("message")).str);
     try std.testing.expectError(error.NotFound, fixture.memory.?.get("original"));
     try std.testing.expectError(error.NotFound, fixture.memory.?.get("beta"));
 

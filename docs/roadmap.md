@@ -36,8 +36,9 @@ the C API, corruption handling, and release hardening remain incomplete.
   the public command listing.
 - ◐ Finalize the public command set and mark internal commands as non-public.
 - ✅ Added `INFO`, `COMMAND`, and `CLIENT` commands for basic introspection.
-- ❌ Add the remaining standard cache operations required by the 1.0 API:
-  `MSETNX`, `INCR`, `DECR`, `APPEND`, and `STRLEN`.
+- ✅ Added the remaining standard cache operations required by the 1.0 API:
+  `MSETNX`, `INCR`, `DECR`, `APPEND`, and `SIZEOF` (zcached's string-size
+  command).
 - ✅ Documented the scalar and compound values supported by the protocol and
   storage, including unsupported empty/binary string parser cases and the lack
   of set-specific member commands.
