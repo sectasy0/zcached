@@ -16,10 +16,9 @@ Bulk strings use the `$` marker and a byte length:
 $<length>\r\n<content>\r\n
 ```
 
-The encoder supports empty strings. The current request parser only accepts
-non-empty, line-terminated content and does not validate the declared length;
-embedded CRLF and empty bulk strings are therefore not supported in requests.
-Do not rely on bulk strings being binary-safe until the parser is fixed.
+The declared byte length is authoritative. Empty strings and embedded CRLF are
+supported. See the complete [wire protocol specification](protocol.md) for
+framing and delimiter constraints.
 
 ### Simple strings
 
@@ -88,7 +87,8 @@ compound types:
 %<count>\r\n<key>\r\n<value>...
 ```
 
-Map keys must be bulk or simple strings. The current parser rejects empty maps.
+Map keys must be bulk or simple strings. The current request parser rejects
+empty maps.
 
 ### Ordered sets
 

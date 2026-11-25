@@ -27,8 +27,8 @@ the C API, corruption handling, and release hardening remain incomplete.
   multiple-key operations, and the newly added `GSET`.
 - ◐ Command behavior is documented in [commands.md](internals/commands.md).
 - 🧪 CI runs unit and E2E suites on Linux and macOS.
-- ❌ Freeze a complete protocol specification for RESP-compatible requests and
-  responses.
+- ✅ Froze the RESP-compatible request and response format in the
+  [wire protocol specification](internals/protocol.md).
 - ✅ Command errors return stable codes without descriptive or request-provided
   text; diagnostic logs share the timestamp/severity format and strip legacy
   decoration markers.

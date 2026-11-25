@@ -1,6 +1,9 @@
 ## Supported commands
 This documentation page provides a comprehesive guid to the commands supported by zcached, including their usage and sytanx.
 
+The request and response representation, including the zcached frame
+delimiter, is defined by the [wire protocol specification](protocol.md).
+
 Command errors use the common `-<CODE>\r\n` response followed by the
 zcached frame terminator. Replies contain stable error codes only; they do not
 include descriptive text or request-provided values.

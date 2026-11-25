@@ -29,6 +29,8 @@ be called out in release notes when practical.
 - Existing response types, framing, and meanings are stable within a major
   version. Changing a command's response type or changing the meaning of an
   existing field is a breaking change.
+  - The normative value encodings and transport framing for 1.x are frozen in
+    the [wire protocol specification](internals/protocol.md).
 - Existing error codes and the `-<CODE>` error response form are stable. New
   error codes may be added; clients should handle unrecognized codes
   generically.

@@ -533,7 +533,7 @@ fn mgetAndMset(socket: anytype) !void {
     );
     try sendAndExpect(
         socket,
-        "*5\r\n$6\r\nMSETNX\r\n$4\r\nkey1\r\n:9\r\n$10\r\nnot-created\r\n$5\r\nvalue\r\n\x03",
+        "*5\r\n$6\r\nMSETNX\r\n$4\r\nkey1\r\n:9\r\n$11\r\nnot-created\r\n$5\r\nvalue\r\n\x03",
         "MSETNX existing key is atomic",
         ":0\r\n",
         false,
@@ -568,7 +568,7 @@ fn mgetAndMset(socket: anytype) !void {
     );
     try sendAndExpect(
         socket,
-        "*2\r\n$3\r\nGET\r\n$10\r\nnot-created\r\n\x03",
+        "*2\r\n$3\r\nGET\r\n$11\r\nnot-created\r\n\x03",
         "MSETNX did not insert another key",
         "-NOT_FOUND\r\n",
         false,

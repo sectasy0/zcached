@@ -93,10 +93,19 @@ pub fn SerializerT(comptime GenericReader: type) type {
 
             if (string_len > MAX_BULK_LEN and MAX_BULK_LEN != 0) return error.PayloadExceeded;
 
-            const string = try self.takeLineSlice(reader);
-            if (string.len == 0) return error.Unprocessable;
+            const buffer = reader.context.buffer;
+            const start = reader.context.pos;
+            const end = std.math.add(usize, start, string_len) catch return error.Unprocessable;
+            const terminator_end = std.math.add(usize, end, 2) catch return error.Unprocessable;
+            if (terminator_end > buffer.len or
+                buffer[end] != '\r' or
+                buffer[end + 1] != '\n')
+            {
+                return error.Unprocessable;
+            }
 
-            return .{ .str = string[0..string.len] };
+            reader.context.pos = terminator_end;
+            return .{ .str = buffer[start..end] };
         }
 
         /// Parses a signed decimal integer from one protocol line.
@@ -166,7 +175,15 @@ pub fn SerializerT(comptime GenericReader: type) type {
         /// Consumes the null marker's remaining CRLF bytes and returns null.
         fn serializeNull(self: *Self, reader: GenericReader) SerializerError!types.ZType {
             _ = self;
-            reader.context.pos += 2; // we skip it, only one possible value
+            const buffer = reader.context.buffer;
+            const pos = reader.context.pos;
+            if (pos + 2 > buffer.len or
+                buffer[pos] != '\r' or
+                buffer[pos + 1] != '\n')
+            {
+                return error.Unprocessable;
+            }
+            reader.context.pos += 2;
             return .{ .null = {} };
         }
 
@@ -261,28 +278,12 @@ pub fn SerializerT(comptime GenericReader: type) type {
             const buf = reader.context.buffer;
             const start_pos = reader.context.pos;
 
-            // Find the position of the newline character '\n' starting from current position
             const end_pos = std.mem.indexOfScalarPos(u8, buf, start_pos, '\n') orelse {
-                // Return error if no newline is found
-                // This would happen only when malformed input is received
                 return error.Unprocessable;
             };
-            if (end_pos < start_pos) return error.Unprocessable; // sanity check
-
-            // Adjust the end position to skip a carriage return '\r' if it exists before '\n'
-            var line_end = end_pos;
-            if (line_end > start_pos and buf[line_end - 1] == '\r') {
-                line_end -= 1;
-            }
-
-            // Take a slice of the line (without '\r\n' or '\n') from the buffer
-            const line = buf[start_pos..line_end];
-
-            // Move the position past the newline character for the next read
-            reader.context.pos = line_end + 2;
-
-            // Return the slice pointing to the current line (zero-copy)
-            return line;
+            if (end_pos == start_pos or buf[end_pos - 1] != '\r') return error.Unprocessable;
+            reader.context.pos = end_pos + 1;
+            return buf[start_pos .. end_pos - 1];
         }
     };
 }
