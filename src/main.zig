@@ -93,7 +93,7 @@ fn panicHandler(msg: []const u8, first_trace_addr: ?usize) noreturn {
 }
 
 /// Builds the process runtime and starts the server using parsed CLI and config.
-pub fn main(init: std.process.Init) void {
+pub fn main(init: std.process.Init) !void {
     if (builtin.os.tag == .windows) @compileError("windows not supported");
 
     var gpa: std.heap.DebugAllocator(.{
@@ -236,7 +236,8 @@ pub fn main(init: std.process.Init) void {
     };
 
     aof.replay() catch |err| {
-        logger.warn("# failed to replay AOF file: {any}", .{err});
+        logger.err("# startup failed: AOF replay: {any}", .{err});
+        return err;
     };
 
     var expiry_task = agent.scheduleCancelable(Memory.purgeExpired, .{&memory}, 1) catch |err| {

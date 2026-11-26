@@ -1,5 +1,6 @@
 const std = @import("std");
 const fs = @import("fs");
+const runtime_io = @import("runtime_io");
 
 const Logger = @import("../server/logger.zig");
 const Config = @import("../server/config.zig");
@@ -17,6 +18,53 @@ const persistance = @import("../server/storage/persistance.zig");
 const Memory = @import("../server/storage/memory.zig");
 
 var running: std.atomic.Value(bool) = .init(true);
+
+pub const DiskFull = struct {
+    threadlocal var active: ?*DiskFull = null;
+
+    base: std.Io = undefined,
+    vtable: std.Io.VTable = undefined,
+    previous: ?std.Io = null,
+    remaining: usize,
+    fail_sync: bool = false,
+
+    pub fn start(self: *DiskFull) void {
+        std.debug.assert(active == null);
+        self.previous = runtime_io.thread_runtime;
+        self.base = runtime_io.get();
+        self.vtable = self.base.vtable.*;
+        self.vtable.operate = operate;
+        self.vtable.fileSync = sync;
+        active = self;
+        runtime_io.thread_runtime = .{ .userdata = self.base.userdata, .vtable = &self.vtable };
+    }
+
+    pub fn stop(self: *DiskFull) void {
+        runtime_io.thread_runtime = self.previous;
+        active = null;
+    }
+
+    fn operate(userdata: ?*anyopaque, operation: std.Io.Operation) std.Io.Cancelable!std.Io.Operation.Result {
+        const self = active.?;
+        if (operation != .file_write_streaming) return self.base.vtable.operate(userdata, operation);
+        const write = operation.file_write_streaming;
+        std.debug.assert(write.header.len == 0 and write.data.len == 1 and write.splat == 1);
+        if (self.remaining == 0) return .{ .file_write_streaming = error.NoSpaceLeft };
+        const data = write.data[0][0..@min(self.remaining, write.data[0].len)];
+        const result = try self.base.vtable.operate(userdata, .{ .file_write_streaming = .{
+            .file = write.file,
+            .data = &.{data},
+        } });
+        if (result.file_write_streaming) |written| self.remaining -= written else |_| {}
+        return result;
+    }
+
+    fn sync(userdata: ?*anyopaque, file: std.Io.File) std.Io.File.SyncError!void {
+        const self = active.?;
+        if (self.fail_sync) return error.NoSpaceLeft;
+        return self.base.vtable.fileSync(userdata, file);
+    }
+};
 
 pub const ContextFixture = struct {
     allocator: std.mem.Allocator,

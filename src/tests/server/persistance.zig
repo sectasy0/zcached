@@ -266,6 +266,45 @@ test "snapshot loader falls back after a newer corrupted snapshot" {
     try std.testing.expectEqual(@as(i64, 7), (try fixture.memory.?.get("old")).int);
 }
 
+test "snapshot disk full preserves the last completed snapshot" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    const path = try std.fmt.allocPrint(fixture.allocator, "./tmp/persist-full-{d}", .{runtime_io.timestampNanoseconds()});
+    defer fixture.allocator.free(path);
+    try fs.cwd().makePath(path);
+    defer fs.cwd().deleteTree(path) catch {};
+    fixture.persistance.?.path = path;
+    const memory = &fixture.memory.?;
+    try memory.put("before", .{ .int = 7 });
+    _ = try fixture.persistance.?.save(memory);
+    const last_save = memory.last_save.load(.monotonic);
+    for ([_]bool{ false, true }) |fail_sync| {
+        try memory.put("after", .{ .int = 8 });
+        {
+            var disk: fixtures.DiskFull = .{
+                .remaining = if (fail_sync) std.math.maxInt(usize) else 8,
+                .fail_sync = fail_sync,
+            };
+            disk.start();
+            defer disk.stop();
+            try std.testing.expectError(error.NoSpaceLeft, fixture.persistance.?.save(memory));
+            if (!fail_sync) try std.testing.expectEqual(@as(usize, 0), disk.remaining);
+        }
+        try std.testing.expectEqual(last_save, memory.last_save.load(.monotonic));
+        memory.flush();
+        try fixture.persistance.?.load(memory);
+        try std.testing.expectEqual(@as(i64, 7), (try memory.get("before")).int);
+        try std.testing.expectError(error.NotFound, memory.get("after"));
+    }
+    try memory.put("after", .{ .int = 8 });
+    _ = try fixture.persistance.?.save(memory);
+    memory.flush();
+    try fixture.persistance.?.load(memory);
+    try std.testing.expectEqual(@as(i64, 7), (try memory.get("before")).int);
+    try std.testing.expectEqual(@as(i64, 8), (try memory.get("after")).int);
+}
+
 // Verifies saving writes a snapshot and reports its serialized length.
 test "should save" {
     fs.cwd().makePath("./tmp/persist-save") catch {};

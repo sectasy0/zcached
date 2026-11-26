@@ -450,7 +450,6 @@ test "everysec flush waits for the database queue instead of a dedicated thread"
     try std.testing.expectEqual(@as(usize, 0), bufferedBytes(&aof));
 }
 
-// Ensures deinitialization cancels scheduled flushes before the handler's memory is freed.
 test "AOF replay skips malformed and torn trailing records" {
     var fixture = try ContextFixture.init();
     defer fixture.deinit();
@@ -460,8 +459,9 @@ test "AOF replay skips malformed and torn trailing records" {
     defer fs.cwd().deleteFile(path) catch {};
     try configureAOF(&fixture, path, .always);
     const file = try fs.cwd().createFile(path, .{});
-    try file.writeAll("*3\r\n$3\r\nSET\r\n$4\r\ngood\r\n:1\r\n\x03");
-    try file.writeAll("*1\r\n$3\r\nNOPE\x03");
+    const complete_records = "*3\r\n$3\r\nSET\r\n$4\r\ngood\r\n:1\r\n\x03" ++
+        "*1\r\n$3\r\nNOPE\x03";
+    try file.writeAll(complete_records);
     try file.writeAll("*3\r\n$3\r\nSET\r\n$3\r\nbad");
     file.close();
 
@@ -470,8 +470,95 @@ test "AOF replay skips malformed and torn trailing records" {
     try aof.replay();
     try std.testing.expectEqual(@as(i64, 1), (try fixture.memory.?.get("good")).int);
     try std.testing.expectError(error.NotFound, fixture.memory.?.get("bad"));
+    try std.testing.expectEqual(@as(u64, complete_records.len), try fileSize(path));
+    try aof.appendCommand(&.{ .{ .str = "SET" }, .{ .str = "after" }, .{ .int = 2 } });
+    fixture.memory.?.flush();
+    try aof.replay();
+    try std.testing.expectEqual(@as(i64, 1), (try fixture.memory.?.get("good")).int);
+    try std.testing.expectEqual(@as(i64, 2), (try fixture.memory.?.get("after")).int);
 }
 
+test "AOF recovery removes a wholly incomplete journal" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    const path = try uniquePath(fixture.allocator);
+    defer fixture.allocator.free(path);
+    defer fs.cwd().deleteFile(path) catch {};
+    try configureAOF(&fixture, path, .always);
+    const file = try fs.cwd().createFile(path, .{});
+    try file.writeAll("*3\r\n$3\r\nSET\r\n");
+    file.close();
+
+    var aof = try AOF.init(fixture.allocator, fixture.context());
+    defer aof.deinit();
+    try aof.replay();
+    try std.testing.expectEqual(@as(u64, 0), try fileSize(path));
+    try aof.appendCommand(&.{ .{ .str = "SET" }, .{ .str = "after" }, .{ .int = 3 } });
+    try aof.replay();
+    try std.testing.expectEqual(@as(i64, 3), (try fixture.memory.?.get("after")).int);
+}
+
+test "AOF retries a partially written batch after disk space is exhausted" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    const path = try uniquePath(fixture.allocator);
+    defer fixture.allocator.free(path);
+    defer fs.cwd().deleteFile(path) catch {};
+    try configureAOF(&fixture, path, .always);
+    var aof = try AOF.init(fixture.allocator, fixture.context());
+    defer aof.deinit();
+    try aof.appendCommand(&.{ .{ .str = "SET" }, .{ .str = "count" }, .{ .int = 1 } });
+    const original_size = try fileSize(path);
+
+    {
+        var disk: @import("../fixtures.zig").DiskFull = .{ .remaining = 8 };
+        disk.start();
+        defer disk.stop();
+        try std.testing.expectError(error.NoSpaceLeft, aof.appendCommand(&.{ .{ .str = "INCR" }, .{ .str = "count" } }));
+        try std.testing.expectEqual(@as(usize, 0), disk.remaining);
+    }
+    try std.testing.expectEqual(original_size + 8, try fileSize(path));
+    try std.testing.expect(bufferedBytes(&aof) > 0);
+    {
+        var disk: @import("../fixtures.zig").DiskFull = .{ .remaining = 3 };
+        disk.start();
+        defer disk.stop();
+        try std.testing.expectError(error.NoSpaceLeft, aof.flush());
+    }
+    try std.testing.expectEqual(original_size + 3, try fileSize(path));
+    try aof.flush();
+    try std.testing.expectEqual(@as(usize, 0), bufferedBytes(&aof));
+    try aof.replay();
+    try std.testing.expectEqual(@as(i64, 2), (try fixture.memory.?.get("count")).int);
+}
+
+test "AOF retries without duplicating a batch when syncing reports disk full" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    const path = try uniquePath(fixture.allocator);
+    defer fixture.allocator.free(path);
+    defer fs.cwd().deleteFile(path) catch {};
+    try configureAOF(&fixture, path, .always);
+    var aof = try AOF.init(fixture.allocator, fixture.context());
+    defer aof.deinit();
+    try aof.appendCommand(&.{ .{ .str = "SET" }, .{ .str = "count" }, .{ .int = 1 } });
+    const original_size = try fileSize(path);
+    {
+        var disk: @import("../fixtures.zig").DiskFull = .{ .remaining = std.math.maxInt(usize), .fail_sync = true };
+        disk.start();
+        defer disk.stop();
+        try std.testing.expectError(error.NoSpaceLeft, aof.appendCommand(&.{ .{ .str = "INCR" }, .{ .str = "count" } }));
+    }
+    try std.testing.expect((try fileSize(path)) > original_size);
+    try aof.flush();
+    try aof.replay();
+    try std.testing.expectEqual(@as(i64, 2), (try fixture.memory.?.get("count")).int);
+}
+
+// Ensures deinitialization cancels scheduled flushes before the handler's memory is freed.
 test "AOF deinit cancels pending flush before the AOF object is freed" {
     const io = runtime_io.get();
     var fixture = try ContextFixture.init();

@@ -70,8 +70,10 @@ Acceptance criteria:
 - ◐ Implement asynchronous save support (`ASAVE`); AOF rewrite is implemented.
 - ◐ Apply snapshot retention consistently and document precedence between
   snapshots and AOF recovery.
-- ❌ Add crash-recovery tests covering abrupt process termination and disk-full
-  or partially written files.
+- 🧪 Crash-recovery E2E tests cover abrupt process termination and partially
+  written snapshot and AOF files, followed by new writes and another restart.
+- 🧪 Fault-injection tests simulate disk-full errors during snapshot and AOF
+  writes and syncing, and verify recovery after space becomes available.
 - 🧪 Verify TTL, `COPY`, `RENAME`, `GSET`, and replay behavior across the
   available persistence modes.
 

@@ -36,8 +36,13 @@ absolute Unix-millisecond deadline argument. Subsequent mutations are appended
 as command records.
 
 AOF replay terminates at record boundaries, skips malformed command records,
-and ignores an unterminated torn tail left by an interrupted write.
+and truncates an unterminated torn tail left by an interrupted write before
+accepting new writes. If truncation or syncing fails, startup aborts.
 Successful AOF writes are synced before the buffered bytes are discarded.
+After a write or sync failure, retrying a buffered AOF flush first removes
+the incomplete or unconfirmed batch and writes it again from its original
+offset. If the process crashes before retrying, a fully written record whose
+sync failed may still be replayed; its durability was not confirmed.
 AOF rewrites are written and synced to a separate file before an atomic
 rename replaces the previous journal.
 

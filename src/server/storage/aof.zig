@@ -66,6 +66,8 @@ mutex: sync.Mutex = .{},
 flush_task: ?Agent.ScheduledTask = null,
 /// Normal buffer for new writes.
 buffer: std.array_list.Managed(u8),
+/// File offset before a flush that has not yet been fully written and synced.
+pending_flush_offset: ?u64 = null,
 
 /// Buffer used during rewrite (snapshot + merge).
 rewrite_buffer: std.array_list.Managed(u8),
@@ -224,6 +226,7 @@ fn flushQueued(self: *Self) void {
 }
 
 /// Replays terminated journal records into memory without recursively journaling them.
+/// An incomplete tail is truncated before new records can be appended.
 /// Malformed records are skipped; file, allocation, and protocol initialization failures propagate.
 pub fn replay(self: *Self) !void {
     if (self.strategy == .no) return;
@@ -267,10 +270,19 @@ pub fn replay(self: *Self) !void {
     var malformed_commands: usize = 0;
     const complete = buffer.len == 0 or buffer[buffer.len - 1] == consts.EXT_CHAR;
     if (!complete) {
+        const valid_size = if (std.mem.lastIndexOfScalar(u8, buffer, consts.EXT_CHAR)) |end| end + 1 else 0;
+        {
+            self.mutex.lock();
+            defer self.mutex.unlock();
+            try self.journal.inner.setLength(runtime_io.get(), valid_size);
+            try self.journal.inner.sync(runtime_io.get());
+            try self.journal.seekFromEnd(0);
+            _ = self.size.fetchSub(buffer.len - valid_size, .seq_cst);
+        }
         malformed_commands += 1;
         self.context.resources.logger.warn(
-            "# Ignoring torn trailing AOF record (total size: {d})",
-            .{buffer.len},
+            "# Truncated torn trailing AOF record ({d} bytes removed)",
+            .{buffer.len - valid_size},
         );
     }
     while (true) {
@@ -501,6 +513,7 @@ pub fn rewrite(self: *Self) void {
     self.last_rewrite_size.store(rewritten_size, .seq_cst);
     self.size.store(rewritten_size, .seq_cst);
     self.buffer.clearRetainingCapacity();
+    self.pending_flush_offset = null;
 }
 
 /// Writes a command into bounded buffer chunks, ensuring the final record has a terminator.
@@ -556,9 +569,15 @@ fn flushLocked(self: *Self) !void {
         return;
     }
 
+    if (self.pending_flush_offset) |offset| {
+        try self.journal.inner.setLength(runtime_io.get(), offset);
+    } else {
+        self.pending_flush_offset = (try self.journal.stat()).size;
+    }
     try self.journal.seekFromEnd(0);
     try self.journal.writeAll(self.buffer.items);
     try self.journal.inner.sync(runtime_io.get());
+    self.pending_flush_offset = null;
 
     if (self.buffer.capacity > BUFFER_MAX_SIZE) {
         self.buffer.clearAndFree();

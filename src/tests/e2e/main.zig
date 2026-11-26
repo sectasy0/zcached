@@ -263,6 +263,8 @@ pub fn main() !u8 {
 
     try testExpiryRecovery(.snapshot);
     try testExpiryRecovery(.aof);
+    try testCrashRecovery(.snapshot);
+    try testCrashRecovery(.aof);
 
     if (failed > 0) {
         std.debug.print("\n[SUMMARY] Test suite completed: {d} passed, {d} failed.\n", .{ passed, failed });
@@ -456,6 +458,80 @@ fn testExpiryRecovery(mode: enum { snapshot, aof }) !void {
         const term = try stopServer(&child);
         if (term != .exited or term.exited != 0) return error.ServerExitedUncleanly;
         if (boot == 0) runtime_io.sleepNanoseconds(3 * std.time.ns_per_s);
+    }
+}
+
+fn testCrashRecovery(mode: enum { snapshot, aof }) !void {
+    const io = runtime_io.get();
+    const cwd = std.Io.Dir.cwd();
+    var path_buf: [96]u8 = undefined;
+    const path = try std.fmt.bufPrint(&path_buf, ".zcached-e2e-crash-{s}-{d}", .{ @tagName(mode), runtime_io.timestampNanoseconds() });
+    try cwd.createDir(io, path, .default_dir);
+    defer cwd.deleteTree(io, path) catch |err| {
+        std.debug.print("\nFailed to clean up {s}: {s}\n", .{ path, @errorName(err) });
+    };
+
+    var config_path_buf: [128]u8 = undefined;
+    var log_path_buf: [128]u8 = undefined;
+    const config_path = try std.fmt.bufPrint(&config_path_buf, "{s}/config.zon", .{path});
+    const log_path = try std.fmt.bufPrint(&log_path_buf, "{s}/server.log", .{path});
+    var config_buf: [1024]u8 = undefined;
+    const config = try std.fmt.bufPrint(&config_buf,
+        \\.{{
+        \\    .address = "{s}", .port = {d}, .workers = 2,
+        \\    .tls = .{{ .enabled = false }},
+        \\    .log_network_payloads = false,
+        \\    .snapshot = .{{ .path = "{s}/snapshots" }},
+        \\    .aof = .{{ .flush_strategy = .{s}, .path = "{s}/appendonly.aof" }},
+        \\    .whitelist = .{{ "{s}" }},
+        \\}}
+    , .{ consts.HOST, consts.PORT, path, if (mode == .aof) "always" else "no", path, consts.HOST });
+    try cwd.writeFile(io, .{ .sub_path = config_path, .data = config });
+
+    std.debug.print("\n[{s} crash recovery] ", .{@tagName(mode)});
+    for (0..3) |boot| {
+        var child = try runServer(false, config_path, log_path);
+        defer if (child.id != null) {
+            child.kill(io);
+        };
+        {
+            var socket = try connectUnsecure(Stream);
+            defer socket.close();
+            if (boot == 0) {
+                try expectCommand(&socket, &.{ "SET", "durable", "first" }, "write before crash", "+OK\r\n");
+                if (mode == .snapshot) try expectCommand(&socket, &.{"SAVE"}, "save before crash", "+OK\r\n");
+            } else {
+                try expectCommand(&socket, &.{ "GET", "durable" }, "restore acknowledged write", "$5\r\nfirst\r\n");
+                try expectCommand(&socket, &.{ "GET", "incomplete" }, "ignore partial write", "-NOT_FOUND\r\n");
+                if (boot == 1) {
+                    try expectCommand(&socket, &.{ "SET", "after", "second" }, "write after recovery", "+OK\r\n");
+                    if (mode == .snapshot) try expectCommand(&socket, &.{"SAVE"}, "save after recovery", "+OK\r\n");
+                } else {
+                    try expectCommand(&socket, &.{ "GET", "after" }, "restore write after recovery", "$6\r\nsecond\r\n");
+                }
+            }
+        }
+        const pid = child.id orelse return error.ChildAlreadyWaited;
+        try std.posix.kill(pid, .KILL);
+        const term = try child.wait(io);
+        if (term != .signal or term.signal != .KILL) return error.ServerNotKilled;
+
+        if (boot == 0) {
+            var file_path_buf: [160]u8 = undefined;
+            const file_path = try std.fmt.bufPrint(&file_path_buf, "{s}/{s}", .{ path, if (mode == .aof)
+                "appendonly.aof"
+            else
+                "snapshots/dump_9223372036854775807.zcpf" });
+            if (mode == .aof) {
+                const file = try cwd.openFile(io, file_path, .{ .mode = .read_write });
+                defer file.close(io);
+                const size = (try file.stat(io)).size;
+                try io.vtable.fileSeekTo(io.userdata, file, size);
+                try file.writeStreamingAll(io, "*3\r\n$3\r\nSET\r\n$10\r\nincomplete\r\n$5\r\n");
+            } else {
+                try cwd.writeFile(io, .{ .sub_path = file_path, .data = "zcpf%1\r\n:12345678\r\n$10\r\nincomplete" });
+            }
+        }
     }
 }
 
