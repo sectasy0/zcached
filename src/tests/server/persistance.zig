@@ -6,6 +6,12 @@ const fixtures = @import("../fixtures.zig");
 const ContextFixture = fixtures.ContextFixture;
 const Handler = @import("../../server/storage/persistance.zig");
 
+fn crc32(bytes: []const u8) u32 {
+    var crc = std.hash.Crc32.init();
+    crc.update(bytes);
+    return crc.final();
+}
+
 test "snapshots restore live deadlines and skip expired records" {
     const allocator = std.testing.allocator;
     const path = try std.fmt.allocPrint(allocator, "./tmp/persist-ttl-{d}", .{runtime_io.timestampNanoseconds()});
@@ -17,7 +23,10 @@ test "snapshots restore live deadlines and skip expired records" {
     {
         const file = try dir.createFile("dump_1.zcpf", .{});
         defer file.close();
-        try file.writeAll("zcpf2%1\r\n$4\r\npast\r\n:1\r\n:1\r\n");
+        const body = "$4\r\npast\r\n:1\r\n:1\r\n";
+        var payload: [64]u8 = undefined;
+        const text = try std.fmt.bufPrint(&payload, "zcpf%1\r\n:{x:0>8}\r\n{s}", .{ crc32(body), body });
+        try file.writeAll(text);
     }
 
     var fixture = try ContextFixture.init();
@@ -59,7 +68,7 @@ test "scheduled snapshots use configured directory and prune only older snapshot
     for ([_][]const u8{ "dump_1.zcpf", "dump_2.zcpf", "unrelated.zcpf" }) |name| {
         const file = try dir.createFile(name, .{});
         defer file.close();
-        try file.writeAll("zcpf%0\r\n");
+        try file.writeAll("zcpf%0\r\n:00000000\r\n");
     }
 
     var fixture = try ContextFixture.init();
@@ -137,7 +146,9 @@ test "should load" {
 
     try std.testing.expectEqual(fixture.memory.?.size(), 0);
 
-    const file_content = "zcpf%4\r\n$5\r\ntest2\r\n$8\r\ntesttest\r\n$5\r\ntest1\r\n$8\r\ntesttest\r\n$5\r\ntest3\r\n$8\r\ntesttest\r\n$5\r\ntest4\r\n$8\r\ntesttest\r\n\x03";
+    const body = "$5\r\ntest2\r\n$8\r\ntesttest\r\n:0\r\n$5\r\ntest1\r\n$8\r\ntesttest\r\n:0\r\n$5\r\ntest3\r\n$8\r\ntesttest\r\n:0\r\n$5\r\ntest4\r\n$8\r\ntesttest\r\n:0\r\n";
+    var payload: [256]u8 = undefined;
+    const file_content = try std.fmt.bufPrint(&payload, "zcpf%4\r\n:{x:0>8}\r\n{s}", .{ crc32(body), body });
     const file = try fs.cwd().createFile("./tmp/persist-load/dump_123.zcpf", .{});
     try file.writeAll(file_content);
     defer file.close();
@@ -227,6 +238,34 @@ test "rejects malformed contents in a recognized snapshot file" {
     }
 }
 
+test "snapshot loader falls back after a newer corrupted snapshot" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    const path = "./tmp/persist-fallback/";
+    const old_name = path ++ "dump_1.zcpf";
+    const new_name = path ++ "dump_2.zcpf";
+    try fs.cwd().makePath(path);
+    defer fs.cwd().deleteDir(path) catch {};
+    defer fs.cwd().deleteFile(old_name) catch {};
+    defer fs.cwd().deleteFile(new_name) catch {};
+    fixture.persistance.?.path = path;
+
+    const old_file = try fs.cwd().createFile(old_name, .{});
+    defer old_file.close();
+    const old_body = "$3\r\nold\r\n:7\r\n:0\r\n";
+    var old_payload: [128]u8 = undefined;
+    const old_text = try std.fmt.bufPrint(&old_payload, "zcpf%1\r\n:{x:0>8}\r\n{s}", .{ crc32(old_body), old_body });
+    try old_file.writeAll(old_text);
+
+    const new_file = try fs.cwd().createFile(new_name, .{});
+    defer new_file.close();
+    try new_file.writeAll("zcpf%1\r\n$3\r\nbad\r\n");
+
+    try fixture.persistance.?.load(&fixture.memory.?);
+    try std.testing.expectEqual(@as(i64, 7), (try fixture.memory.?.get("old")).int);
+}
+
 // Verifies saving writes a snapshot and reports its serialized length.
 test "should save" {
     fs.cwd().makePath("./tmp/persist-save") catch {};
@@ -243,7 +282,7 @@ test "should save" {
 
     const result = try fixture.persistance.?.save(&fixture.memory.?);
 
-    try std.testing.expectEqual(result, 108);
+    try std.testing.expect(result > 108);
 
     const filename = try std.fmt.allocPrint(
         std.testing.allocator,

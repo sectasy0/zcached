@@ -124,13 +124,16 @@ fn encodeSnapshot(allocator: std.mem.Allocator, memory: *Memory, bytes: *std.arr
     defer iterator.deinit();
     var serializer = Serializer.init(allocator);
     defer serializer.deinit();
-    const versioned = iterator.hasExpiry();
-    try bytes.print("{s}%{d}\r\n", .{ if (versioned) "zcpf2" else "zcpf", iterator.count() });
+    var body: std.array_list.Managed(u8) = .init(allocator);
+    defer body.deinit();
     while (iterator.next()) |item| {
-        try bytes.appendSlice(try serializer.process(.{ .str = item.key_ptr.* }));
-        try bytes.appendSlice(try serializer.process(item.value_ptr.*));
-        if (versioned) try bytes.print(":{d}\r\n", .{item.expired_at});
+        try body.appendSlice(try serializer.process(.{ .str = item.key_ptr.* }));
+        try body.appendSlice(try serializer.process(item.value_ptr.*));
+        try body.print(":{d}\r\n", .{item.expired_at});
     }
+    const checksum = crc32(body.items);
+    try bytes.print("zcpf%{d}\r\n:{x:0>8}\r\n", .{ iterator.count(), checksum });
+    try bytes.appendSlice(body.items);
     return runtime_io.timestamp();
 }
 
@@ -171,6 +174,12 @@ fn snapshotTimestamp(name: []const u8) ?i64 {
     return std.fmt.parseInt(i64, digits, 10) catch null;
 }
 
+fn crc32(bytes: []const u8) u32 {
+    var crc = std.hash.Crc32.init();
+    crc.update(bytes);
+    return crc.final();
+}
+
 /// Loads the newest validly named snapshot from the configured directory into memory.
 /// Returns `InvalidFile` for absent or malformed data; filesystem and storage errors may propagate.
 pub fn load(self: *Handler, memory: *Memory) !void {
@@ -190,52 +199,145 @@ fn loadSnapshot(self: *Handler, memory: *Memory, historical: bool) !void {
         .iterate = true,
     });
     defer dir.close();
-
-    const latest_file = try self.getLatestFile(dir) orelse return error.InvalidFile;
-    defer self.allocator.free(latest_file.name);
-
-    const file = try dir.openFile(latest_file.name, .{ .mode = .read_only, .follow_symlinks = false });
-    defer file.close();
-
-    const size = (try file.stat()).size;
-    if (size < "zcpf%0\r\n".len) return error.InvalidFile;
-    const buffer = try self.allocator.alloc(u8, size);
-    defer self.allocator.free(buffer);
-
-    if (try file.readAll(buffer) != buffer.len) return error.InvalidFile;
-    if (!std.mem.eql(u8, buffer[0..4], "zcpf")) return error.InvalidFile;
-    defer self.deserializer.reset();
-    const versioned = buffer[4] == '2';
-    var stream = fixed_buffer_stream.fixedBufferStream(buffer[if (versioned) 5 else 4..]);
-    var reader = stream.reader();
-
-    const bytes = try reader.readUntilDelimiterAlloc(
-        self.allocator,
-        '\n',
-        std.math.maxInt(usize),
-    );
-    defer self.allocator.free(bytes);
-
-    if (bytes.len < 3 or bytes[0] != '%' or bytes[bytes.len - 1] != '\r') return error.InvalidFile;
-    const map_len = std.fmt.parseInt(usize, bytes[1 .. bytes.len - 1], 10) catch {
-        return error.InvalidLength;
-    };
-
-    const now = if (historical) 0 else Memory.unixMillis();
-    for (0..map_len) |_| {
-        const key = self.deserializer.process(reader) catch return error.InvalidFile;
-        if (key != .str) return error.InvalidFile;
-        const value = self.deserializer.process(reader) catch return error.InvalidFile;
-
-        const deadline = if (versioned) blk: {
-            const expiry = self.deserializer.process(reader) catch return error.InvalidFile;
-            if (expiry != .int or expiry.int < 0) return error.InvalidFile;
-            break :blk expiry.int;
-        } else 0;
-        if (deadline != 0 and deadline <= now) continue;
-        try memory.putExpiring(key.str, value, deadline);
+    var candidates = try std.array_list.Managed(FileEntry).initCapacity(self.allocator, 8);
+    defer {
+        for (candidates.items) |entry| self.allocator.free(entry.name);
+        candidates.deinit();
     }
-    memory.last_save.store(latest_file.timestamp, .monotonic);
+    var iterator = dir.iterate();
+    while (try iterator.next()) |file| {
+        if (file.kind != fs.File.Kind.file) continue;
+        const timestamp = snapshotTimestamp(file.name) orelse continue;
+        try candidates.append(.{ .name = try self.allocator.dupe(u8, file.name), .timestamp = timestamp });
+    }
+    if (candidates.items.len == 0) return error.InvalidFile;
+    std.mem.sort(FileEntry, candidates.items, {}, newer);
+
+    var corruption_seen = false;
+    for (candidates.items) |candidate| {
+        const file = dir.openFile(candidate.name, .{ .mode = .read_only, .follow_symlinks = false }) catch continue;
+        defer file.close();
+
+        const size = (file.stat() catch continue).size;
+        if (size < "zcpf%0\r\n".len) {
+            corruption_seen = true;
+            continue;
+        }
+        const buffer = self.allocator.alloc(u8, size) catch continue;
+        defer self.allocator.free(buffer);
+        if (file.readAll(buffer) catch continue != buffer.len) {
+            corruption_seen = true;
+            continue;
+        }
+
+        if (!std.mem.eql(u8, buffer[0..4], "zcpf")) {
+            corruption_seen = true;
+            continue;
+        }
+        if (buffer[4] != '%') {
+            corruption_seen = true;
+            continue;
+        }
+        const payload_start: usize = 4;
+        var stream = fixed_buffer_stream.fixedBufferStream(buffer[payload_start..]);
+        var reader = stream.reader();
+        const header = reader.readUntilDelimiterAlloc(self.allocator, '\n', std.math.maxInt(usize)) catch {
+            corruption_seen = true;
+            continue;
+        };
+        defer self.allocator.free(header);
+        if (header.len < 2 or header[0] != '%' or header[header.len - 1] != '\r') {
+            corruption_seen = true;
+            continue;
+        }
+        const map_len = std.fmt.parseInt(usize, header[1 .. header.len - 1], 10) catch {
+            corruption_seen = true;
+            continue;
+        };
+        const checksum_offset = payload_start + stream.pos;
+        if (checksum_offset + 11 > buffer.len or buffer[checksum_offset] != ':' or
+            buffer[checksum_offset + 9] != '\r' or buffer[checksum_offset + 10] != '\n')
+        {
+            corruption_seen = true;
+            continue;
+        }
+        const checksum_text = buffer[checksum_offset + 1 .. checksum_offset + 9];
+        for (checksum_text) |digit| {
+            if (!std.ascii.isHex(digit)) {
+                corruption_seen = true;
+                break;
+            }
+        } else {
+            const expected = std.fmt.parseUnsigned(u32, checksum_text, 16) catch {
+                corruption_seen = true;
+                continue;
+            };
+            stream.pos += 11;
+            if (crc32(buffer[payload_start + stream.pos ..]) != expected) {
+                corruption_seen = true;
+                continue;
+            }
+            // Continue only after a valid required checksum.
+        }
+
+        self.deserializer.reset();
+        defer self.deserializer.reset();
+        var valid = true;
+        for (0..map_len) |_| {
+            const key = self.deserializer.process(reader) catch {
+                valid = false;
+                break;
+            };
+            if (key != .str) {
+                valid = false;
+                break;
+            }
+            const value = self.deserializer.process(reader) catch {
+                valid = false;
+                break;
+            };
+            const expiry = self.deserializer.process(reader) catch {
+                valid = false;
+                break;
+            };
+            if (expiry != .int or expiry.int < 0) {
+                valid = false;
+                break;
+            }
+            _ = value;
+        }
+        if (!valid or (stream.pos < buffer[payload_start..].len and
+            !std.mem.eql(u8, buffer[payload_start + stream.pos ..], "\x03")))
+        {
+            corruption_seen = true;
+            continue;
+        }
+
+        self.deserializer.reset();
+        var stream2 = fixed_buffer_stream.fixedBufferStream(buffer[payload_start..]);
+        var reader2 = stream2.reader();
+        const apply_header = reader2.readUntilDelimiterAlloc(self.allocator, '\n', std.math.maxInt(usize)) catch continue;
+        defer self.allocator.free(apply_header);
+        const apply_checksum_offset = payload_start + stream2.pos;
+        if (apply_checksum_offset + 11 <= buffer.len) stream2.pos += 11;
+        const now = if (historical) 0 else Memory.unixMillis();
+        for (0..map_len) |_| {
+            const key = self.deserializer.process(reader2) catch continue;
+            if (key != .str) continue;
+            const value = self.deserializer.process(reader2) catch continue;
+            const expiry = self.deserializer.process(reader2) catch continue;
+            if (expiry != .int or expiry.int < 0) continue;
+            const deadline = expiry.int;
+            if (deadline != 0 and deadline <= now) continue;
+            try memory.putExpiring(key.str, value, deadline);
+        }
+        memory.last_save.store(candidate.timestamp, .monotonic);
+        if (corruption_seen) {
+            self.logger.warn("# loaded fallback snapshot {s}; newer corruption detected", .{candidate.name});
+        }
+        return;
+    }
+    return error.InvalidFile;
 }
 
 /// Finds the newest regular `.zcpf` file in `dir`, returning owned filename metadata if found.

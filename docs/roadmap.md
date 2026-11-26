@@ -63,10 +63,10 @@ Acceptance criteria:
 - ✅ Snapshot and AOF TTL metadata using absolute deadlines.
 - ✅ AOF flush strategies and background AOF rewrite.
 - 🧪 Snapshot, replay, rewrite, expiry, and TTL unit/E2E coverage exists.
-- ✅ Documented snapshot versions `zcpf`/`zcpf2` and the headerless AOF v1
+- ✅ Documented the CRC-bearing `zcpf` snapshot format and the headerless AOF v1
   format, with 1.x compatibility and future format-change rules in the
   [persistence format policy](internals/persistence_formats.md).
-- ❌ Add integrity and corruption handling for snapshot and AOF files.
+- ✅ Add integrity and corruption handling for snapshot and AOF files.
 - ◐ Implement asynchronous save support (`ASAVE`); AOF rewrite is implemented.
 - ◐ Apply snapshot retention consistently and document precedence between
   snapshots and AOF recovery.

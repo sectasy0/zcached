@@ -4,6 +4,7 @@
 const std = @import("std");
 const sync = @import("sync");
 const fs = @import("fs");
+const runtime_io = @import("runtime_io");
 const Config = @import("../config.zig");
 
 const consts = @import("../network/consts.zig");
@@ -263,6 +264,15 @@ pub fn replay(self: *Self) !void {
     handler.replaying = true;
 
     var replayed_commands: usize = 0;
+    var malformed_commands: usize = 0;
+    const complete = buffer.len == 0 or buffer[buffer.len - 1] == consts.EXT_CHAR;
+    if (!complete) {
+        malformed_commands += 1;
+        self.context.resources.logger.warn(
+            "# Ignoring torn trailing AOF record (total size: {d})",
+            .{buffer.len},
+        );
+    }
     while (true) {
         const command_bytes = reader.readUntilDelimiterAlloc(
             self.allocator,
@@ -272,6 +282,7 @@ pub fn replay(self: *Self) !void {
             if (error.EndOfStream == err) {
                 break;
             }
+            malformed_commands += 1;
             continue;
         };
 
@@ -279,9 +290,13 @@ pub fn replay(self: *Self) !void {
         defer protocol.reset();
 
         var command_stream = fixed_buffer_stream.fixedBufferStream(command_bytes);
-        const command_set = protocol.serialize(command_stream.reader()) catch continue;
+        const command_set = protocol.serialize(command_stream.reader()) catch {
+            malformed_commands += 1;
+            continue;
+        };
 
         if (std.meta.activeTag(command_set) != .array) {
+            malformed_commands += 1;
             continue;
         }
 
@@ -289,6 +304,7 @@ pub fn replay(self: *Self) !void {
 
         var cmd_result = handler.process(&command_set.array);
         if (cmd_result != .ok) {
+            malformed_commands += 1;
             continue;
         }
 
@@ -298,8 +314,8 @@ pub fn replay(self: *Self) !void {
 
     self.context.resources.logger.log(
         .Info,
-        "# Successfully replayed {d} commands from the AOF file (total size: {d})",
-        .{ replayed_commands, readed_size },
+        "# Successfully replayed {d} commands from the AOF file (total size: {d}, malformed/skipped: {d})",
+        .{ replayed_commands, readed_size, malformed_commands },
     );
 }
 
@@ -459,21 +475,17 @@ pub fn rewrite(self: *Self) void {
         );
         return;
     };
-    const rewritten_size = self.rewrite_buffer.items.len;
-
-    var delete_error = false;
-    const old_journal = self.journal;
-    fs.cwd().deleteFile(self.path) catch |err| {
+    rewritten.inner.sync(runtime_io.get()) catch |err| {
         self.context.resources.logger.log(
             .Error,
-            "# Failed to delete old AOF file: {}",
+            "# Failed to sync rewritten AOF file: {}",
             .{err},
         );
-        delete_error = true;
+        return;
     };
+    const rewritten_size = self.rewrite_buffer.items.len;
 
-    if (!delete_error) old_journal.close();
-
+    const old_journal = self.journal;
     fs.cwd().rename(rewritten_path, self.path) catch |err| {
         self.context.resources.logger.log(
             .Error,
@@ -482,6 +494,7 @@ pub fn rewrite(self: *Self) void {
         );
         return;
     };
+    old_journal.close();
 
     self.journal = rewritten;
     rewrite_installed = true;
@@ -545,6 +558,7 @@ fn flushLocked(self: *Self) !void {
 
     try self.journal.seekFromEnd(0);
     try self.journal.writeAll(self.buffer.items);
+    try self.journal.inner.sync(runtime_io.get());
 
     if (self.buffer.capacity > BUFFER_MAX_SIZE) {
         self.buffer.clearAndFree();

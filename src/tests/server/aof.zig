@@ -57,12 +57,19 @@ fn processCommand(
     handler.free(&command, &result);
 }
 
+fn crc32(bytes: []const u8) u32 {
+    var crc = std.hash.Crc32.init();
+    crc.update(bytes);
+    return crc.final();
+}
+
 fn keyDeadline(fixture: *ContextFixture, key: []const u8) !i64 {
     var iter = fixture.memory.?.iterator();
     defer iter.deinit();
     while (iter.next()) |entry| {
         if (std.mem.eql(u8, entry.key_ptr.*, key)) return entry.expired_at;
     }
+
     return error.NotFound;
 }
 
@@ -171,7 +178,10 @@ test "AOF replays historical snapshot keys and does not drop writes at the memor
     {
         const file = try dir.createFile("dump_1.zcpf", .{});
         defer file.close();
-        try file.writeAll("zcpf2%2\r\n$3\r\nold\r\n:1\r\n:1\r\n$4\r\ndest\r\n:2\r\n:0\r\n");
+        const body = "$3\r\nold\r\n:1\r\n:1\r\n$4\r\ndest\r\n:2\r\n:0\r\n";
+        var payload: [128]u8 = undefined;
+        const text = try std.fmt.bufPrint(&payload, "zcpf%2\r\n:{x:0>8}\r\n{s}", .{ crc32(body), body });
+        try file.writeAll(text);
     }
 
     const memory = &fixture.memory.?;
@@ -441,6 +451,27 @@ test "everysec flush waits for the database queue instead of a dedicated thread"
 }
 
 // Ensures deinitialization cancels scheduled flushes before the handler's memory is freed.
+test "AOF replay skips malformed and torn trailing records" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    const path = try uniquePath(fixture.allocator);
+    defer fixture.allocator.free(path);
+    defer fs.cwd().deleteFile(path) catch {};
+    try configureAOF(&fixture, path, .always);
+    const file = try fs.cwd().createFile(path, .{});
+    try file.writeAll("*3\r\n$3\r\nSET\r\n$4\r\ngood\r\n:1\r\n\x03");
+    try file.writeAll("*1\r\n$3\r\nNOPE\x03");
+    try file.writeAll("*3\r\n$3\r\nSET\r\n$3\r\nbad");
+    file.close();
+
+    var aof = try AOF.init(fixture.allocator, fixture.context());
+    defer aof.deinit();
+    try aof.replay();
+    try std.testing.expectEqual(@as(i64, 1), (try fixture.memory.?.get("good")).int);
+    try std.testing.expectError(error.NotFound, fixture.memory.?.get("bad"));
+}
+
 test "AOF deinit cancels pending flush before the AOF object is freed" {
     const io = runtime_io.get();
     var fixture = try ContextFixture.init();
