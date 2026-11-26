@@ -122,22 +122,88 @@ by separate documentation and conformance tests.
 Proposed surface:
 
 ```c
+typedef enum zcached_result {
+    ZCACHED_RESULT_OK = 0,
+    ZCACHED_RESULT_NOT_FOUND,
+    ZCACHED_RESULT_INVALID_ARGUMENT,
+    ZCACHED_RESULT_INVALID_RESPONSE,
+    ZCACHED_RESULT_SERVER_ERROR,
+    ZCACHED_RESULT_CONNECTION_CLOSED,
+    ZCACHED_RESULT_TIMEOUT,
+    ZCACHED_RESULT_IO_ERROR,
+    ZCACHED_RESULT_TLS_ERROR,
+    ZCACHED_RESULT_OUT_OF_MEMORY
+} zcached_result;
+
+typedef enum zcached_command {
+    ZCACHED_COMMAND_PING,
+    ZCACHED_COMMAND_GET,
+    ZCACHED_COMMAND_SET,
+    ZCACHED_COMMAND_GSET,
+    ZCACHED_COMMAND_EXPIRE,
+    ZCACHED_COMMAND_TTL,
+    ZCACHED_COMMAND_PERSIST,
+    ZCACHED_COMMAND_DELETE,
+    ZCACHED_COMMAND_FLUSH,
+    ZCACHED_COMMAND_MGET,
+    ZCACHED_COMMAND_MSET,
+    ZCACHED_COMMAND_MSETNX,
+    ZCACHED_COMMAND_INCR,
+    ZCACHED_COMMAND_DECR,
+    ZCACHED_COMMAND_APPEND,
+    ZCACHED_COMMAND_DBSIZE,
+    ZCACHED_COMMAND_SAVE,
+    ZCACHED_COMMAND_KEYS,
+    ZCACHED_COMMAND_LASTSAVE,
+    ZCACHED_COMMAND_SIZEOF,
+    ZCACHED_COMMAND_RENAME,
+    ZCACHED_COMMAND_ECHO,
+    ZCACHED_COMMAND_COPY,
+    ZCACHED_COMMAND_INFO,
+    ZCACHED_COMMAND_COMMAND,
+    ZCACHED_COMMAND_CLIENT
+} zcached_command;
+
+typedef struct zcached_value zcached_value;
+
+typedef struct zcached_request {
+    zcached_command command;
+    const zcached_value *arguments;
+    size_t argument_count;
+} zcached_request;
+
 zcached_client *zcached_connect(const zcached_options *options);
 void zcached_close(zcached_client *client);
 
-int zcached_ping(zcached_client *client);
-int zcached_get(zcached_client *client, const char *key,
-                zcached_string *value);
-int zcached_set(zcached_client *client, const char *key,
-                const zcached_string *value);
-int zcached_delete(zcached_client *client, const char *key);
+zcached_result zcached_ping(zcached_client *client);
+zcached_result zcached_get(zcached_client *client, const char *key,
+                           zcached_value **value);
+zcached_result zcached_set(zcached_client *client, const char *key,
+                           const zcached_value *value);
+zcached_result zcached_delete(zcached_client *client, const char *key);
 
 zcached_pipeline *zcached_pipeline_create(zcached_client *client);
-int zcached_pipeline_add(zcached_pipeline *pipeline,
-                         zcached_request *request);
-int zcached_pipeline_execute(zcached_pipeline *pipeline);
+zcached_result zcached_pipeline_add(zcached_pipeline *pipeline,
+                                    zcached_request *request);
+zcached_result zcached_pipeline_execute(zcached_pipeline *pipeline);
 void zcached_pipeline_free(zcached_pipeline *pipeline);
+void zcached_value_free(zcached_value *value);
 ```
+
+`zcached_result` provides a stable operation status consistently across
+single-command and pipeline calls. It replaces untyped integer status codes.
+Detailed server or transport diagnostics, if exposed, will use a separate
+opaque error value so ownership remains explicit.
+Pipeline requests use RESP-neutral command and argument data. The request and
+its referenced strings are borrowed only for the duration of
+`zcached_pipeline_add`; the pipeline copies the complete request before the
+function returns.
+`zcached_value` is an opaque handle backed by the existing Zig protocol value
+type. Its tagged-union layout and allocator details are not exported through
+the C ABI. Returned values are owned by the caller and released with
+`zcached_value_free`; values supplied to `SET` or pipeline requests remain
+caller-owned. Type-safe constructors and accessors for all scalar and compound
+value variants are part of the final public header.
 
 The final API may differ during API review, but 1.0.0 must provide:
 
