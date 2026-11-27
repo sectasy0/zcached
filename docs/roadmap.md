@@ -88,16 +88,19 @@ Acceptance criteria:
 
 ## 3. Security and operational behavior
 
-**Status:** ◐ partially complete
+**Status:** ✅ complete
 
 - ✅ TLS support is available for server and E2E client builds.
 - ✅ Per-worker client limits, idle/request timeouts, and pending-response
   limits are implemented.
 - ✅ IP whitelisting and configurable memory/request-related limits exist.
 - 🧪 Linux and macOS TLS builds and network timeout tests run in CI.
-- ❌ Add authentication, including `AUTH` and a supported password configuration.
-- ❌ Add ACL or role configuration, or explicitly keep 1.0.0 authentication scoped
-  to a small, documented password-based model.
+- 🧪 Authentication E2E covers unauthenticated access, invalid tokens,
+  successful authentication, and command/key-prefix authorization.
+- ✅ Added token authentication through `AUTH`, backed by a separate
+  principals file containing SHA-256 token hashes and per-connection state.
+- ✅ Added ACL groups, explicit command allow/deny lists, and read/write/delete
+  key prefixes, plus configurable authentication timeout and rate limiting.
 - ✅ Added configurable request, pipeline-command, batch-response, and
   single-response limits, including bounds for malformed collection counts.
 - ✅ Graceful shutdown and startup diagnostics are implemented: startup failures

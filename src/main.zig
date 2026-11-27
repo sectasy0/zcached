@@ -21,6 +21,7 @@ const Memory = @import("server/storage/memory.zig");
 const snapshot = @import("server/storage/snapshot.zig");
 const AOF = @import("server/storage/aof.zig");
 const Metrics = @import("server/metrics.zig");
+const Auth = @import("server/auth.zig");
 
 pub const panic = std.debug.FullPanic(panicHandler);
 
@@ -220,6 +221,11 @@ pub fn main(init: std.process.Init) !void {
         }
     };
 
+    var auth = Auth.init(allocator, config.auth) catch |err| {
+        logger.err("# startup failed: auth configuration: {any}", .{err});
+        return;
+    };
+    defer auth.deinit();
     var metrics: Metrics = .{};
     var context = Context{
         .config = &config,
@@ -229,6 +235,7 @@ pub fn main(init: std.process.Init) !void {
             .logger = &logger,
             .agent = &agent,
             .metrics = &metrics,
+            .auth = &auth,
         },
         .running = &running,
     };

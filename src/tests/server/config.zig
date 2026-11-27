@@ -105,6 +105,14 @@ test "config loads typed network, snapshot and logging sections" {
         \\        .max_pending_response_bytes = 65536,
         \\        .max_response_bytes = 1048576,
         \\    },
+        \\    .auth = .{
+        \\        .enabled = true,
+        \\        .path = "./tmp/auth.zon",
+        \\        .timeout_ms = 10000,
+        \\        .max_attempts = 3,
+        \\        .rate_window_ms = 30000,
+        \\        .rate_block_ms = 120000,
+        \\    },
         \\    .snapshot = .{ .path = "./tmp/snapshots", .interval_secs = 60, .keep_last = 3 },
         \\    .log = .{ .level = .@"error" },
         \\}
@@ -116,6 +124,12 @@ test "config loads typed network, snapshot and logging sections" {
     try std.testing.expectEqual(@as(usize, 64), config.network.max_pipeline_commands);
     try std.testing.expectEqual(@as(usize, 65536), config.network.max_pending_response_bytes);
     try std.testing.expectEqual(@as(usize, 1048576), config.network.max_response_bytes);
+    try std.testing.expect(config.auth.enabled);
+    try std.testing.expectEqualStrings("./tmp/auth.zon", config.auth.path.?);
+    try std.testing.expectEqual(@as(u32, 10000), config.auth.timeout_ms);
+    try std.testing.expectEqual(@as(u16, 3), config.auth.max_attempts);
+    try std.testing.expectEqual(@as(u32, 30000), config.auth.rate_window_ms);
+    try std.testing.expectEqual(@as(u32, 120000), config.auth.rate_block_ms);
     try std.testing.expectEqualStrings("./tmp/snapshots", config.snapshot.path.?);
     try std.testing.expectEqual(@as(u32, 60), config.snapshot.interval_secs);
     try std.testing.expectEqual(@as(usize, 3), config.snapshot.keep_last);
@@ -130,6 +144,7 @@ test "config rejects invalid operational settings" {
         .{ .source = ".{ .network = .{ .request_timeout_ms = -1 } }", .failure = error.ParseZon },
         .{ .source = ".{ .network = .{ .idle_timeout_ms = 4294967296 } }", .failure = error.ParseZon },
         .{ .source = ".{ .snapshot = .{ .path = \"\" } }", .failure = error.InvalidSnapshotPath },
+        .{ .source = ".{ .auth = .{ .path = \"\" } }", .failure = error.InvalidAuthPath },
         .{ .source = ".{ .snapshot = .{ .path = \"./persist\" }, .log = .{ .level = .verbose } }", .failure = error.ParseZon },
     }) |case| {
         try file.create(allocator, case.source);

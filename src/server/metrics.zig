@@ -9,6 +9,9 @@ connections_active: std.atomic.Value(usize) = .init(0),
 connections_closed: std.atomic.Value(usize) = .init(0),
 commands_total: std.atomic.Value(usize) = .init(0),
 command_errors_total: std.atomic.Value(usize) = .init(0),
+auth_failures_total: std.atomic.Value(usize) = .init(0),
+authorization_denials_total: std.atomic.Value(usize) = .init(0),
+auth_timeouts_total: std.atomic.Value(usize) = .init(0),
 malformed_requests_total: std.atomic.Value(usize) = .init(0),
 memory_limit_rejections_total: std.atomic.Value(usize) = .init(0),
 request_limit_rejections_total: std.atomic.Value(usize) = .init(0),
@@ -39,6 +42,7 @@ pub fn commandFailed(self: *Metrics, err: anyerror) void {
         error.Unprocessable, error.InvalidLength, error.InvalidType, error.InvalidKey, error.PayloadExceeded => _ = self.malformed_requests_total.fetchAdd(1, .monotonic),
         error.MemoryLimitExceeded => _ = self.memory_limit_rejections_total.fetchAdd(1, .monotonic),
         error.ResponseTooLarge => _ = self.response_limit_rejections_total.fetchAdd(1, .monotonic),
+        error.InvalidCredentials, error.AuthRateLimited, error.AuthTimeout, error.NoAuth => _ = self.auth_failures_total.fetchAdd(1, .monotonic),
         else => {},
     }
 }
@@ -58,6 +62,14 @@ pub fn responseBatch(self: *Metrics, count: usize) void {
 
 pub fn readTimeout(self: *Metrics) void {
     _ = self.read_timeouts_total.fetchAdd(1, .monotonic);
+}
+
+pub fn authorizationDenied(self: *Metrics) void {
+    _ = self.authorization_denials_total.fetchAdd(1, .monotonic);
+}
+
+pub fn authTimeout(self: *Metrics) void {
+    _ = self.auth_timeouts_total.fetchAdd(1, .monotonic);
 }
 
 pub fn writeFailed(self: *Metrics) void {

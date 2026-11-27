@@ -6,6 +6,7 @@ const Logger = @import("logger.zig");
 const Agent = @import("background/agent.zig");
 const Memory = @import("storage/memory.zig");
 const Metrics = @import("metrics.zig");
+const Auth = @import("auth.zig");
 const ZType = @import("../protocol/types.zig").ZType;
 
 /// Type-erased adapter for appending a command to the append-only persistence log.
@@ -33,6 +34,7 @@ pub const Resources = struct {
     agent: *Agent,
     /// Process-wide runtime counters.
     metrics: *Metrics,
+    auth: *Auth,
 };
 
 /// Services and configuration shared with request-processing code.

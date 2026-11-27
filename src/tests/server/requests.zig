@@ -4,6 +4,7 @@ const runtime_io = @import("runtime_io");
 
 const Connection = @import("../../server/network/connection.zig");
 const ZType = @import("../../protocol/types.zig").ZType;
+const Auth = @import("../../server/auth.zig");
 
 const fixtures = @import("../fixtures.zig");
 const ContextFixture = fixtures.ContextFixture;
@@ -239,6 +240,147 @@ test "ASAVE returns immediately and serializes background saves" {
     defer allocator.free(filename);
     const file = try fs.cwd().openFile(filename, .{});
     file.close();
+}
+
+test "AUTH authenticates pipelines and enforces command and key scopes" {
+    const allocator = std.testing.allocator;
+    const path = try std.fmt.allocPrint(allocator, "./tmp/auth-{d}.zon", .{runtime_io.timestampNanoseconds()});
+    defer allocator.free(path);
+    defer fs.cwd().deleteFile(path) catch {};
+    try fs.cwd().makePath("./tmp");
+    const file = try fs.cwd().createFile(path, .{});
+    defer file.close();
+    try file.writeAll(
+        \\.{
+        \\    .principals = .{
+        \\        .{
+        \\            .name = "app",
+        \\            .token_sha256 = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b",
+        \\            .permissions = .{
+        \\                .groups = .{ .basic, .diagnostic },
+        \\                .read = .{ "app:" },
+        \\                .write = .{ "app:" },
+        \\                .delete = .{ "app:" },
+        \\            },
+        \\        },
+        \\    },
+        \\}
+    );
+
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    fixture.config.auth.enabled = true;
+    fixture.config.auth.max_attempts = 2;
+    fixture.auth.deinit();
+    if (fixture.config.auth.path) |auth_path| allocator.free(auth_path);
+    fixture.config.auth.path = try allocator.dupe(u8, path);
+    fixture.auth = try Auth.init(allocator, fixture.config.auth);
+    try fixture.create_memory();
+    const incoming = try fixtures.ConnectionFixture.init(allocator);
+    var connection = incoming.connection;
+    defer connection.deinit();
+    var processor = try Processor.init(allocator, fixture.context());
+    defer processor.deinit();
+
+    processor.process(&connection, @constCast("*1\r\n$4\r\nPING\r\n"));
+    try std.testing.expectEqualStrings("-NOAUTH\r\n\x03", connection.tx_accumulator.items);
+    connection.tx_accumulator.clearRetainingCapacity();
+
+    processor.process(&connection, @constCast("*2\r\n$4\r\nAUTH\r\n$5\r\nwrong\r\n"));
+    try std.testing.expectEqualStrings("-INVALID_CREDENTIALS\r\n\x03", connection.tx_accumulator.items);
+    connection.tx_accumulator.clearRetainingCapacity();
+    processor.process(&connection, @constCast("*2\r\n$4\r\nAUTH\r\n$5\r\nwrong\r\n"));
+    try std.testing.expectEqualStrings("-INVALID_CREDENTIALS\r\n\x03", connection.tx_accumulator.items);
+    connection.tx_accumulator.clearRetainingCapacity();
+    processor.process(&connection, @constCast("*2\r\n$4\r\nAUTH\r\n$6\r\nsecret\r\n"));
+    try std.testing.expectEqualStrings("-AUTH_RATE_LIMITED\r\n\x03", connection.tx_accumulator.items);
+    connection.tx_accumulator.clearRetainingCapacity();
+
+    connection.auth = .{};
+    try connection.accumulator.appendSlice(
+        "*2\r\n$4\r\nAUTH\r\n$6\r\nsecret\r\n\x03" ++
+            "*3\r\n$3\r\nSET\r\n$7\r\napp:key\r\n:7\r\n\x03" ++
+            "*2\r\n$3\r\nGET\r\n$7\r\napp:key\r\n\x03" ++
+            "*2\r\n$3\r\nGET\r\n$9\r\nother:key\r\n\x03",
+    );
+    processor.deframe(&connection);
+    try std.testing.expectEqualStrings("+OK\r\n\x03+OK\r\n\x03:7\r\n\x03-NO_PERMISSION\r\n\x03", connection.tx_accumulator.items);
+    try std.testing.expectEqual(@as(i64, 7), (try fixture.memory.?.get("app:key")).int);
+}
+
+test "AUTH preflights every key in a multi-key command" {
+    const allocator = std.testing.allocator;
+    const path = try std.fmt.allocPrint(allocator, "./tmp/auth-multi-{d}.zon", .{runtime_io.timestampNanoseconds()});
+    defer allocator.free(path);
+    defer fs.cwd().deleteFile(path) catch {};
+    const file = try fs.cwd().createFile(path, .{});
+    defer file.close();
+    try file.writeAll(
+        \\.{
+        \\    .principals = .{
+        \\        .{
+        \\            .name = "writer",
+        \\            .token_sha256 = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b",
+        \\            .permissions = .{
+        \\                .groups = .{ .basic },
+        \\                .write = .{ "app:" },
+        \\            },
+        \\        },
+        \\    },
+        \\}
+    );
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    fixture.config.auth.enabled = true;
+    fixture.auth.deinit();
+    if (fixture.config.auth.path) |auth_path| allocator.free(auth_path);
+    fixture.config.auth.path = try allocator.dupe(u8, path);
+    fixture.auth = try Auth.init(allocator, fixture.config.auth);
+    try fixture.create_memory();
+    const incoming = try fixtures.ConnectionFixture.init(allocator);
+    var connection = incoming.connection;
+    defer connection.deinit();
+    connection.auth.principal = 0;
+    var processor = try Processor.init(allocator, fixture.context());
+    defer processor.deinit();
+
+    processor.process(&connection, @constCast("*5\r\n$4\r\nMSET\r\n$5\r\napp:a\r\n:1\r\n$7\r\nother:b\r\n:2\r\n"));
+    try std.testing.expectEqualStrings("-NO_PERMISSION\r\n\x03", connection.tx_accumulator.items);
+    try std.testing.expectError(error.NotFound, fixture.memory.?.get("app:a"));
+    try std.testing.expectError(error.NotFound, fixture.memory.?.get("other:b"));
+}
+
+test "auth files reject duplicate identities and permissive empty prefixes" {
+    const allocator = std.testing.allocator;
+    const cases = [_][]const u8{
+        \\.{
+        \\    .principals = .{
+        \\        .{ .name = "one", .token_sha256 = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b", .permissions = .{} },
+        \\        .{ .name = "one", .token_sha256 = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b", .permissions = .{} },
+        \\    },
+        \\}
+        ,
+        \\.{
+        \\    .principals = .{
+        \\        .{
+        \\            .name = "one",
+        \\            .token_sha256 = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b",
+        \\            .permissions = .{ .read = .{ "" } },
+        \\        },
+        \\    },
+        \\}
+        ,
+    };
+    for (cases, 0..) |contents, index| {
+        const path = try std.fmt.allocPrint(allocator, "./tmp/auth-invalid-{d}-{d}.zon", .{ runtime_io.timestampNanoseconds(), index });
+        defer allocator.free(path);
+        defer fs.cwd().deleteFile(path) catch {};
+        const file = try fs.cwd().createFile(path, .{});
+        try file.writeAll(contents);
+        file.close();
+        const config: @import("../../server/config.zig").AuthConfig = .{ .enabled = true, .path = path };
+        try std.testing.expectError(error.InvalidPrincipal, Auth.init(allocator, config));
+    }
 }
 
 test "processing repeated commands bounds protocol arena memory" {

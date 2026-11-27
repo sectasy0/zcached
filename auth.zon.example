@@ -1,0 +1,19 @@
+.{
+    .principals = .{
+        .{
+            .name = "app",
+            // SHA-256 of a high-entropy token, not the token itself:
+            // printf 'replace-with-a-random-token' | shasum -a 256
+            .token_sha256 = "d5b681d2d3f4e1f9a5a5e6a29f55cf1a5bd3f2e746b5ccf8c2f2f1f4b0f2f0d1",
+            .permissions = .{
+                .groups = .{ .basic, .diagnostic },
+                .allow = .{ "COPY", "RENAME" },
+                .deny = .{ "FLUSH" },
+                .read = .{ "app:", "shared:" },
+                .write = .{ "app:" },
+                .delete = .{ "app:" },
+                .admin = false,
+            },
+        },
+    },
+}

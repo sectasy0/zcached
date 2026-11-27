@@ -30,10 +30,10 @@ test "INFO, COMMAND and CLIENT provide server introspection" {
     try std.testing.expect(std.mem.indexOf(u8, info.ok.str, "commands_total:0\r\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, info.ok.str, "# Persistence\r\naof_enabled:") != null);
 
-    try std.testing.expectEqual(@as(i64, 27), (try runCommand(&handler, &.{ .{ .str = "COMMAND" }, .{ .str = "COUNT" } })).ok.int);
+    try std.testing.expectEqual(@as(i64, 28), (try runCommand(&handler, &.{ .{ .str = "COMMAND" }, .{ .str = "COUNT" } })).ok.int);
     var command_result = try runCommand(&handler, &.{.{ .str = "COMMAND" }});
     try std.testing.expect(command_result == .ok);
-    try std.testing.expectEqual(@as(usize, 27), command_result.ok.array.items.len);
+    try std.testing.expectEqual(@as(usize, 28), command_result.ok.array.items.len);
     for (command_result.ok.array.items) |name| {
         try std.testing.expect(!std.ascii.eqlIgnoreCase(name.str, "PEXPIREAT"));
     }

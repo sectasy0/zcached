@@ -64,10 +64,6 @@ pub fn deframe(self: *Processor, connection: *Connection) void {
 
         const request = connection.accumulator.items[start..request_end];
 
-        if (self.context.config.log_network_payloads) {
-            self.context.resources.logger.logEvent(.Request, request);
-        }
-
         self.process(connection, request);
 
         start = request_end + 1;
@@ -105,6 +101,27 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
     const command_set = &result.array;
     defer command_set.deinit();
     const max_response = self.context.config.network.max_response_bytes;
+    const is_auth = command_set.items.len > 0 and command_set.items[0] == .str and
+        std.ascii.eqlIgnoreCase(command_set.items[0].str, "AUTH");
+    if (self.context.config.log_network_payloads and !is_auth) {
+        self.context.resources.logger.logEvent(.Request, request);
+    }
+
+    if (is_auth) {
+        self.authenticate(connection, command_set);
+        return;
+    }
+    if (self.context.config.auth.enabled) {
+        const principal_index = connection.auth.principal orelse {
+            self.sendError(connection, error.NoAuth);
+            return;
+        };
+        if (!self.context.resources.auth.authorize(principal_index, command_set.items)) {
+            self.context.resources.metrics.authorizationDenied();
+            self.sendError(connection, error.NoPermission);
+            return;
+        }
+    }
 
     if (isGetCommand(command_set)) {
         self.processGet(connection, command_set, max_response);
@@ -143,6 +160,43 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
     if (self.context.config.log_network_payloads) {
         self.context.resources.logger.logEvent(.Response, connection.tx_accumulator.items[start .. connection.tx_accumulator.items.len - 1]);
     }
+}
+
+fn authenticate(
+    self: *Processor,
+    connection: *Connection,
+    command_set: *const std.array_list.Managed(ZType),
+) void {
+    if (!self.context.config.auth.enabled) {
+        self.sendError(connection, error.InvalidCommand);
+        return;
+    }
+    if (command_set.items.len != 2 or command_set.items[1] != .str) {
+        self.sendError(connection, error.InvalidCommand);
+        return;
+    }
+    self.context.resources.auth.authenticate(
+        &connection.auth,
+        command_set.items[1].str,
+        self.context.config.auth,
+    ) catch |err| {
+        self.sendError(connection, err);
+        return;
+    };
+    self.sendSimple(connection, "OK");
+}
+
+fn sendSimple(self: *Processor, connection: *Connection, text: []const u8) void {
+    const start = connection.tx_accumulator.items.len;
+    Deserializer.write(&connection.tx_accumulator, .{ .sstr = text }) catch |err| {
+        connection.tx_accumulator.shrinkRetainingCapacity(start);
+        self.sendError(connection, err);
+        return;
+    };
+    connection.tx_accumulator.append(consts.EXT_CHAR) catch |err| {
+        connection.tx_accumulator.shrinkRetainingCapacity(start);
+        self.sendError(connection, err);
+    };
 }
 
 /// Handles GET through storage's read-locked value callback to serialize directly to output.
@@ -227,6 +281,11 @@ fn sendError(self: *Processor, connection: *Connection, err: anyerror) void {
     errors.handle(connection.out(), err, self.context.resources.logger) catch |write_error| {
         self.context.resources.logger.err("event=error_response_write_failed error={s}", .{@errorName(write_error)});
     };
+}
+
+/// Sends a stable transport/session error without requiring a decoded command.
+pub fn sendConnectionError(self: *Processor, connection: *Connection, err: anyerror) void {
+    self.sendError(connection, err);
 }
 
 /// Releases protocol serializer and deserializer resources owned by this processor.

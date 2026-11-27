@@ -28,6 +28,15 @@ pub const LogConfig = struct {
     level: enum { debug, info, warning, @"error" } = .debug,
 };
 
+pub const AuthConfig = struct {
+    enabled: bool = false,
+    path: ?[]const u8 = null,
+    timeout_ms: u32 = 5000,
+    max_attempts: u16 = 5,
+    rate_window_ms: u32 = 60_000,
+    rate_block_ms: u32 = 60_000,
+};
+
 /// Default path used when no configuration file is supplied.
 pub const DEFAULT_PATH: []const u8 = "./zcached.conf.zon";
 
@@ -194,6 +203,7 @@ memory: Memory = .{},
 network: NetworkConfig = .{},
 snapshot: SnapshotConfig = .{},
 log: LogConfig = .{},
+auth: AuthConfig = .{},
 
 /// IP addresses permitted by the access middleware; storage is owned by this config.
 whitelist: std.array_list.Managed(Address) = undefined,
@@ -211,6 +221,7 @@ pub fn deinit(config: *const Config) void {
     if (config.tls.ca_path != null) config.allocator.free(config.tls.ca_path.?);
     if (config.aof.path != null) config.allocator.free(config.aof.path.?);
     if (config.snapshot.path) |path| config.allocator.free(path);
+    if (config.auth.path) |path| config.allocator.free(path);
 }
 
 /// Returns the configured listening address by value.
@@ -341,6 +352,12 @@ fn processAst(config: *Config, ast: std.zig.Ast) !void {
             config.log = try parseSection(LogConfig, config.allocator, source);
             continue;
         }
+        if (std.mem.eql(u8, field_name, "auth")) {
+            const auth = try parseSection(AuthConfig, config.allocator, source);
+            if (config.auth.path) |path| config.allocator.free(path);
+            config.auth = auth;
+            continue;
+        }
 
         processField(
             config,
@@ -370,6 +387,13 @@ fn parseSection(T: type, allocator: std.mem.Allocator, source: []const u8) !T {
         if (result.path) |path| {
             if (path.len == 0 or std.mem.indexOfScalar(u8, path, 0) != null)
                 return error.InvalidSnapshotPath;
+            result.path = try allocator.dupe(u8, path);
+        }
+    }
+    if (T == AuthConfig) {
+        if (result.path) |path| {
+            if (path.len == 0 or std.mem.indexOfScalar(u8, path, 0) != null)
+                return error.InvalidAuthPath;
             result.path = try allocator.dupe(u8, path);
         }
     }

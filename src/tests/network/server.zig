@@ -145,6 +145,27 @@ test "Server expires idle clients and enforces a deadline across request fragmen
     try check.result;
 }
 
+test "Server closes a connection that does not authenticate before its deadline" {
+    const io = runtime_io.get();
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    defer fixture.agent.deinit();
+    try fixture.create_memory();
+    fixture.config.auth.enabled = true;
+    fixture.config.auth.timeout_ms = 80;
+    fixture.config.network.idle_timeout_ms = 0;
+    var server = try Server.init(fixture.allocator, io, fixture.context());
+    defer server.deinit();
+    try server.transport.listen(Address.initIp4(.{ 127, 0, 0, 1 }, 0));
+    var task = try io.concurrent(Server.acceptConnections, .{ &server, io });
+    defer task.cancel(io) catch {};
+
+    const client = try server.transport.listen_address.ip.connect(io, .{ .mode = .stream });
+    defer client.close(io);
+    try expectResponseTimeout(client, "-AUTH_TIMEOUT\r\n\x03", 1000);
+    try expectClosed(io, client, 1000);
+}
+
 fn expectClosed(io: std.Io, stream: std.Io.net.Stream, ms: i64) !void {
     var byte: [1]u8 = undefined;
     var buffers = [_][]u8{&byte};

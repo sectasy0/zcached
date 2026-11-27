@@ -265,6 +265,7 @@ pub fn main() !u8 {
     try testExpiryRecovery(.aof);
     try testCrashRecovery(.snapshot);
     try testCrashRecovery(.aof);
+    try testAuthentication();
 
     if (failed > 0) {
         std.debug.print("\n[SUMMARY] Test suite completed: {d} passed, {d} failed.\n", .{ passed, failed });
@@ -273,6 +274,75 @@ pub fn main() !u8 {
         std.debug.print("\n[SUMMARY] Test suite completed successfully: all {d} tests passed.\n", .{passed});
         return 0; // Indicate success
     }
+}
+
+fn testAuthentication() !void {
+    const io = runtime_io.get();
+    const cwd = std.Io.Dir.cwd();
+    var path_buf: [96]u8 = undefined;
+    const path = try std.fmt.bufPrint(&path_buf, ".zcached-e2e-auth-{d}", .{runtime_io.timestampNanoseconds()});
+    try cwd.createDir(io, path, .default_dir);
+    defer cwd.deleteTree(io, path) catch |err| {
+        std.debug.print("\nFailed to clean up {s}: {s}\n", .{ path, @errorName(err) });
+    };
+
+    var auth_path_buf: [128]u8 = undefined;
+    const auth_path = try std.fmt.bufPrint(&auth_path_buf, "{s}/auth.zon", .{path});
+    try cwd.writeFile(io, .{ .sub_path = auth_path, .data =
+        \\.{
+        \\    .principals = .{
+        \\        .{
+        \\            .name = "e2e",
+        \\            .token_sha256 = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b",
+        \\            .permissions = .{
+        \\                .groups = .{ .basic },
+        \\                .read = .{ "app:" },
+        \\                .write = .{ "app:" },
+        \\            },
+        \\        },
+        \\    },
+        \\}
+    });
+
+    var config_path_buf: [128]u8 = undefined;
+    var log_path_buf: [128]u8 = undefined;
+    const config_path = try std.fmt.bufPrint(&config_path_buf, "{s}/config.zon", .{path});
+    const log_path = try std.fmt.bufPrint(&log_path_buf, "{s}/server.log", .{path});
+    var config_buf: [1536]u8 = undefined;
+    const config = try std.fmt.bufPrint(&config_buf,
+        \\.{{
+        \\    .address = "{s}", .port = {d}, .workers = 1,
+        \\    .tls = .{{ .enabled = false }},
+        \\    .auth = .{{
+        \\        .enabled = true,
+        \\        .path = "{s}",
+        \\        .timeout_ms = 2000,
+        \\        .max_attempts = 3,
+        \\        .rate_window_ms = 10000,
+        \\        .rate_block_ms = 10000,
+        \\    }},
+        \\    .whitelist = .{{ "{s}" }},
+        \\}}
+    , .{ consts.HOST, consts.PORT, auth_path, consts.HOST });
+    try cwd.writeFile(io, .{ .sub_path = config_path, .data = config });
+
+    std.debug.print("\n[authentication] ", .{});
+    var child = try runServer(false, config_path, log_path);
+    defer if (child.id != null) {
+        _ = stopServer(&child) catch {};
+    };
+    var socket = try connectUnsecure(Stream);
+    defer socket.close();
+
+    try expectCommand(&socket, &.{"PING"}, "auth required", "-NOAUTH\r\n");
+    try expectCommand(&socket, &.{ "AUTH", "wrong" }, "invalid token", "-INVALID_CREDENTIALS\r\n");
+    try expectCommand(&socket, &.{ "AUTH", "secret" }, "valid token", "+OK\r\n");
+    try expectCommand(&socket, &.{ "SET", "app:key", "value" }, "authorized write", "+OK\r\n");
+    try expectCommand(&socket, &.{ "GET", "app:key" }, "authorized read", "$5\r\nvalue\r\n");
+    try expectCommand(&socket, &.{ "GET", "other:key" }, "unauthorized prefix", "-NO_PERMISSION\r\n");
+
+    const term = try stopServer(&child);
+    if (term != .exited or term.exited != 0) return error.ServerExitedUncleanly;
 }
 
 fn runTests(socket: anytype) !void {
@@ -285,7 +355,7 @@ fn runTests(socket: anytype) !void {
         false,
     );
 
-    try expectCommand(socket, &.{ "COMMAND", "COUNT" }, "COMMAND COUNT", ":27\r\n");
+    try expectCommand(socket, &.{ "COMMAND", "COUNT" }, "COMMAND COUNT", ":28\r\n");
     try expectCommand(socket, &.{ "CLIENT", "ID" }, "CLIENT ID", ":0\r\n");
 
     try sendAndExpect(

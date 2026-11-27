@@ -31,6 +31,85 @@ Review these security-sensitive settings before exposing a listener:
 - Use TLS for traffic crossing an untrusted network. The TLS-enabled binary
   is built with `zig build -Dtls-enabled=true`.
 
+## Token authentication and ACLs
+
+Keep principals outside the main server configuration:
+
+```zon
+.auth = .{
+    .enabled = true,
+    .path = "/etc/zcached/auth.zon",
+    .timeout_ms = 5000,
+    .max_attempts = 5,
+    .rate_window_ms = 60000,
+    .rate_block_ms = 60000,
+}
+```
+
+`auth.zon` contains SHA-256 hashes, command groups, and key prefixes:
+
+```zon
+.{
+    .principals = .{
+        .{
+            .name = "app",
+            .token_sha256 = "<64 hexadecimal SHA-256 characters>",
+            .permissions = .{
+                .groups = .{ .basic, .diagnostic },
+                .allow = .{ "COPY", "RENAME" },
+                .deny = .{ "FLUSH" },
+                .read = .{ "app:", "shared:" },
+                .write = .{ "app:" },
+                .delete = .{ "app:" },
+                .admin = false,
+            },
+        },
+    },
+}
+```
+
+Generate a hash from a high-entropy token and store only the hash:
+
+```sh
+printf '%s' "$TOKEN" | shasum -a 256
+chmod 600 /etc/zcached/auth.zon
+```
+
+Authenticate once per connection with `AUTH <token>`. The selected principal
+then applies to the whole connection and survives pipelining in command order.
+Use TLS on untrusted networks because token authentication does not encrypt
+the transport. Authentication state is not global and is discarded when the
+connection closes.
+
+Command groups are:
+
+- `.read_only`: `PING`, `GET`, `MGET`, `TTL`, `SIZEOF`, `DBSIZE`;
+- `.basic`: ordinary read/write commands, excluding diagnostic and maintenance;
+- `.diagnostic`: `PING`, `INFO`, `COMMAND`, `CLIENT`, `LASTSAVE`, `DBSIZE`;
+- `.maintenance`: `SAVE`, `ASAVE`, `FLUSH`;
+- `.all`: every public command.
+
+`deny` takes precedence over `allow` and groups. `*` in an allow list grants
+every command. Prefix lists grant keys by exact byte prefix; `*` grants every
+key. Every key in `MGET`, `MSET`, and `MSETNX` is checked before execution.
+`COPY` checks source read and destination write; `RENAME` checks source read,
+source delete, and destination write. `KEYS` requires unrestricted read.
+`FLUSH` additionally requires `.admin = true`.
+
+Errors are stable:
+
+- `NOAUTH`: the connection has not authenticated;
+- `INVALID_CREDENTIALS`: token was not recognized;
+- `NO_PERMISSION`: command or key scope is denied;
+- `AUTH_RATE_LIMITED`: the connection is temporarily blocked.
+- `AUTH_TIMEOUT`: the connection did not authenticate before `timeout_ms`.
+
+`timeout_ms` closes connections that do not authenticate in time.
+`max_attempts`, `rate_window_ms`, and `rate_block_ms` control failed-token rate
+limiting per connection. A zero `max_attempts` disables that rate limiter;
+a zero `timeout_ms` disables the authentication deadline. Tokens are never
+written by the network payload logger.
+
 ## Resource limits
 
 Configure limits according to process memory, value size, client count, and

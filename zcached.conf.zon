@@ -27,6 +27,19 @@
         .max_response_bytes = 8388608, // 8 MiB
     },
 
+    // Token authentication and ACL configuration.
+    .auth = .{
+        .enabled = false,
+        // Keep this file outside the public configuration and restrict it to mode 0600.
+        .path = "./auth.zon",
+        // Deadline for the first successful AUTH after accepting a connection; 0 disables it.
+        .timeout_ms = 5000,
+        // Failed attempts allowed within rate_window_ms; 0 disables rate limiting.
+        .max_attempts = 5,
+        .rate_window_ms = 60000,
+        .rate_block_ms = 60000,
+    },
+
     // -------------------------
     // Memory and request limits
     // -------------------------

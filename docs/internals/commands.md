@@ -16,6 +16,11 @@ include descriptive text or request-provided values.
 | `INVALID_COMMAND` | Command syntax or arity is invalid. |
 | `INVALID_ARGUMENTS` | Command arguments are invalid. |
 | `NOT_FOUND` | The requested key does not exist. |
+| `NOAUTH` | Authentication is required for this connection. |
+| `INVALID_CREDENTIALS` | The supplied authentication token is invalid. |
+| `NO_PERMISSION` | The principal cannot execute the command for the requested keys. |
+| `AUTH_RATE_LIMITED` | Failed authentication attempts temporarily blocked this connection. |
+| `AUTH_TIMEOUT` | Authentication was not completed before the configured deadline. |
 | `MEMORY_LIMIT_EXCEEDED` | A mutation cannot be admitted because the memory limit is reached. |
 | `BUSY_KEY` | The destination key already exists. |
 | `INVALID_EXPIRY` | An expiration value is invalid. |
@@ -39,6 +44,24 @@ instead.
 
 `PEXPIREAT` is an internal AOF replay record, not a public command. Clients
 cannot invoke it directly, and `COMMAND` does not list it.
+
+### AUTH
+
+**Time complexity**: O(P), where P is the number of configured principals
+
+Authenticates the current connection using a high-entropy token. A successful
+request switches that connection to the matching principal before subsequent
+pipelined commands are evaluated.
+
+```sh
+AUTH <token>
+```
+
+Successful authentication returns `OK`. Failed authentication returns
+`INVALID_CREDENTIALS`, an unauthenticated protected request returns `NOAUTH`,
+and ACL rejection returns `NO_PERMISSION`. The token is never included in
+network payload logs. The auth principal and rate-limit state are discarded
+when the connection closes.
 
 ### PING
 

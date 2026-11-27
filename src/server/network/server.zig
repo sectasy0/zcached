@@ -169,10 +169,17 @@ fn serve(self: *Server, io: std.Io, incoming: StreamServer.Connection, slots: *s
     defer self.context.resources.logger.info("# connection with client closed: {any}", .{accepted.address});
 
     var request_deadline: std.Io.Timeout = .none;
+    var auth_deadline = if (self.context.config.auth.enabled)
+        deadline(io, self.context.config.auth.timeout_ms)
+    else
+        .none;
     while (self.context.running.load(.seq_cst)) {
         const idle_deadline = deadline(io, network.idle_timeout_ms);
-        const read_deadline = if (request_deadline == .none) idle_deadline else if (idle_deadline == .none or
+        var read_deadline = if (request_deadline == .none) idle_deadline else if (idle_deadline == .none or
             request_deadline.deadline.raw.nanoseconds <= idle_deadline.deadline.raw.nanoseconds) request_deadline else idle_deadline;
+        if (!connection.auth.isAuthenticated() and auth_deadline != .none and
+            (read_deadline == .none or auth_deadline.deadline.raw.nanoseconds < read_deadline.deadline.raw.nanoseconds))
+            read_deadline = auth_deadline;
         const max_size = self.context.config.max_request_size;
         connection.readPendingTimed(if (max_size == 0) std.math.maxInt(usize) else max_size, read_deadline) catch |err| {
             self.context.resources.metrics.requestBytes(connection.last_read_bytes);
@@ -184,6 +191,12 @@ fn serve(self: *Server, io: std.Io, incoming: StreamServer.Connection, slots: *s
                 error.Canceled => return error.Canceled,
                 error.Timeout => {
                     self.context.resources.metrics.readTimeout();
+                    if (self.context.config.auth.enabled and !connection.auth.isAuthenticated()) {
+                        self.context.resources.metrics.authTimeout();
+                        processor.sendConnectionError(&connection, error.AuthTimeout);
+                        connection.writePending() catch |write_err|
+                            self.context.resources.logger.debug("# failed to send auth timeout: {any}", .{write_err});
+                    }
                     return;
                 },
                 error.ConnectionClosed, error.ConnectionResetByPeer, error.SocketUnconnected => return,
@@ -204,6 +217,7 @@ fn serve(self: *Server, io: std.Io, incoming: StreamServer.Connection, slots: *s
         request_deadline = if (ends_in_frame) .none else deadline(io, network.request_timeout_ms);
         while (true) {
             processor.deframe(&connection);
+            if (connection.auth.isAuthenticated()) auth_deadline = .none;
             if (connection.tx_accumulator.items.len == 0) break;
             const batch_bytes = connection.tx_accumulator.items.len;
             connection.writePending() catch |err| {

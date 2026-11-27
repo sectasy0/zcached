@@ -7,11 +7,13 @@ const Address = @import("address.zig").Address;
 const consts = @import("consts.zig");
 const server = @import("stream_server.zig");
 const Stream = @import("stream.zig").Stream;
+const Auth = @import("../auth.zig");
 
 /// Current connection type, used by methods returning or mutating this value.
 const Self = @This();
 /// Upper bound for the adaptive size of a single socket read.
 const max_read_chunk: usize = 64 * 1024;
+
 /// Stream abstraction over the socket handle.
 stream: Stream,
 /// Remote address of the connected client.
@@ -27,6 +29,7 @@ read_chunk: usize = consts.CLIENT_BUFFER,
 last_read_bytes: usize = 0,
 /// Accumulator containing response bytes awaiting transmission.
 tx_accumulator: std.array_list.Managed(u8),
+auth: Auth.Session = .{},
 
 // --- Lifecycle ---
 
