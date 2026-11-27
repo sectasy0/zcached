@@ -112,15 +112,11 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
         return;
     }
     if (self.context.config.auth.enabled) {
-        const principal_index = connection.auth.principal orelse {
-            self.sendError(connection, error.NoAuth);
+        self.context.resources.auth.authorize(&connection.auth, command_set.items) catch |err| {
+            if (err == error.NoPermission) self.context.resources.metrics.authorizationDenied();
+            self.sendError(connection, err);
             return;
         };
-        if (!self.context.resources.auth.authorize(principal_index, command_set.items)) {
-            self.context.resources.metrics.authorizationDenied();
-            self.sendError(connection, error.NoPermission);
-            return;
-        }
     }
 
     if (isGetCommand(command_set)) {
@@ -173,6 +169,20 @@ fn authenticate(
     }
     if (command_set.items.len != 2 or command_set.items[1] != .str) {
         self.sendError(connection, error.InvalidCommand);
+        return;
+    }
+    if (std.ascii.eqlIgnoreCase(command_set.items[1].str, "RELOAD")) {
+        self.context.resources.auth.reload(&connection.auth, self.context.config.auth) catch |err| {
+            if (err == error.NoPermission) {
+                self.sendError(connection, err);
+                return;
+            }
+            self.context.resources.metrics.authReloadFailed();
+            self.sendError(connection, error.AuthReloadFailed);
+            return;
+        };
+        self.context.resources.metrics.authReloaded();
+        self.sendSimple(connection, "OK");
         return;
     }
     self.context.resources.auth.authenticate(

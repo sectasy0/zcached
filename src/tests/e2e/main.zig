@@ -292,6 +292,7 @@ fn testAuthentication() !void {
         \\.{
         \\    .principals = .{
         \\        .{
+        \\            .id = "e2e",
         \\            .name = "e2e",
         \\            .token_sha256 = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b",
         \\            .permissions = .{

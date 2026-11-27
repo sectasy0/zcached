@@ -491,7 +491,7 @@ pub const Handler = struct {
     fn info(self: *Handler) Result {
         const text = std.fmt.allocPrint(
             self.allocator,
-            "# Server\r\nzcached_version:0.0.1\r\nworkers:{d}\r\nmax_clients:{d}\r\ntls_enabled:{s}\r\n\r\n# Connections\r\nconnections_accepted_total:{d}\r\nconnections_active:{d}\r\nconnections_closed_total:{d}\r\nread_timeouts_total:{d}\r\nauth_timeouts_total:{d}\r\nrequest_limit_rejections_total:{d}\r\n\r\n# Traffic\r\ncommands_total:{d}\r\ncommand_errors_total:{d}\r\nauth_failures_total:{d}\r\nauthorization_denials_total:{d}\r\nmalformed_requests_total:{d}\r\nmemory_limit_rejections_total:{d}\r\nresponse_limit_rejections_total:{d}\r\nrequest_bytes_total:{d}\r\nresponse_bytes_total:{d}\r\nresponse_batches_total:{d}\r\nwrite_errors_total:{d}\r\n\r\n# Persistence\r\naof_enabled:{s}\r\nlast_save_timestamp:{d}\r\nsave_in_progress:{s}\r\n\r\n# Keyspace\r\ndb_keys:{d}\r\nused_memory:{d}\r\nmemory_limit:{d}\r\n",
+            "# Server\r\nzcached_version:0.0.1\r\nworkers:{d}\r\nmax_clients:{d}\r\ntls_enabled:{s}\r\n\r\n# Connections\r\nconnections_accepted_total:{d}\r\nconnections_active:{d}\r\nconnections_closed_total:{d}\r\nread_timeouts_total:{d}\r\nauth_timeouts_total:{d}\r\nrequest_limit_rejections_total:{d}\r\n\r\n# Auth\r\nauth_generation:{d}\r\nauth_reload_total:{d}\r\nauth_reload_failures_total:{d}\r\n\r\n# Traffic\r\ncommands_total:{d}\r\ncommand_errors_total:{d}\r\nauth_failures_total:{d}\r\nauthorization_denials_total:{d}\r\nmalformed_requests_total:{d}\r\nmemory_limit_rejections_total:{d}\r\nresponse_limit_rejections_total:{d}\r\nrequest_bytes_total:{d}\r\nresponse_bytes_total:{d}\r\nresponse_batches_total:{d}\r\nwrite_errors_total:{d}\r\n\r\n# Persistence\r\naof_enabled:{s}\r\nlast_save_timestamp:{d}\r\nsave_in_progress:{s}\r\n\r\n# Keyspace\r\ndb_keys:{d}\r\nused_memory:{d}\r\nmemory_limit:{d}\r\n",
             .{
                 self.context.config.workers,
                 self.context.config.max_clients,
@@ -502,6 +502,9 @@ pub const Handler = struct {
                 self.context.resources.metrics.read_timeouts_total.load(.monotonic),
                 self.context.resources.metrics.auth_timeouts_total.load(.monotonic),
                 self.context.resources.metrics.request_limit_rejections_total.load(.monotonic),
+                self.context.resources.auth.currentGeneration(),
+                self.context.resources.metrics.auth_reload_total.load(.monotonic),
+                self.context.resources.metrics.auth_reload_failures_total.load(.monotonic),
                 self.context.resources.metrics.commands_total.load(.monotonic),
                 self.context.resources.metrics.command_errors_total.load(.monotonic),
                 self.context.resources.metrics.auth_failures_total.load(.monotonic),

@@ -3,6 +3,7 @@
 const std = @import("std");
 const fs = @import("fs");
 const runtime_io = @import("runtime_io");
+const sync = @import("sync");
 const Config = @import("config.zig");
 const ZType = @import("../protocol/types.zig").ZType;
 
@@ -25,12 +26,14 @@ const Permissions = struct {
 };
 
 const PrincipalConfig = struct {
+    id: []const u8,
     name: []const u8,
     token_sha256: []const u8,
     permissions: Permissions,
 };
 
 pub const Principal = struct {
+    id: []const u8,
     name: []const u8,
     token_hash: [32]u8,
     permissions: Permissions,
@@ -43,22 +46,33 @@ const File = struct {
 const Store = @This();
 
 pub const Session = struct {
-    principal: ?usize = null,
+    principal_id: [64]u8 = @splat(0),
+    principal_id_len: usize = 0,
+    credential_hash: [32]u8 = @splat(0),
     attempts: u16 = 0,
     window_started: i64 = 0,
     blocked_until: i64 = 0,
 
     pub fn isAuthenticated(self: *const Session) bool {
-        return self.principal != null;
+        return self.principal_id_len != 0;
+    }
+
+    pub fn clear(self: *Session) void {
+        self.principal_id_len = 0;
+        self.credential_hash = @splat(0);
     }
 };
 
+allocator: std.mem.Allocator,
 enabled: bool,
+mutex: sync.Mutex = .{},
+generation: std.atomic.Value(usize) = .init(0),
 arena: std.heap.ArenaAllocator,
 principals: []Principal = &.{},
 
 pub fn init(allocator: std.mem.Allocator, config: Config.AuthConfig) !Store {
     var store = Store{
+        .allocator = allocator,
         .enabled = config.enabled,
         .arena = .init(allocator),
     };
@@ -85,17 +99,19 @@ pub fn init(allocator: std.mem.Allocator, config: Config.AuthConfig) !Store {
     if (parsed.principals.len == 0) return error.InvalidAuthFile;
     store.principals = try arena.alloc(Principal, parsed.principals.len);
     for (parsed.principals, 0..) |entry, index| {
-        if (entry.name.len == 0 or entry.token_sha256.len != 64)
+        if (entry.id.len == 0 or entry.id.len > 64 or entry.name.len == 0 or entry.token_sha256.len != 64)
             return error.InvalidPrincipal;
         var token_hash: [32]u8 = undefined;
         _ = std.fmt.hexToBytes(&token_hash, entry.token_sha256) catch return error.InvalidPrincipal;
         validatePermissions(entry.permissions) catch return error.InvalidPrincipal;
         for (store.principals[0..index]) |previous| {
-            if (std.mem.eql(u8, previous.name, entry.name) or
+            if (std.mem.eql(u8, previous.id, entry.id) or
+                std.mem.eql(u8, previous.name, entry.name) or
                 std.crypto.timing_safe.eql([32]u8, previous.token_hash, token_hash))
                 return error.InvalidPrincipal;
         }
         store.principals[index] = .{
+            .id = entry.id,
             .name = entry.name,
             .token_hash = token_hash,
             .permissions = entry.permissions,
@@ -109,15 +125,20 @@ pub fn deinit(self: *Store) void {
 }
 
 pub fn authenticate(
-    self: *const Store,
+    self: *Store,
     session: *Session,
     token: []const u8,
     policy: Config.AuthConfig,
 ) error{ InvalidCredentials, AuthRateLimited }!void {
+    self.mutex.lock();
+    defer self.mutex.unlock();
     const now = std.Io.Clock.awake.now(runtime_io.get()).toMilliseconds();
     if (session.blocked_until > now) return error.AuthRateLimited;
     if (self.findPrincipal(token)) |principal_index| {
-        session.principal = principal_index;
+        const selected = self.principals[principal_index];
+        @memcpy(session.principal_id[0..selected.id.len], selected.id);
+        session.principal_id_len = selected.id.len;
+        session.credential_hash = selected.token_hash;
         session.attempts = 0;
         session.window_started = now;
         session.blocked_until = 0;
@@ -155,18 +176,73 @@ fn validatePermissions(permissions: Permissions) !void {
     for (permissions.delete) |value| if (value.len == 0) return error.InvalidPermissions;
 }
 
-pub fn principal(self: *const Store, index: usize) ?*const Principal {
-    return if (index < self.principals.len) &self.principals[index] else null;
+fn principalById(self: *Store, id: []const u8) ?*Principal {
+    for (self.principals) |*entry| if (std.mem.eql(u8, entry.id, id)) return entry;
+    return null;
 }
 
-pub fn authorize(self: *const Store, principal_index: usize, command_set: []const ZType) bool {
-    const selected = self.principal(principal_index) orelse return false;
+fn validateSessionLocked(self: *Store, session: *Session) ?*Principal {
+    if (!session.isAuthenticated()) return null;
+    const selected = self.principalById(session.principal_id[0..session.principal_id_len]) orelse {
+        session.clear();
+        return null;
+    };
+    if (!std.crypto.timing_safe.eql([32]u8, session.credential_hash, selected.token_hash)) {
+        session.clear();
+        return null;
+    }
+    return selected;
+}
+
+pub fn authorize(self: *Store, session: *Session, command_set: []const ZType) error{ NoAuth, NoPermission }!void {
+    self.mutex.lock();
+    defer self.mutex.unlock();
+    if (!session.isAuthenticated()) return error.NoAuth;
+    const selected = self.principalById(session.principal_id[0..session.principal_id_len]) orelse {
+        session.clear();
+        return error.NoAuth;
+    };
+    if (!std.crypto.timing_safe.eql([32]u8, session.credential_hash, selected.token_hash)) {
+        session.clear();
+        return error.NoAuth;
+    }
+    if (!authorizePrincipal(selected, command_set)) return error.NoPermission;
+}
+
+fn authorizePrincipal(selected: *const Principal, command_set: []const ZType) bool {
     if (command_set.len == 0 or command_set[0] != .str) return false;
     const command = command_set[0].str;
     if (commandDenied(selected.permissions, command)) return false;
     if (!commandAllowed(selected.permissions, command)) return false;
     if (std.ascii.eqlIgnoreCase(command, "FLUSH") and !selected.permissions.admin) return false;
     return scopesAllowed(selected.permissions, command, command_set);
+}
+
+pub fn reload(self: *Store, session: *Session, config: Config.AuthConfig) !void {
+    const replacement = try init(self.allocator, config);
+    self.mutex.lock();
+    const selected = self.validateSessionLocked(session) orelse {
+        self.mutex.unlock();
+        replacement.arena.deinit();
+        return error.NoPermission;
+    };
+    const reload_request = [_]ZType{ .{ .str = "AUTH" }, .{ .str = "RELOAD" } };
+    if (!selected.permissions.admin or !authorizePrincipal(selected, &reload_request)) {
+        self.mutex.unlock();
+        replacement.arena.deinit();
+        return error.NoPermission;
+    }
+    var old_arena = self.arena;
+    self.enabled = replacement.enabled;
+    self.principals = replacement.principals;
+    self.arena = replacement.arena;
+    self.mutex.unlock();
+    old_arena.deinit();
+    _ = self.generation.fetchAdd(1, .monotonic);
+}
+
+pub fn currentGeneration(self: *const Store) usize {
+    return self.generation.load(.monotonic);
 }
 
 fn commandDenied(permissions: Permissions, command: []const u8) bool {
@@ -188,7 +264,7 @@ fn groupContains(group: CommandGroup, command: []const u8) bool {
         .read_only => &.{ "PING", "GET", "MGET", "TTL", "SIZEOF", "DBSIZE" },
         .basic => &.{ "PING", "GET", "SET", "GSET", "EXPIRE", "TTL", "PERSIST", "DELETE", "MGET", "MSET", "MSETNX", "INCR", "DECR", "APPEND", "SIZEOF", "RENAME", "ECHO", "COPY" },
         .diagnostic => &.{ "PING", "INFO", "COMMAND", "CLIENT", "LASTSAVE", "DBSIZE" },
-        .maintenance => &.{ "SAVE", "ASAVE", "FLUSH" },
+        .maintenance => &.{ "SAVE", "ASAVE", "FLUSH", "AUTH" },
         .all => &.{},
     };
     for (names) |name| if (std.ascii.eqlIgnoreCase(name, command)) return true;

@@ -1,6 +1,7 @@
 .{
     .principals = .{
         .{
+            .id = "app-production",
             .name = "app",
             // SHA-256 of a high-entropy token, not the token itself:
             // printf 'replace-with-a-random-token' | shasum -a 256

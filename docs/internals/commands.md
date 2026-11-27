@@ -21,6 +21,7 @@ include descriptive text or request-provided values.
 | `NO_PERMISSION` | The principal cannot execute the command for the requested keys. |
 | `AUTH_RATE_LIMITED` | Failed authentication attempts temporarily blocked this connection. |
 | `AUTH_TIMEOUT` | Authentication was not completed before the configured deadline. |
+| `AUTH_RELOAD_FAILED` | The auth file could not be validated and the active configuration was retained. |
 | `MEMORY_LIMIT_EXCEEDED` | A mutation cannot be admitted because the memory limit is reached. |
 | `BUSY_KEY` | The destination key already exists. |
 | `INVALID_EXPIRY` | An expiration value is invalid. |
@@ -55,13 +56,17 @@ pipelined commands are evaluated.
 
 ```sh
 AUTH <token>
+AUTH RELOAD
 ```
 
 Successful authentication returns `OK`. Failed authentication returns
 `INVALID_CREDENTIALS`, an unauthenticated protected request returns `NOAUTH`,
 and ACL rejection returns `NO_PERMISSION`. The token is never included in
 network payload logs. The auth principal and rate-limit state are discarded
-when the connection closes.
+when the connection closes. `AUTH RELOAD` atomically validates and replaces
+the auth store for principals with admin and maintenance access. Invalid
+replacement files return `AUTH_RELOAD_FAILED` without changing the active
+configuration.
 
 ### PING
 

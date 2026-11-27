@@ -12,6 +12,8 @@ command_errors_total: std.atomic.Value(usize) = .init(0),
 auth_failures_total: std.atomic.Value(usize) = .init(0),
 authorization_denials_total: std.atomic.Value(usize) = .init(0),
 auth_timeouts_total: std.atomic.Value(usize) = .init(0),
+auth_reload_total: std.atomic.Value(usize) = .init(0),
+auth_reload_failures_total: std.atomic.Value(usize) = .init(0),
 malformed_requests_total: std.atomic.Value(usize) = .init(0),
 memory_limit_rejections_total: std.atomic.Value(usize) = .init(0),
 request_limit_rejections_total: std.atomic.Value(usize) = .init(0),
@@ -70,6 +72,14 @@ pub fn authorizationDenied(self: *Metrics) void {
 
 pub fn authTimeout(self: *Metrics) void {
     _ = self.auth_timeouts_total.fetchAdd(1, .monotonic);
+}
+
+pub fn authReloaded(self: *Metrics) void {
+    _ = self.auth_reload_total.fetchAdd(1, .monotonic);
+}
+
+pub fn authReloadFailed(self: *Metrics) void {
+    _ = self.auth_reload_failures_total.fetchAdd(1, .monotonic);
 }
 
 pub fn writeFailed(self: *Metrics) void {

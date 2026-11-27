@@ -19,6 +19,7 @@ pub fn handle(out: anytype, err: anyerror, logger: *Logger) !void {
         error.NoPermission => "NO_PERMISSION",
         error.AuthRateLimited => "AUTH_RATE_LIMITED",
         error.AuthTimeout => "AUTH_TIMEOUT",
+        error.AuthReloadFailed => "AUTH_RELOAD_FAILED",
         error.NotFound => "NOT_FOUND",
         error.MemoryLimitExceeded => "MEMORY_LIMIT_EXCEEDED",
         error.MaxClientsReached => "MAX_CLIENTS_REACHED",

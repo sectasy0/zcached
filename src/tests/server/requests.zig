@@ -254,6 +254,7 @@ test "AUTH authenticates pipelines and enforces command and key scopes" {
         \\.{
         \\    .principals = .{
         \\        .{
+        \\            .id = "app",
         \\            .name = "app",
         \\            .token_sha256 = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b",
         \\            .permissions = .{
@@ -319,6 +320,7 @@ test "AUTH preflights every key in a multi-key command" {
         \\.{
         \\    .principals = .{
         \\        .{
+        \\            .id = "writer",
         \\            .name = "writer",
         \\            .token_sha256 = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b",
         \\            .permissions = .{
@@ -340,7 +342,11 @@ test "AUTH preflights every key in a multi-key command" {
     const incoming = try fixtures.ConnectionFixture.init(allocator);
     var connection = incoming.connection;
     defer connection.deinit();
-    connection.auth.principal = 0;
+    try fixture.auth.authenticate(
+        &connection.auth,
+        "secret",
+        fixture.config.auth,
+    );
     var processor = try Processor.init(allocator, fixture.context());
     defer processor.deinit();
 
@@ -355,14 +361,15 @@ test "auth files reject duplicate identities and permissive empty prefixes" {
     const cases = [_][]const u8{
         \\.{
         \\    .principals = .{
-        \\        .{ .name = "one", .token_sha256 = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b", .permissions = .{} },
-        \\        .{ .name = "one", .token_sha256 = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b", .permissions = .{} },
+        \\        .{ .id = "one", .name = "one", .token_sha256 = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b", .permissions = .{} },
+        \\        .{ .id = "one", .name = "one", .token_sha256 = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b", .permissions = .{} },
         \\    },
         \\}
         ,
         \\.{
         \\    .principals = .{
         \\        .{
+        \\            .id = "one",
         \\            .name = "one",
         \\            .token_sha256 = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b",
         \\            .permissions = .{ .read = .{ "" } },
@@ -381,6 +388,83 @@ test "auth files reject duplicate identities and permissive empty prefixes" {
         const config: @import("../../server/config.zig").AuthConfig = .{ .enabled = true, .path = path };
         try std.testing.expectError(error.InvalidPrincipal, Auth.init(allocator, config));
     }
+}
+
+test "AUTH RELOAD atomically revokes sessions and survives reinitialization" {
+    const allocator = std.testing.allocator;
+    const path = try std.fmt.allocPrint(allocator, "./tmp/auth-reload-{d}.zon", .{runtime_io.timestampNanoseconds()});
+    defer allocator.free(path);
+    defer fs.cwd().deleteFile(path) catch {};
+    const original =
+        \\.{
+        \\    .principals = .{
+        \\        .{
+        \\            .id = "admin",
+        \\            .name = "admin",
+        \\            .token_sha256 = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b",
+        \\            .permissions = .{ .groups = .{ .all }, .admin = true, .read = .{ "*" }, .write = .{ "*" }, .delete = .{ "*" } },
+        \\        },
+        \\    },
+        \\}
+    ;
+    var file = try fs.cwd().createFile(path, .{});
+    try file.writeAll(original);
+    file.close();
+
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    fixture.config.auth.enabled = true;
+    fixture.auth.deinit();
+    if (fixture.config.auth.path) |auth_path| allocator.free(auth_path);
+    fixture.config.auth.path = try allocator.dupe(u8, path);
+    fixture.auth = try Auth.init(allocator, fixture.config.auth);
+    try fixture.create_memory();
+    const incoming = try fixtures.ConnectionFixture.init(allocator);
+    var connection = incoming.connection;
+    defer connection.deinit();
+    var processor = try Processor.init(allocator, fixture.context());
+    defer processor.deinit();
+
+    processor.process(&connection, @constCast("*2\r\n$4\r\nAUTH\r\n$6\r\nsecret\r\n"));
+    try std.testing.expectEqualStrings("+OK\r\n\x03", connection.tx_accumulator.items);
+    connection.tx_accumulator.clearRetainingCapacity();
+
+    file = try fs.cwd().createFile(path, .{});
+    try file.writeAll("not valid zon");
+    file.close();
+    processor.process(&connection, @constCast("*2\r\n$4\r\nAUTH\r\n$6\r\nRELOAD\r\n"));
+    try std.testing.expectEqualStrings("-AUTH_RELOAD_FAILED\r\n\x03", connection.tx_accumulator.items);
+    connection.tx_accumulator.clearRetainingCapacity();
+    try fixture.auth.authorize(&connection.auth, &.{.{ .str = "PING" }});
+
+    const rotated = try allocator.alloc(u8, original.len);
+    defer allocator.free(rotated);
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        std.mem.replace(
+            u8,
+            original,
+            "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b",
+            "8810ad581e59f2bc3928b261707a71308f7e139eb04820366dc4d5c18d980225",
+            rotated,
+        ),
+    );
+    file = try fs.cwd().createFile(path, .{});
+    try file.writeAll(rotated);
+    file.close();
+    processor.process(&connection, @constCast("*2\r\n$4\r\nAUTH\r\n$6\r\nRELOAD\r\n"));
+    try std.testing.expectEqualStrings("+OK\r\n\x03", connection.tx_accumulator.items);
+    connection.tx_accumulator.clearRetainingCapacity();
+    try std.testing.expectError(error.NoAuth, fixture.auth.authorize(&connection.auth, &.{.{ .str = "PING" }}));
+
+    var restarted = try Auth.init(allocator, fixture.config.auth);
+    defer restarted.deinit();
+    var restarted_session: Auth.Session = .{};
+    try std.testing.expectError(
+        error.InvalidCredentials,
+        restarted.authenticate(&restarted_session, "secret", fixture.config.auth),
+    );
+    try restarted.authenticate(&restarted_session, "wrong", fixture.config.auth);
 }
 
 test "processing repeated commands bounds protocol arena memory" {

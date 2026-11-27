@@ -101,6 +101,9 @@ Acceptance criteria:
   principals file containing SHA-256 token hashes and per-connection state.
 - ✅ Added ACL groups, explicit command allow/deny lists, and read/write/delete
   key prefixes, plus configurable authentication timeout and rate limiting.
+- ✅ Added persistent token revocation through `AUTH RELOAD`, with atomic auth
+  store replacement, stable principal IDs, session revalidation, and rollback
+  to the previous store when the new file is invalid.
 - ✅ Added configurable request, pipeline-command, batch-response, and
   single-response limits, including bounds for malformed collection counts.
 - ✅ Graceful shutdown and startup diagnostics are implemented: startup failures

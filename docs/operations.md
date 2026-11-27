@@ -52,6 +52,7 @@ Keep principals outside the main server configuration:
 .{
     .principals = .{
         .{
+            .id = "app-production",
             .name = "app",
             .token_sha256 = "<64 hexadecimal SHA-256 characters>",
             .permissions = .{
@@ -103,6 +104,18 @@ Errors are stable:
 - `NO_PERMISSION`: command or key scope is denied;
 - `AUTH_RATE_LIMITED`: the connection is temporarily blocked.
 - `AUTH_TIMEOUT`: the connection did not authenticate before `timeout_ms`.
+
+`AUTH RELOAD` atomically reloads this file only when the current principal
+has `.admin = true` and access to the `.maintenance` group. A successful reload
+increments `auth_generation`. Existing connections remain open, but a principal
+removed or assigned a different `token_sha256` becomes unauthenticated on its
+next command. A parse, duplicate-ID, duplicate-hash, or permission validation
+failure leaves the previous configuration active and returns
+`AUTH_RELOAD_FAILED`. Changes are persisted because the source file is the
+authoritative state; restarting the server reloads the same revocations.
+
+`id` is required, unique, and at most 64 bytes. Treat it as stable for the
+lifetime of a credential identity. Principal display `name` is also unique.
 
 `timeout_ms` closes connections that do not authenticate in time.
 `max_attempts`, `rate_window_ms`, and `rate_block_ms` control failed-token rate
