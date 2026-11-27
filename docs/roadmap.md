@@ -249,6 +249,9 @@ Acceptance criteria:
 - ◐ Publish benchmark methodology and regression thresholds.
 - ✅ Defined and tested stable behavior for memory limits, client admission,
   malformed requests, pipeline continuation, and response backpressure.
+- ✅ Exposed atomic runtime metrics through `INFO`, including connections,
+  traffic, command errors, limit rejections, timeouts, persistence state, and
+  memory gauges.
 
 Acceptance criteria:
 

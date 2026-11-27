@@ -60,8 +60,10 @@ Returns server and key-space metadata as a bulk string.
 INFO
 ```
 
-The response includes the zcached version, configured worker and client limits,
-TLS status, key count, and estimated storage memory usage.
+The response includes the zcached version, configured limits, TLS status,
+connection and traffic counters, limit rejections, persistence state, key
+count, and estimated storage memory usage. Monotonic `_total` counters reset
+at process startup; `connections_active` and resource usage are gauges.
 
 ### COMMAND
 

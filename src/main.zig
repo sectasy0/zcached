@@ -20,6 +20,7 @@ const Agent = @import("server/background/agent.zig");
 const Memory = @import("server/storage/memory.zig");
 const snapshot = @import("server/storage/snapshot.zig");
 const AOF = @import("server/storage/aof.zig");
+const Metrics = @import("server/metrics.zig");
 
 pub const panic = std.debug.FullPanic(panicHandler);
 
@@ -219,6 +220,7 @@ pub fn main(init: std.process.Init) !void {
         }
     };
 
+    var metrics: Metrics = .{};
     var context = Context{
         .config = &config,
         .resources = .{
@@ -226,6 +228,7 @@ pub fn main(init: std.process.Init) !void {
             .aof = null,
             .logger = &logger,
             .agent = &agent,
+            .metrics = &metrics,
         },
         .running = &running,
     };

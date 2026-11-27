@@ -264,7 +264,22 @@ Do not use repeated `SIGKILL` as a routine shutdown mechanism.
 
 ## Monitoring and recovery checks
 
-There is currently no dedicated metrics endpoint. Monitor at least:
+`INFO` exposes atomic process counters as a stable `key:value` text report.
+It includes active/accepted/closed connections, commands and command errors,
+malformed requests, memory/request/response limit rejections, read timeouts,
+request/response bytes, response batches, write errors, AOF enablement,
+the `LASTSAVE` timestamp, key count, used memory, and configured memory limit.
+The `_total` counters reset when the process starts.
+
+Example scrape:
+
+```sh
+printf '*1\r\n$4\r\nINFO\r\n\003' | nc 127.0.0.1 7556
+```
+
+There is not yet a dedicated Prometheus or OpenMetrics endpoint. An external
+collector should poll `INFO`, parse the `key:value` lines, and map the process
+gauges/counters into its own monitoring system. Monitor at least:
 
 - process liveness and restart count;
 - TCP connect and `PING` response checks;

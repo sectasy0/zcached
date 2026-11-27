@@ -16,6 +16,7 @@ const Agent = @import("../server/background/agent.zig");
 
 const snapshot = @import("../server/storage/snapshot.zig");
 const Memory = @import("../server/storage/memory.zig");
+const Metrics = @import("../server/metrics.zig");
 
 var running: std.atomic.Value(bool) = .init(true);
 
@@ -72,6 +73,7 @@ pub const ContextFixture = struct {
     config: Config,
     snapshot: ?snapshot.Handler,
     memory: ?Memory,
+    metrics: Metrics,
 
     agent: Agent,
 
@@ -86,6 +88,7 @@ pub const ContextFixture = struct {
             .config = config,
             .snapshot = null,
             .memory = null,
+            .metrics = .{},
             .agent = try .init(allocator, &running),
         };
     }
@@ -119,6 +122,7 @@ pub const ContextFixture = struct {
                 .memory = &self.memory.?,
                 .logger = &self.logger,
                 .agent = &self.agent,
+                .metrics = &self.metrics,
             },
             .config = &self.config,
             .running = &running,

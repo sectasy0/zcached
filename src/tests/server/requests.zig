@@ -177,6 +177,9 @@ test "memory limit returns a stable protocol error without changing data" {
     processor.process(&connection, @constCast("*3\r\n$3\r\nSET\r\n$7\r\nblocked\r\n:2\r\n"));
 
     try std.testing.expectEqualStrings("-MEMORY_LIMIT_EXCEEDED\r\n\x03", connection.tx_accumulator.items);
+    try std.testing.expectEqual(@as(usize, 1), fixture.metrics.commands_total.load(.monotonic));
+    try std.testing.expectEqual(@as(usize, 1), fixture.metrics.command_errors_total.load(.monotonic));
+    try std.testing.expectEqual(@as(usize, 1), fixture.metrics.memory_limit_rejections_total.load(.monotonic));
     try std.testing.expectEqual(@as(i64, 1), (try fixture.memory.?.get("existing")).int);
     try std.testing.expectError(error.NotFound, fixture.memory.?.get("blocked"));
 }

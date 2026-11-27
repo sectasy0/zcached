@@ -477,13 +477,30 @@ pub const Handler = struct {
     fn info(self: *Handler) Result {
         const text = std.fmt.allocPrint(
             self.allocator,
-            "# Server\r\nzcached_version:0.0.1\r\nworkers:{d}\r\nmax_clients:{d}\r\ntls_enabled:{s}\r\n\r\n# Keyspace\r\ndb_keys:{d}\r\nused_memory:{d}\r\n",
+            "# Server\r\nzcached_version:0.0.1\r\nworkers:{d}\r\nmax_clients:{d}\r\ntls_enabled:{s}\r\n\r\n# Connections\r\nconnections_accepted_total:{d}\r\nconnections_active:{d}\r\nconnections_closed_total:{d}\r\nread_timeouts_total:{d}\r\nrequest_limit_rejections_total:{d}\r\n\r\n# Traffic\r\ncommands_total:{d}\r\ncommand_errors_total:{d}\r\nmalformed_requests_total:{d}\r\nmemory_limit_rejections_total:{d}\r\nresponse_limit_rejections_total:{d}\r\nrequest_bytes_total:{d}\r\nresponse_bytes_total:{d}\r\nresponse_batches_total:{d}\r\nwrite_errors_total:{d}\r\n\r\n# Persistence\r\naof_enabled:{s}\r\nlast_save_timestamp:{d}\r\n\r\n# Keyspace\r\ndb_keys:{d}\r\nused_memory:{d}\r\nmemory_limit:{d}\r\n",
             .{
                 self.context.config.workers,
                 self.context.config.max_clients,
                 if (self.context.config.tls.enabled) "1" else "0",
+                self.context.resources.metrics.connections_accepted.load(.monotonic),
+                self.context.resources.metrics.connections_active.load(.monotonic),
+                self.context.resources.metrics.connections_closed.load(.monotonic),
+                self.context.resources.metrics.read_timeouts_total.load(.monotonic),
+                self.context.resources.metrics.request_limit_rejections_total.load(.monotonic),
+                self.context.resources.metrics.commands_total.load(.monotonic),
+                self.context.resources.metrics.command_errors_total.load(.monotonic),
+                self.context.resources.metrics.malformed_requests_total.load(.monotonic),
+                self.context.resources.metrics.memory_limit_rejections_total.load(.monotonic),
+                self.context.resources.metrics.response_limit_rejections_total.load(.monotonic),
+                self.context.resources.metrics.request_bytes_total.load(.monotonic),
+                self.context.resources.metrics.response_bytes_total.load(.monotonic),
+                self.context.resources.metrics.response_batches_total.load(.monotonic),
+                self.context.resources.metrics.write_errors_total.load(.monotonic),
+                if (self.context.config.aof.flush_strategy == .no) "0" else "1",
+                self.context.resources.memory.last_save.load(.monotonic),
                 self.context.resources.memory.size(),
                 self.context.resources.memory.memoryUsed(),
+                self.context.resources.memory.fabric.limit,
             },
         ) catch |err| return .{ .err = err };
         return .{ .ok = .{ .str = text } };

@@ -23,6 +23,8 @@ accumulator: std.array_list.Managed(u8),
 receive_start: usize = 0,
 /// Current read size, increased after full reads up to `max_read_chunk`.
 read_chunk: usize = consts.CLIENT_BUFFER,
+/// Bytes returned by the most recent socket read, including a rejected over-limit read.
+last_read_bytes: usize = 0,
 /// Accumulator containing response bytes awaiting transmission.
 tx_accumulator: std.array_list.Managed(u8),
 
@@ -88,6 +90,7 @@ pub fn readPending(self: *Self, max_size: usize) !void {
 }
 
 pub fn readPendingTimed(self: *Self, max_size: usize, timeout: std.Io.Timeout) !void {
+    self.last_read_bytes = 0;
     const pending_len = self.accumulator.items.len - self.receive_start;
     if (pending_len > max_size) return error.MessageTooLarge;
 
@@ -107,6 +110,7 @@ pub fn readPendingTimed(self: *Self, max_size: usize, timeout: std.Io.Timeout) !
     const old_len = self.accumulator.items.len;
     const read_buffer = self.accumulator.items.ptr[old_len .. old_len + read_capacity];
     const read_size = try self.stream.readTimed(read_buffer, timeout);
+    self.last_read_bytes = read_size;
     if (read_size == 0) return error.ConnectionClosed;
 
     if (read_size > remaining) return error.MessageTooLarge;

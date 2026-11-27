@@ -87,6 +87,7 @@ pub fn deframe(self: *Processor, connection: *Connection) void {
 /// Request bytes are borrowed; per-request protocol arena allocations are reset on return.
 pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
     defer self.protocol.reset();
+    self.context.resources.metrics.commandCompleted();
     self.cmd_handler.allocator = self.protocol.serializer.arena.allocator();
     var stream = fixed_buffer_stream.fixedBufferStream(request);
     const reader = stream.reader();
@@ -222,6 +223,7 @@ fn appendSerializedValue(output: *const LimitedOutput, value: ZType) !void {
 
 /// Writes an error response; failures to write are logged because this path cannot return them.
 fn sendError(self: *Processor, connection: *Connection, err: anyerror) void {
+    self.context.resources.metrics.commandFailed(err);
     errors.handle(connection.out(), err, self.context.resources.logger) catch |write_error| {
         self.context.resources.logger.err("event=error_response_write_failed error={s}", .{@errorName(write_error)});
     };

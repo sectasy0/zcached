@@ -87,6 +87,11 @@ test "Server handles fragmented and pipelined requests alongside an idle client"
     try writer.interface.writeAll(ping[0..8]);
     try writer.interface.writeAll(ping[8..] ++ ping);
     try expectResponseTimeout(client, pong ++ pong, 3000);
+    try std.testing.expectEqual(@as(usize, 2), fixture.metrics.connections_accepted.load(.monotonic));
+    try std.testing.expectEqual(@as(usize, 2), fixture.metrics.commands_total.load(.monotonic));
+    try std.testing.expectEqual(@as(usize, ping.len * 2), fixture.metrics.request_bytes_total.load(.monotonic));
+    try std.testing.expectEqual(@as(usize, pong.len * 2), fixture.metrics.response_bytes_total.load(.monotonic));
+    try std.testing.expectEqual(@as(usize, 2), fixture.metrics.response_batches_total.load(.monotonic));
 
     // Leave both reads blocked while canceling to verify shutdown releases sockets and buffers.
     task.cancel(io) catch |err| switch (err) {

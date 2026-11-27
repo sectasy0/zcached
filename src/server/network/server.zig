@@ -162,6 +162,8 @@ fn serve(self: *Server, io: std.Io, incoming: StreamServer.Connection, slots: *s
         return;
     };
     defer processor.deinit();
+    self.context.resources.metrics.connectionOpened();
+    defer self.context.resources.metrics.connectionClosed();
 
     self.context.resources.logger.info("# new connection from: {any}", .{accepted.address});
     defer self.context.resources.logger.info("# connection with client closed: {any}", .{accepted.address});
@@ -173,30 +175,44 @@ fn serve(self: *Server, io: std.Io, incoming: StreamServer.Connection, slots: *s
             request_deadline.deadline.raw.nanoseconds <= idle_deadline.deadline.raw.nanoseconds) request_deadline else idle_deadline;
         const max_size = self.context.config.max_request_size;
         connection.readPendingTimed(if (max_size == 0) std.math.maxInt(usize) else max_size, read_deadline) catch |err| {
+            self.context.resources.metrics.requestBytes(connection.last_read_bytes);
             switch (err) {
                 error.IncompleteMessage => {
                     if (request_deadline == .none) request_deadline = deadline(io, network.request_timeout_ms);
                     continue;
                 },
                 error.Canceled => return error.Canceled,
-                error.Timeout, error.ConnectionClosed, error.ConnectionResetByPeer, error.SocketUnconnected => return,
+                error.Timeout => {
+                    self.context.resources.metrics.readTimeout();
+                    return;
+                },
+                error.ConnectionClosed, error.ConnectionResetByPeer, error.SocketUnconnected => return,
+                error.MessageTooLarge => {
+                    self.context.resources.metrics.requestLimitRejected();
+                    self.context.resources.logger.warn("# request rejected: input size limit exceeded", .{});
+                    return;
+                },
                 else => {
                     self.context.resources.logger.err("# failed to read request: {any}", .{err});
                     return;
                 },
             }
         };
+        self.context.resources.metrics.requestBytes(connection.last_read_bytes);
         // A completed frame starts a new deadline only if this read also began the next frame.
         const ends_in_frame = connection.accumulator.items[connection.accumulator.items.len - 1] == @import("consts.zig").EXT_CHAR;
         request_deadline = if (ends_in_frame) .none else deadline(io, network.request_timeout_ms);
         while (true) {
             processor.deframe(&connection);
             if (connection.tx_accumulator.items.len == 0) break;
+            const batch_bytes = connection.tx_accumulator.items.len;
             connection.writePending() catch |err| {
                 if (err == error.Canceled) return error.Canceled;
+                self.context.resources.metrics.writeFailed();
                 self.context.resources.logger.err("# failed to write response: {any}", .{err});
                 return;
             };
+            self.context.resources.metrics.responseBatch(batch_bytes);
             if (!connection.hasPendingFrame()) break;
         }
     }

@@ -5,6 +5,7 @@ const Config = @import("config.zig");
 const Logger = @import("logger.zig");
 const Agent = @import("background/agent.zig");
 const Memory = @import("storage/memory.zig");
+const Metrics = @import("metrics.zig");
 const ZType = @import("../protocol/types.zig").ZType;
 
 /// Type-erased adapter for appending a command to the append-only persistence log.
@@ -30,6 +31,8 @@ pub const Resources = struct {
     logger: *Logger,
     /// Background task scheduler.
     agent: *Agent,
+    /// Process-wide runtime counters.
+    metrics: *Metrics,
 };
 
 /// Services and configuration shared with request-processing code.

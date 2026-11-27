@@ -26,6 +26,9 @@ test "INFO, COMMAND and CLIENT provide server introspection" {
     var info = try runCommand(&handler, &.{.{ .str = "INFO" }});
     defer types.ztype_free(&info.ok, std.testing.allocator);
     try std.testing.expect(std.mem.indexOf(u8, info.ok.str, "zcached_version:0.0.1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, info.ok.str, "connections_active:0\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, info.ok.str, "commands_total:0\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, info.ok.str, "# Persistence\r\naof_enabled:") != null);
 
     try std.testing.expectEqual(@as(i64, 26), (try runCommand(&handler, &.{ .{ .str = "COMMAND" }, .{ .str = "COUNT" } })).ok.int);
     var command_result = try runCommand(&handler, &.{.{ .str = "COMMAND" }});
