@@ -44,6 +44,9 @@ Debug and ReleaseSafe builds retain the debug allocator and leak checks.
 ## Docker 🐳
 > zcached source is available under `~/source` inside docker.
 
+For production state volumes, resource limits, health checks, and service
+supervision, see the [operations guide](operations.md).
+
 ### Prerequisites
 - [Docker Compose](https://docs.docker.com/compose/install/)
 - [docker-compose.yml](https://github.com/sectasy0/zcached/raw/master/docker-compose.yml)

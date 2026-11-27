@@ -26,6 +26,10 @@ reactor; its connections run as cooperative fibers, not individual OS threads.
 remain synchronous; see [network architecture](docs/internals/network_architecture.md)
 for ownership, copying, cancellation, and platform requirements.
 
+For production deployment and day-to-day operation, see the
+[operations guide](docs/operations.md), including resource limits, persistence,
+logs, Docker, systemd, monitoring, and recovery checks.
+
 Storage uses `Memory -> Fabric -> Shard`. Fabric hashes keys onto
 `.memory.shard_count` shards (default 16); each shard owns a separate heap,
 map, and reader/writer lock. `.memory.default_capacity` (default 64) is the

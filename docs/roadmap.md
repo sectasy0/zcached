@@ -105,8 +105,8 @@ Acceptance criteria:
   certificate chains, rejects TLS requests in plaintext-only builds, and
   disables payload logging by default. Client-certificate verification remains
   opt-in to preserve ordinary TLS client compatibility.
-- ◐ Publish an operational guide covering logs, resource limits, snapshots, AOF,
-  Docker, systemd, and monitoring.
+- ✅ Published an [operational guide](operations.md) covering logs, resource
+  limits, snapshots, AOF, Docker, systemd, monitoring, and recovery checks.
 
 Acceptance criteria:
 
