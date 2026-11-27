@@ -113,7 +113,7 @@ pub fn save(self: *Handler, memory: *Memory) !usize {
     try file.replace(io);
     memory.last_save.store(timestamp, .monotonic);
 
-    self.prune() catch |err| {
+    self.prune(basename) catch |err| {
         self.logger.warn("# snapshot saved but retention failed: {any}", .{err});
     };
     return bytes.items.len;
@@ -137,7 +137,7 @@ fn encodeSnapshot(allocator: std.mem.Allocator, memory: *Memory, bytes: *std.arr
     return runtime_io.timestamp();
 }
 
-fn prune(self: *Handler) !void {
+fn prune(self: *Handler, protected_name: []const u8) !void {
     const keep = self.config.snapshot.keep_last;
     if (keep == 0) return;
     const dir = try fs.cwd().openDir(self.path.?, .{ .follow_symlinks = false, .iterate = true });
@@ -156,7 +156,16 @@ fn prune(self: *Handler) !void {
     }
     if (entries.items.len <= keep) return;
     std.mem.sort(FileEntry, entries.items, {}, newer);
-    for (entries.items[keep..]) |entry| try dir.deleteFile(entry.name);
+
+    var kept_others: usize = 0;
+    for (entries.items) |entry| {
+        if (std.mem.eql(u8, entry.name, protected_name)) continue;
+        if (kept_others < keep - 1) {
+            kept_others += 1;
+            continue;
+        }
+        try dir.deleteFile(entry.name);
+    }
 }
 
 fn newer(_: void, a: FileEntry, b: FileEntry) bool {

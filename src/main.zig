@@ -18,7 +18,7 @@ const Agent = @import("server/background/agent.zig");
 
 // Storage / memory
 const Memory = @import("server/storage/memory.zig");
-const persistance = @import("server/storage/persistance.zig");
+const snapshot = @import("server/storage/snapshot.zig");
 const AOF = @import("server/storage/aof.zig");
 
 pub const panic = std.debug.FullPanic(panicHandler);
@@ -171,7 +171,7 @@ pub fn main(init: std.process.Init) !void {
         .@"error" => .Error,
     };
 
-    var persister = persistance.Handler.init(
+    var persister = snapshot.Handler.init(
         allocator,
         config,
         &logger,
@@ -203,16 +203,21 @@ pub fn main(init: std.process.Init) !void {
     };
 
     const aof_enabled = config.aof.flush_strategy != .no;
-    if (config.snapshot.interval_secs == 0 or !aof_enabled) {
-        const restored = if (aof_enabled) persister.loadForReplay(&memory) else persister.load(&memory);
-        restored catch |err| {
-            if (err != error.FileNotFound) {
-                logger.warn("# failed to restore data from latest .zcpf file: {any}", .{err});
+    const restored = if (aof_enabled)
+        persister.loadForReplay(&memory)
+    else
+        persister.load(&memory);
+    restored catch |err| {
+        if (err != error.FileNotFound and err != error.InvalidFile) {
+            logger.warn("# failed to restore data from snapshot: {any}", .{err});
+        } else if (err == error.InvalidFile) {
+            if (aof_enabled) {
+                logger.warn("# no valid snapshot available; continuing with the AOF", .{});
+            } else {
+                logger.warn("# no valid snapshot available; starting with empty storage", .{});
             }
-        };
-    } else {
-        logger.info("# automatic snapshots are backups; restoring only the AOF", .{});
-    }
+        }
+    };
 
     var context = Context{
         .config = &config,

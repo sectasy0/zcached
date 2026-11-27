@@ -55,10 +55,13 @@ shared shard locks and must be released with `deinit()`, even on early exit.
 - `.snapshot.path` defaults to `./persist`. `.snapshot.interval_secs = 0` leaves
   snapshots manual (`SAVE`); a positive value schedules periodic saves.
   `.snapshot.keep_last = 0` keeps all files; a positive value keeps the newest
-  timestamped snapshots after a successful save. Use a dedicated directory.
-  If automatic snapshots and AOF are both enabled, startup replays **only
-  the AOF**; snapshots are backups and are not an automatic fallback for a
-  missing journal. Disable AOF to start from a snapshot.
+  timestamped snapshots after every successful manual or scheduled save. A
+  just-completed save is always retained, even if the system clock moved
+  backwards or an existing filename has a future timestamp. Use a dedicated
+  directory. On startup, the newest valid snapshot is restored first. When
+  AOF is enabled, the AOF is then replayed over that state, so its later changes
+  take precedence. AOF disabled means snapshot-only recovery. If there is no
+  valid snapshot, recovery begins with the AOF.
 - `.log.level` filters operational messages (`.debug`, `.info`, `.warning`,
   `.@"error"`). `log_network_payloads` separately controls payload logs and is
   disabled by default because request and response data may contain secrets.

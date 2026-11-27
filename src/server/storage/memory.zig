@@ -2,7 +2,7 @@
 const std = @import("std");
 const runtime_io = @import("runtime_io");
 const types = @import("../../protocol/types.zig");
-const persistance = @import("persistance.zig");
+const snapshot = @import("snapshot.zig");
 const Config = @import("../config.zig");
 pub const Fabric = @import("fabric.zig");
 
@@ -10,11 +10,11 @@ const Memory = @This();
 
 fabric: Fabric,
 allocator: std.mem.Allocator,
-persister: *persistance.Handler,
+persister: *snapshot.Handler,
 config: Config,
 last_save: std.atomic.Value(i64),
 
-pub fn init(allocator: std.mem.Allocator, config: Config, persister: *persistance.Handler) !Memory {
+pub fn init(allocator: std.mem.Allocator, config: Config, persister: *snapshot.Handler) !Memory {
     var settings = config.memory;
     if (settings.limit == 0) settings.limit = config.max_memory;
     return .{

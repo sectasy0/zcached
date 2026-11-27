@@ -14,7 +14,7 @@ const Connection = @import("../server/network/connection.zig");
 const Context = @import("../server/context.zig");
 const Agent = @import("../server/background/agent.zig");
 
-const persistance = @import("../server/storage/persistance.zig");
+const snapshot = @import("../server/storage/snapshot.zig");
 const Memory = @import("../server/storage/memory.zig");
 
 var running: std.atomic.Value(bool) = .init(true);
@@ -70,7 +70,7 @@ pub const ContextFixture = struct {
     allocator: std.mem.Allocator,
     logger: Logger,
     config: Config,
-    persistance: ?persistance.Handler,
+    snapshot: ?snapshot.Handler,
     memory: ?Memory,
 
     agent: Agent,
@@ -84,7 +84,7 @@ pub const ContextFixture = struct {
             .allocator = allocator,
             .logger = try Logger.init(allocator, null, null, false),
             .config = config,
-            .persistance = null,
+            .snapshot = null,
             .memory = null,
             .agent = try .init(allocator, &running),
         };
@@ -93,19 +93,19 @@ pub const ContextFixture = struct {
     pub fn create_memory(self: *ContextFixture) !void {
         if (self.memory != null) self.memory.?.deinit();
         self.memory = null;
-        if (self.persistance == null) try self.create_persistance();
+        if (self.snapshot == null) try self.create_snapshot();
 
         self.memory = try Memory.init(
             self.allocator,
             self.config,
-            &self.persistance.?,
+            &self.snapshot.?,
         );
     }
 
-    pub fn create_persistance(self: *ContextFixture) !void {
-        if (self.persistance != null) self.persistance.?.deinit();
+    pub fn create_snapshot(self: *ContextFixture) !void {
+        if (self.snapshot != null) self.snapshot.?.deinit();
 
-        self.persistance = try persistance.Handler.init(
+        self.snapshot = try snapshot.Handler.init(
             self.allocator,
             self.config,
             &self.logger,
@@ -127,7 +127,7 @@ pub const ContextFixture = struct {
 
     pub fn deinit(self: *ContextFixture) void {
         self.config.deinit();
-        if (self.persistance != null) self.persistance.?.deinit();
+        if (self.snapshot != null) self.snapshot.?.deinit();
         if (self.memory != null) self.memory.?.deinit();
         self.logger.deinit();
     }

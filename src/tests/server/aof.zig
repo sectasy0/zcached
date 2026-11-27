@@ -185,8 +185,8 @@ test "AOF replays historical snapshot keys and does not drop writes at the memor
     }
 
     const memory = &fixture.memory.?;
-    fixture.persistance.?.path = snapshot_path;
-    try fixture.persistance.?.loadForReplay(memory);
+    fixture.snapshot.?.path = snapshot_path;
+    try fixture.snapshot.?.loadForReplay(memory);
     memory.fabric.limit = memory.fabric.memoryUsed();
     var aof = try AOF.init(fixture.allocator, fixture.context());
     defer aof.deinit();

@@ -68,8 +68,9 @@ Acceptance criteria:
   [persistence format policy](internals/persistence_formats.md).
 - ✅ Add integrity and corruption handling for snapshot and AOF files.
 - ◐ Implement asynchronous save support (`ASAVE`); AOF rewrite is implemented.
-- ◐ Apply snapshot retention consistently and document precedence between
-  snapshots and AOF recovery.
+- ✅ Applied snapshot retention to manual and scheduled saves, including
+  protection for the just-completed snapshot, and documented snapshot-then-AOF
+  recovery precedence.
 - 🧪 Crash-recovery E2E tests cover abrupt process termination and partially
   written snapshot and AOF files, followed by new writes and another restart.
 - 🧪 Fault-injection tests simulate disk-full errors during snapshot and AOF

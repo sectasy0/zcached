@@ -23,6 +23,10 @@ all key, value, and deadline bytes after the checksum header. Every entry
 includes an absolute Unix-millisecond deadline; `0` means no expiry. The
 reader requires this header and checksum and rejects legacy or incomplete
 files. It falls back to the newest older snapshot that passes validation.
+After every successful manual or scheduled save, `keep_last` is applied to
+the snapshot directory. The just-completed snapshot is always protected from
+deletion so clock rollback or a file with a future timestamp cannot remove
+the only newly validated save.
 
 ## Append-only file
 
@@ -45,6 +49,17 @@ offset. If the process crashes before retrying, a fully written record whose
 sync failed may still be replayed; its durability was not confirmed.
 AOF rewrites are written and synced to a separate file before an atomic
 rename replaces the previous journal.
+
+## Recovery precedence
+
+Startup restores the newest valid snapshot first, independent of whether
+snapshots are manual or scheduled. If AOF is enabled, its records are replayed
+after the snapshot and therefore take precedence over snapshot contents.
+Compacted AOFs begin with `FLUSH`, making them a complete baseline; ordinary
+and uncompacted journals apply their mutations on top of the restored state.
+If the snapshot directory is missing or contains no valid snapshot, startup
+continues with AOF-only recovery. When AOF is disabled, recovery is
+snapshot-only.
 
 ## Compatibility guarantees
 

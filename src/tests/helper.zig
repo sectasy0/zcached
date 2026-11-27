@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const persistance = @import("../server/storage/persistance.zig");
+const snapshot = @import("../server/storage/snapshot.zig");
 const Memory = @import("../server/storage/memory.zig");
 
 const commands = @import("../server/processing/commands.zig");
