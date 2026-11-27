@@ -69,6 +69,33 @@ per-connection receive/response buffers, TLS state, and native allocator
 overhead; these are not included in `.memory.limit`. Leave container and host
 memory headroom above the configured data limit.
 
+## Behavior under resource pressure and malformed input
+
+The following behavior is the operational contract:
+
+| Condition | Client-visible behavior | State and server behavior |
+| --- | --- | --- |
+| `.memory.limit` is reached | The storage write returns `MEMORY_LIMIT_EXCEEDED`. | The failed key is not inserted or replaced. Existing keys remain readable, deletions remain available, and expired entries are purged before admission is rejected. |
+| A single accepted mutation crosses the threshold | The command succeeds. | The check occurs before allocation, so the final requested-byte usage may exceed the configured threshold by that accepted mutation. Configure headroom. |
+| Concurrent writes approach the limit | Some writes may cross the threshold together. | Limit admission is advisory across shards. It is not a reservation or transactional memory quota. |
+| All permits for one worker's `.max_clients` are occupied | The client receives no protocol response and may remain in the operating-system backlog until a permit is released. | Existing connections continue; the accept loop resumes admission after a client closes. There is no global strict client ceiling or `MAX_CLIENTS_REACHED` reply on the accepted connection path. |
+| A complete malformed command is received | One stable error response is queued, such as `UNPROCESSABLE`, `INVALID_LENGTH`, or `PAYLOAD_EXCEEDED`. | That frame is not executed. If another complete pipeline frame follows, it is processed normally. |
+| A frame is incomplete | No response is sent yet. | Bytes remain buffered until the frame finishes or `.network.request_timeout_ms` expires. An incomplete-read timeout closes the connection. |
+| Unread input reaches `.max_request_size` | The connection is closed without guessing a response boundary. | Already processed pipeline replies were flushed in earlier batches; the unsafe unread tail is discarded with the connection. |
+| One response exceeds `.max_response_bytes` | That command returns `RESPONSE_TOO_LARGE`. | The stored value is not serialized into the response buffer. Later complete pipeline frames continue normally. |
+| A pipeline reaches a response-byte or command-count boundary | Completed responses are flushed before the next batch. | Mutations in the flushed batch are complete; unread pipeline frames remain owned by the connection and are processed after the flush. |
+| The peer is slow to read | The connection stops processing more pipeline input while `writeAll` is blocked. | No additional response bytes are generated for that connection during the blocked write. Other connection tasks remain independent. |
+
+Clients must correlate one response with each command in pipeline order. Limits
+do not silently drop complete commands: a complete command either returns a
+success/error response or the connection ends because the transport or an
+unframed input boundary failed.
+
+Multi-key commands are not a transaction. `MSET` stores pairs in sequence; if a
+later pair fails, earlier pairs remain committed and the command returns the
+failure. `MSETNX` keeps its all-or-nothing insertion rule for condition failure,
+rolling back partial inserts if storage admission or allocation fails.
+
 ## Snapshots
 
 Snapshots are atomic `.zcpf` files in `.snapshot.path`:

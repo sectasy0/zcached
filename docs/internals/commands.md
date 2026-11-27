@@ -16,6 +16,7 @@ include descriptive text or request-provided values.
 | `INVALID_COMMAND` | Command syntax or arity is invalid. |
 | `INVALID_ARGUMENTS` | Command arguments are invalid. |
 | `NOT_FOUND` | The requested key does not exist. |
+| `MEMORY_LIMIT_EXCEEDED` | A mutation cannot be admitted because the memory limit is reached. |
 | `BUSY_KEY` | The destination key already exists. |
 | `INVALID_EXPIRY` | An expiration value is invalid. |
 | `INVALID_LENGTH` | A protocol length is invalid. |

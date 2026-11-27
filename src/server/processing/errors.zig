@@ -15,6 +15,7 @@ pub fn handle(out: anytype, err: anyerror, logger: *Logger) !void {
         error.InvalidCommand => "INVALID_COMMAND",
         error.InvalidArgs => "INVALID_ARGUMENTS",
         error.NotFound => "NOT_FOUND",
+        error.MemoryLimitExceeded => "MEMORY_LIMIT_EXCEEDED",
         error.MaxClientsReached => "MAX_CLIENTS_REACHED",
         error.PayloadExceeded => "PAYLOAD_EXCEEDED",
         error.ResponseTooLarge => "RESPONSE_TOO_LARGE",

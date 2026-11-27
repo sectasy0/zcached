@@ -32,6 +32,7 @@ test "error replies contain only stable error codes" {
         .{ .err = error.InvalidCommand, .code = "INVALID_COMMAND" },
         .{ .err = error.InvalidArgs, .code = "INVALID_ARGUMENTS" },
         .{ .err = error.NotFound, .code = "NOT_FOUND" },
+        .{ .err = error.MemoryLimitExceeded, .code = "MEMORY_LIMIT_EXCEEDED" },
         .{ .err = error.MaxClientsReached, .code = "MAX_CLIENTS_REACHED" },
         .{ .err = error.PayloadExceeded, .code = "PAYLOAD_EXCEEDED" },
         .{ .err = error.NotWhitelisted, .code = "NOT_WHITELISTED" },

@@ -141,6 +141,46 @@ test "malformed collection count is rejected before a large allocation" {
     try std.testing.expectEqualStrings("-INVALID_LENGTH\r\n\x03", connection.tx_accumulator.items);
 }
 
+test "a malformed frame does not prevent the next pipelined command" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    fixture.config.network.max_pipeline_commands = 0;
+    fixture.config.network.max_pending_response_bytes = 0;
+    const incoming = try fixtures.ConnectionFixture.init(std.testing.allocator);
+    var connection = incoming.connection;
+    defer connection.deinit();
+    var processor = try Processor.init(std.testing.allocator, fixture.context());
+    defer processor.deinit();
+
+    const malformed = "*18446744073709551615\r\n\x03";
+    const valid = "*1\r\n$4\r\nPING\r\n\x03";
+    try connection.accumulator.appendSlice(malformed ++ valid);
+    processor.deframe(&connection);
+
+    try std.testing.expectEqualStrings("-INVALID_LENGTH\r\n\x03+PONG\r\n\x03", connection.tx_accumulator.items);
+    try std.testing.expectEqual(@as(usize, 0), connection.accumulator.items.len);
+}
+
+test "memory limit returns a stable protocol error without changing data" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    const incoming = try fixtures.ConnectionFixture.init(std.testing.allocator);
+    var connection = incoming.connection;
+    defer connection.deinit();
+    var processor = try Processor.init(std.testing.allocator, fixture.context());
+    defer processor.deinit();
+
+    try fixture.memory.?.put("existing", .{ .int = 1 });
+    fixture.memory.?.fabric.limit = fixture.memory.?.fabric.memoryUsed();
+    processor.process(&connection, @constCast("*3\r\n$3\r\nSET\r\n$7\r\nblocked\r\n:2\r\n"));
+
+    try std.testing.expectEqualStrings("-MEMORY_LIMIT_EXCEEDED\r\n\x03", connection.tx_accumulator.items);
+    try std.testing.expectEqual(@as(i64, 1), (try fixture.memory.?.get("existing")).int);
+    try std.testing.expectError(error.NotFound, fixture.memory.?.get("blocked"));
+}
+
 test "processing repeated commands bounds protocol arena memory" {
     var fixture = try ContextFixture.init();
     try fixture.create_memory();

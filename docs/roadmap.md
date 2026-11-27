@@ -247,8 +247,8 @@ Acceptance criteria:
 - ◐ Test Linux and macOS on x86_64 and aarch64 where supported.
 - ◐ Test Debug, ReleaseSafe, and ReleaseFast builds.
 - ◐ Publish benchmark methodology and regression thresholds.
-- ◐ Define acceptable behavior for memory limits, client limits, malformed
-  requests, and backpressure.
+- ✅ Defined and tested stable behavior for memory limits, client admission,
+  malformed requests, pipeline continuation, and response backpressure.
 
 Acceptance criteria:
 
