@@ -30,6 +30,71 @@ pub const Deserializer = struct {
         return output.items;
     }
 
+    /// Calculates the encoded byte length without allocating response storage.
+    pub fn encodedLen(input: types.ZType) anyerror!usize {
+        return switch (input) {
+            .str => |text| addLengths(&.{ 5 + decimalLength(text.len), text.len }),
+            .sstr => |text| addLengths(&.{ 1, text.len, 2 }),
+            .int => |value| decimalLengthSigned(value) + 3,
+            .float => |value| blk: {
+                var buffer: [128]u8 = undefined;
+                const text = try std.fmt.bufPrint(&buffer, ",{d}\r\n", .{value});
+                break :blk text.len;
+            },
+            .bool => 4,
+            .null => 3,
+            .array => |array| blk: {
+                var total = try addLengths(&.{3 + decimalLength(array.items.len)});
+                for (array.items) |item| total = try std.math.add(usize, total, try encodedLen(item));
+                break :blk total;
+            },
+            .map => |map| blk: {
+                var total = try addLengths(&.{3 + decimalLength(map.count())});
+                var iterator = map.iterator();
+                while (iterator.next()) |entry| {
+                    total = try std.math.add(usize, total, try encodedLen(.{ .str = entry.key_ptr.* }));
+                    total = try std.math.add(usize, total, try encodedLen(entry.value_ptr.*));
+                }
+                break :blk total;
+            },
+            .set => |set| blk: {
+                var total = try addLengths(&.{3 + decimalLength(set.count())});
+                var iterator = set.iterator();
+                while (iterator.next()) |entry|
+                    total = try std.math.add(usize, total, try encodedLen(entry.key_ptr.*));
+                break :blk total;
+            },
+            .uset => |set| blk: {
+                var total = try addLengths(&.{3 + decimalLength(set.count())});
+                var iterator = set.iterator();
+                while (iterator.next()) |entry| total = try std.math.add(usize, total, try encodedLen(entry.*));
+                break :blk total;
+            },
+            else => error.UnsuportedType,
+        };
+    }
+
+    fn addLengths(lengths: []const usize) !usize {
+        var total: usize = 0;
+        for (lengths) |length| total = try std.math.add(usize, total, length);
+        return total;
+    }
+
+    fn decimalLength(value: usize) usize {
+        var length: usize = 1;
+        var current = value;
+        while (current >= 10) : (current /= 10) length += 1;
+        return length;
+    }
+
+    fn decimalLengthSigned(value: i64) usize {
+        const length = @as(usize, @intFromBool(value < 0));
+        var current: u64 = if (value < 0) @as(u64, @bitCast(-(value + 1))) + 1 else @intCast(value);
+        var digits: usize = 1;
+        while (current >= 10) : (current /= 10) digits += 1;
+        return length + digits;
+    }
+
     /// Writes an array header followed by each element's encoding.
     pub fn writeArray(output: *std.array_list.Managed(u8), items: []const types.ZType) anyerror!void {
         try output.print("*{d}\r\n", .{items.len});

@@ -85,6 +85,62 @@ test "deframe defers pipelined commands until pending replies have drained" {
     try std.testing.expectEqual(@as(usize, 0), connection.accumulator.items.len);
 }
 
+test "deframe batches pipelines by command count" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    fixture.config.network.max_pipeline_commands = 1;
+    const incoming = try fixtures.ConnectionFixture.init(std.testing.allocator);
+    var connection = incoming.connection;
+    defer connection.deinit();
+    var processor = try Processor.init(std.testing.allocator, fixture.context());
+    defer processor.deinit();
+
+    const first = "*1\r\n$4\r\nPING\r\n\x03";
+    const second = "*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n:2\r\n\x03";
+    try connection.accumulator.appendSlice(first ++ second);
+
+    processor.deframe(&connection);
+    try std.testing.expectEqualStrings("+PONG\r\n\x03", connection.tx_accumulator.items);
+    try std.testing.expectEqual(first.len, connection.receive_start);
+    try std.testing.expectError(error.NotFound, fixture.memory.?.get("key"));
+
+    connection.tx_accumulator.clearRetainingCapacity();
+    processor.deframe(&connection);
+    try std.testing.expectEqual(@as(i64, 2), (try fixture.memory.?.get("key")).int);
+    try std.testing.expectEqual(@as(usize, 0), connection.accumulator.items.len);
+}
+
+test "response size limit rejects a large reply before serialization" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    fixture.config.network.max_response_bytes = 8;
+    try fixture.memory.?.put("key", .{ .str = "too-large" });
+    const incoming = try fixtures.ConnectionFixture.init(std.testing.allocator);
+    var connection = incoming.connection;
+    defer connection.deinit();
+    var processor = try Processor.init(std.testing.allocator, fixture.context());
+    defer processor.deinit();
+
+    processor.process(&connection, @constCast("*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n"));
+    try std.testing.expectEqualStrings("-RESPONSE_TOO_LARGE\r\n\x03", connection.tx_accumulator.items);
+}
+
+test "malformed collection count is rejected before a large allocation" {
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    try fixture.create_memory();
+    const incoming = try fixtures.ConnectionFixture.init(std.testing.allocator);
+    var connection = incoming.connection;
+    defer connection.deinit();
+    var processor = try Processor.init(std.testing.allocator, fixture.context());
+    defer processor.deinit();
+
+    processor.process(&connection, @constCast("*18446744073709551615\r\n"));
+    try std.testing.expectEqualStrings("-INVALID_LENGTH\r\n\x03", connection.tx_accumulator.items);
+}
+
 test "processing repeated commands bounds protocol arena memory" {
     var fixture = try ContextFixture.init();
     try fixture.create_memory();

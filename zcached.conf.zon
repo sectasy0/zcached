@@ -19,8 +19,12 @@
         .idle_timeout_ms = 0,
         // Time to finish receiving a frame after its first bytes arrive.
         .request_timeout_ms = 0,
-        // Flush pipelined responses at this threshold; 0 disables it.
-        .max_pending_response_bytes = 0,
+        // Process at most this many commands before flushing; 0 disables the count boundary.
+        .max_pipeline_commands = 256,
+        // Flush pipelined responses at this threshold; 0 disables size-based batching.
+        .max_pending_response_bytes = 1048576, // 1 MiB
+        // Reject one response at this encoded size; 0 disables the per-response limit.
+        .max_response_bytes = 8388608, // 8 MiB
     },
 
     // -------------------------
@@ -42,7 +46,7 @@
     // Minimum operational severity: .debug, .info, .warning, .@"error".
     .log = .{ .level = .debug },
 
-    // Maximum request size in bytes
+    // Maximum aggregate unread request bytes per connection; 0 disables the limit.
     .max_request_size = 10485760, // 10 MB
 
     // -------------------------

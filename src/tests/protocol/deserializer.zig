@@ -116,6 +116,7 @@ test "deserialize array" {
     const result = try deserializer.process(value);
     const expected = "*3\r\n$5\r\nfirst\r\n$6\r\nsecond\r\n$5\r\nthird\r\n";
     try std.testing.expectEqualStrings(expected, result);
+    try std.testing.expectEqual(result.len, try Deserializer.encodedLen(value));
 }
 
 // Guards against excessive temporary allocations by encoding a large array with a bounded allocator.
@@ -151,6 +152,7 @@ test "serialize map" {
     // it's not guaranteed that the order of the map will be the same
     const expected = "%3\r\n$1\r\nb\r\n$6\r\nsecond\r\n$1\r\na\r\n$5\r\nfirst\r\n$1\r\nc\r\n$5\r\nthird\r\n";
     try std.testing.expectEqualStrings(expected, result);
+    try std.testing.expectEqual(result.len, try Deserializer.encodedLen(value));
 }
 
 // Verifies ordered-set entries are emitted in insertion order.
@@ -171,6 +173,7 @@ test "serialize set" {
     // it's guaranteed that the order of the set will be the same
     const expected = "/3\r\n$5\r\nfirst\r\n$6\r\nsecond\r\n$5\r\nthird\r\n";
     try std.testing.expectEqualStrings(expected, result);
+    try std.testing.expectEqual(result.len, try Deserializer.encodedLen(value));
 }
 
 // Checks unordered-set framing and its entries without assuming iteration order.
@@ -191,4 +194,5 @@ test "serialize uset" {
     // it's not guaranteed that the order of the uset will be the same
     const expected = "~3\r\n$5\r\nfirst\r\n$5\r\nthird\r\n$6\r\nsecond\r\n";
     try std.testing.expectEqualStrings(expected, result);
+    try std.testing.expectEqual(result.len, try Deserializer.encodedLen(value));
 }

@@ -49,8 +49,12 @@ pub fn init(allocator: std.mem.Allocator, context: Context) !Processor {
 pub fn deframe(self: *Processor, connection: *Connection) void {
     var start = connection.receive_start;
     const watermark = self.context.config.network.max_pending_response_bytes;
+    const max_commands = self.context.config.network.max_pipeline_commands;
+    var processed: usize = 0;
 
-    while (watermark == 0 or connection.tx_accumulator.items.len < watermark) {
+    while ((watermark == 0 or connection.tx_accumulator.items.len < watermark) and
+        (max_commands == 0 or processed < max_commands))
+    {
         const request_end = std.mem.indexOfScalarPos(
             u8,
             connection.accumulator.items,
@@ -67,6 +71,7 @@ pub fn deframe(self: *Processor, connection: *Connection) void {
         self.process(connection, request);
 
         start = request_end + 1;
+        processed += 1;
     }
 
     if (start == connection.accumulator.items.len) {
@@ -98,9 +103,10 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
 
     const command_set = &result.array;
     defer command_set.deinit();
+    const max_response = self.context.config.network.max_response_bytes;
 
     if (isGetCommand(command_set)) {
-        self.processGet(connection, command_set);
+        self.processGet(connection, command_set, max_response);
         return;
     }
 
@@ -111,6 +117,15 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
     }
 
     defer self.cmd_handler.free(command_set, &cmd_result);
+
+    const encoded_len = Deserializer.encodedLen(cmd_result.ok) catch |err| {
+        self.sendError(connection, err);
+        return;
+    };
+    if (max_response != 0 and encoded_len > max_response -| 1) {
+        self.sendError(connection, error.ResponseTooLarge);
+        return;
+    }
 
     const start = connection.tx_accumulator.items.len;
     Deserializer.write(&connection.tx_accumulator, cmd_result.ok) catch |err| {
@@ -131,7 +146,12 @@ pub fn process(self: *Processor, connection: *Connection, request: []u8) void {
 
 /// Handles GET through storage's read-locked value callback to serialize directly to output.
 /// Rolls back partial output before reporting lookup, serialization, or terminator errors.
-fn processGet(self: *Processor, connection: *Connection, command_set: *const std.array_list.Managed(ZType)) void {
+fn processGet(
+    self: *Processor,
+    connection: *Connection,
+    command_set: *const std.array_list.Managed(ZType),
+    max_response: usize,
+) void {
     const output_start = connection.tx_accumulator.items.len;
     if (command_set.items.len < 2) {
         self.failCommand(connection, error.InvalidCommand);
@@ -142,9 +162,13 @@ fn processGet(self: *Processor, connection: *Connection, command_set: *const std
         return;
     }
 
+    var limited_output: LimitedOutput = .{
+        .output = &connection.tx_accumulator,
+        .max_response = max_response,
+    };
     self.context.resources.memory.withValue(
         command_set.items[1].str,
-        &connection.tx_accumulator,
+        &limited_output,
         appendSerializedValue,
     ) catch |err| {
         connection.tx_accumulator.shrinkRetainingCapacity(output_start);
@@ -184,8 +208,16 @@ fn isGetCommand(command_set: *const std.array_list.Managed(ZType)) bool {
 }
 
 /// Serializes a value into the managed connection output buffer.
-fn appendSerializedValue(output: *std.array_list.Managed(u8), value: ZType) !void {
-    try Deserializer.write(output, value);
+const LimitedOutput = struct {
+    output: *std.array_list.Managed(u8),
+    max_response: usize,
+};
+
+fn appendSerializedValue(output: *const LimitedOutput, value: ZType) !void {
+    const encoded_len = try Deserializer.encodedLen(value);
+    if (output.max_response != 0 and encoded_len > output.max_response -| 1)
+        return error.ResponseTooLarge;
+    try Deserializer.write(output.output, value);
 }
 
 /// Writes an error response; failures to write are logged because this path cannot return them.

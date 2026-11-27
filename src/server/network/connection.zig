@@ -121,6 +121,16 @@ pub fn readPendingTimed(self: *Self, max_size: usize, timeout: std.Io.Timeout) !
     };
 }
 
+/// Reports whether at least one complete request frame remains unread.
+pub fn hasPendingFrame(self: *Self) bool {
+    return std.mem.indexOfScalarPos(
+        u8,
+        self.accumulator.items,
+        self.receive_start,
+        consts.EXT_CHAR,
+    ) != null;
+}
+
 /// Sends the full buffered response and retains buffer capacity for later writes.
 pub fn writePending(self: *Self) !void {
     try self.stream.writeAll(self.tx_accumulator.items);

@@ -17,6 +17,7 @@ pub fn handle(out: anytype, err: anyerror, logger: *Logger) !void {
         error.NotFound => "NOT_FOUND",
         error.MaxClientsReached => "MAX_CLIENTS_REACHED",
         error.PayloadExceeded => "PAYLOAD_EXCEEDED",
+        error.ResponseTooLarge => "RESPONSE_TOO_LARGE",
         error.NotWhitelisted => "NOT_WHITELISTED",
         error.SaveFailure => "SAVE_FAILURE",
         error.InvalidLength => "INVALID_LENGTH",

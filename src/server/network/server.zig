@@ -197,7 +197,7 @@ fn serve(self: *Server, io: std.Io, incoming: StreamServer.Connection, slots: *s
                 self.context.resources.logger.err("# failed to write response: {any}", .{err});
                 return;
             };
-            if (network.max_pending_response_bytes == 0 or connection.accumulator.items.len == 0) break;
+            if (!connection.hasPendingFrame()) break;
         }
     }
 }

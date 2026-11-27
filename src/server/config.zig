@@ -9,7 +9,13 @@ const Address = @import("network/address.zig").Address;
 pub const NetworkConfig = struct {
     idle_timeout_ms: u32 = 0,
     request_timeout_ms: u32 = 0,
-    max_pending_response_bytes: usize = 0,
+    /// Maximum complete commands processed before flushing a pipeline batch.
+    /// Zero disables the command-count boundary.
+    max_pipeline_commands: usize = 256,
+    /// Flush pending replies after this many bytes. Zero disables batching by size.
+    max_pending_response_bytes: usize = 1024 * 1024,
+    /// Maximum encoded size of one response. Zero disables the per-response limit.
+    max_response_bytes: usize = 8 * 1024 * 1024,
 };
 
 pub const SnapshotConfig = struct {

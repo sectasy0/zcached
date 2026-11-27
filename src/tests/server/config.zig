@@ -98,7 +98,13 @@ test "config loads typed network, snapshot and logging sections" {
     const allocator = std.testing.allocator;
     try file.create(allocator,
         \\.{
-        \\    .network = .{ .idle_timeout_ms = 30000, .request_timeout_ms = 5000, .max_pending_response_bytes = 65536 },
+        \\    .network = .{
+        \\        .idle_timeout_ms = 30000,
+        \\        .request_timeout_ms = 5000,
+        \\        .max_pipeline_commands = 64,
+        \\        .max_pending_response_bytes = 65536,
+        \\        .max_response_bytes = 1048576,
+        \\    },
         \\    .snapshot = .{ .path = "./tmp/snapshots", .interval_secs = 60, .keep_last = 3 },
         \\    .log = .{ .level = .@"error" },
         \\}
@@ -107,7 +113,9 @@ test "config loads typed network, snapshot and logging sections" {
     defer config.deinit();
     try std.testing.expectEqual(@as(u32, 30000), config.network.idle_timeout_ms);
     try std.testing.expectEqual(@as(u32, 5000), config.network.request_timeout_ms);
+    try std.testing.expectEqual(@as(usize, 64), config.network.max_pipeline_commands);
     try std.testing.expectEqual(@as(usize, 65536), config.network.max_pending_response_bytes);
+    try std.testing.expectEqual(@as(usize, 1048576), config.network.max_response_bytes);
     try std.testing.expectEqualStrings("./tmp/snapshots", config.snapshot.path.?);
     try std.testing.expectEqual(@as(u32, 60), config.snapshot.interval_secs);
     try std.testing.expectEqual(@as(usize, 3), config.snapshot.keep_last);

@@ -486,15 +486,19 @@ production client security policy.
 | Listen backlog | Requested `StreamServer.Options.kernel_backlog` defaults to 128; the OS may apply its own limits. It is not the number of active application tasks. |
 | Read chunk | Starts at `CLIENT_BUFFER = 4096`, doubles after full reads up to 64 KiB, and is retained for later reads. `config.client_buffer` is not used to size it. |
 | `max_request_size` | Caps unread receive bytes before committing a read; default 10 MiB. Consumed prefixes do not count. Several pipelined frames can count against it together. |
-| Transmit buffer | No corresponding hard response-byte limit in `Connection`. |
+| `max_pipeline_commands` | Stops a processing batch after 256 commands by default and lets the server flush replies before continuing with the remaining pipeline. |
+| `max_pending_response_bytes` | Flushes a response batch after the 1 MiB threshold by default. A batch can exceed the threshold by at most one encoded response. |
+| `max_response_bytes` | Rejects one reply larger than 8 MiB before serializing it, using `RESPONSE_TOO_LARGE`. |
 | Timeouts | No application-level read, write, idle-client, or TLS-handshake deadline. |
 | Background queue | Dynamic immediate FIFO and delayed priority queue; its test capacity hook is not production admission control. |
 
 The actual receive-size check is
 `unread_len > max_size || read_size > max_size - unread_len`.
-Despite a configuration comment describing zero as unlimited,
-`max_request_size = 0` currently rejects any nonempty read. Operators should
-configure a positive limit rather than rely on that comment.
+The per-response cap and the batch flush threshold bound queued response memory:
+at most the threshold plus one permitted response, plus small error replies.
+`0` disables an individual limit. Collection declarations in malformed requests
+are also rejected when their declared count cannot fit in the bytes remaining
+in the frame, avoiding oversized parser allocations.
 
 An accept loop reserves a permit **before** accepting, so it may reserve one
 while waiting for the next connection. Connections that complete the TCP

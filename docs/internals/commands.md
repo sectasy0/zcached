@@ -20,6 +20,7 @@ include descriptive text or request-provided values.
 | `INVALID_EXPIRY` | An expiration value is invalid. |
 | `INVALID_LENGTH` | A protocol length is invalid. |
 | `PAYLOAD_EXCEEDED` | The request payload exceeds its configured limit. |
+| `RESPONSE_TOO_LARGE` | One encoded response exceeds its configured limit. |
 | `MAX_CLIENTS_REACHED` | The connection limit has been reached. |
 | `NOT_WHITELISTED` | The client address is not allowed. |
 | `SAVE_FAILURE` | A snapshot could not be saved. |

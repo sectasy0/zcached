@@ -49,9 +49,16 @@ shared shard locks and must be released with `deinit()`, even on early exit.
   handshake). `.network.request_timeout_ms` limits how long an incomplete frame
   can take to arrive, even if the client keeps sending fragments. `0` disables
   either timeout.
-- `.network.max_pending_response_bytes` flushes queued replies before processing
-  more pipelined requests. `0` disables the threshold. A single reply may exceed
-  it; it is not a hard cap on response size or allocated capacity.
+- `.max_request_size` bounds unread request bytes per connection. It protects
+  both fragmented and pipelined input; `0` disables the limit.
+- `.network.max_pipeline_commands` and `.network.max_pending_response_bytes`
+  split a pipeline into batches by command count or queued response bytes.
+  Reaching either boundary flushes the completed replies before processing the
+  rest. `0` disables the corresponding batch boundary.
+- `.network.max_response_bytes` rejects one encoded response that is too large
+  with `RESPONSE_TOO_LARGE`, before serializing the reply. A finite response cap,
+  together with the queued-response batch boundary, bounds response allocation
+  per connection. `0` disables the single-response cap.
 - `.snapshot.path` defaults to `./persist`. `.snapshot.interval_secs = 0` leaves
   snapshots manual (`SAVE`); a positive value schedules periodic saves.
   `.snapshot.keep_last = 0` keeps all files; a positive value keeps the newest

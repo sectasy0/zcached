@@ -159,6 +159,8 @@ pub fn SerializerT(comptime GenericReader: type) type {
             const array_len = std.fmt.parseInt(usize, bytes, 10) catch {
                 return error.InvalidLength;
             };
+            if (array_len > reader.context.buffer.len - reader.context.pos)
+                return error.InvalidLength;
 
             var result = try std.array_list.Managed(types.ZType).initCapacity(
                 self.arena.allocator(),
@@ -212,6 +214,8 @@ pub fn SerializerT(comptime GenericReader: type) type {
             };
 
             if (entries == 0) return error.Unprocessable;
+            if (entries > (reader.context.buffer.len - reader.context.pos) / 2)
+                return error.InvalidLength;
 
             var result = std.StringHashMap(types.ZType).init(self.arena.allocator());
 
@@ -238,6 +242,8 @@ pub fn SerializerT(comptime GenericReader: type) type {
             const set_len = std.fmt.parseInt(usize, bytes, 10) catch {
                 return error.InvalidLength;
             };
+            if (set_len > reader.context.buffer.len - reader.context.pos)
+                return error.InvalidLength;
 
             var set = types.sets.Set(types.ZType).init(
                 self.arena.allocator(),
@@ -259,6 +265,8 @@ pub fn SerializerT(comptime GenericReader: type) type {
             const set_len = std.fmt.parseInt(usize, bytes, 10) catch {
                 return error.InvalidLength;
             };
+            if (set_len > reader.context.buffer.len - reader.context.pos)
+                return error.InvalidLength;
 
             var uset = types.sets.SetUnordered(types.ZType).init(
                 self.arena.allocator(),

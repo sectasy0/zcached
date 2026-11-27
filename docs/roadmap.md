@@ -96,8 +96,8 @@ Acceptance criteria:
 - ❌ Add authentication, including `AUTH` and a supported password configuration.
 - ❌ Add ACL or role configuration, or explicitly keep 1.0.0 authentication scoped
   to a small, documented password-based model.
-- ◐ Add request-size and aggregate response limits that are safe under malformed
-  or pipelined input.
+- ✅ Added configurable request, pipeline-command, batch-response, and
+  single-response limits, including bounds for malformed collection counts.
 - ✅ Graceful shutdown and startup diagnostics are implemented: startup failures
   identify the lifecycle phase, network readiness is logged, SIGTERM/SIGINT are
   distinguished, worker shutdown is coordinated, and AOF is flushed on exit.
