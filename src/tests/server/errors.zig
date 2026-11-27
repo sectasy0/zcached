@@ -37,6 +37,7 @@ test "error replies contain only stable error codes" {
         .{ .err = error.PayloadExceeded, .code = "PAYLOAD_EXCEEDED" },
         .{ .err = error.NotWhitelisted, .code = "NOT_WHITELISTED" },
         .{ .err = error.SaveFailure, .code = "SAVE_FAILURE" },
+        .{ .err = error.SaveInProgress, .code = "SAVE_IN_PROGRESS" },
         .{ .err = error.InvalidLength, .code = "INVALID_LENGTH" },
         .{ .err = error.InvalidExpiry, .code = "INVALID_EXPIRY" },
         .{ .err = error.BusyKey, .code = "BUSY_KEY" },

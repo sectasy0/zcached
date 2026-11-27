@@ -21,6 +21,7 @@ pub fn handle(out: anytype, err: anyerror, logger: *Logger) !void {
         error.ResponseTooLarge => "RESPONSE_TOO_LARGE",
         error.NotWhitelisted => "NOT_WHITELISTED",
         error.SaveFailure => "SAVE_FAILURE",
+        error.SaveInProgress => "SAVE_IN_PROGRESS",
         error.InvalidLength => "INVALID_LENGTH",
         error.InvalidExpiry => "INVALID_EXPIRY",
         error.BusyKey => "BUSY_KEY",

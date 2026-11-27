@@ -1,6 +1,9 @@
 const std = @import("std");
+const fs = @import("fs");
+const runtime_io = @import("runtime_io");
 
 const Connection = @import("../../server/network/connection.zig");
+const ZType = @import("../../protocol/types.zig").ZType;
 
 const fixtures = @import("../fixtures.zig");
 const ContextFixture = fixtures.ContextFixture;
@@ -182,6 +185,60 @@ test "memory limit returns a stable protocol error without changing data" {
     try std.testing.expectEqual(@as(usize, 1), fixture.metrics.memory_limit_rejections_total.load(.monotonic));
     try std.testing.expectEqual(@as(i64, 1), (try fixture.memory.?.get("existing")).int);
     try std.testing.expectError(error.NotFound, fixture.memory.?.get("blocked"));
+}
+
+test "ASAVE returns immediately and serializes background saves" {
+    const allocator = std.testing.allocator;
+    const path = try std.fmt.allocPrint(
+        allocator,
+        "./tmp/asave-{d}",
+        .{runtime_io.timestampNanoseconds()},
+    );
+    defer allocator.free(path);
+    defer fs.cwd().deleteTree(path) catch {};
+
+    var fixture = try ContextFixture.init();
+    defer fixture.deinit();
+    defer fixture.agent.deinit();
+    try fixture.create_memory();
+    try fixture.agent.kickoff();
+    try fixture.memory.?.put("key", .{ .int = 7 });
+    fixture.snapshot.?.path = path;
+    var started: @import("sync").Event = .{};
+    var gate: @import("sync").Event = .{};
+    fixture.snapshot.?.test_started = &started;
+    fixture.snapshot.?.test_gate = &gate;
+
+    var handler = Processor.init(allocator, fixture.context()) catch unreachable;
+    defer handler.deinit();
+    var command = std.array_list.Managed(ZType).init(allocator);
+    defer command.deinit();
+    try command.append(.{ .str = "ASAVE" });
+    var result = handler.cmd_handler.process(&command);
+    try std.testing.expectEqualStrings("OK", result.ok.sstr);
+    started.wait();
+    try std.testing.expect(fixture.memory.?.isSaveInProgress());
+
+    result = handler.cmd_handler.process(&command);
+    try std.testing.expectEqual(error.SaveInProgress, result.err);
+    const synchronous = fixture.memory.?.save();
+    try std.testing.expectError(error.SaveInProgress, synchronous);
+
+    gate.set();
+    const limit = runtime_io.timestampNanoseconds() + 5 * std.time.ns_per_s;
+    while (fixture.memory.?.isSaveInProgress() and runtime_io.timestampNanoseconds() < limit)
+        try runtime_io.get().sleep(.fromMilliseconds(10), .awake);
+    try std.testing.expect(!fixture.memory.?.isSaveInProgress());
+    try std.testing.expect(fixture.memory.?.last_save.load(.monotonic) > 0);
+
+    const filename = try std.fmt.allocPrint(
+        allocator,
+        "{s}/dump_{d}.zcpf",
+        .{ path, fixture.memory.?.last_save.load(.monotonic) },
+    );
+    defer allocator.free(filename);
+    const file = try fs.cwd().openFile(filename, .{});
+    file.close();
 }
 
 test "processing repeated commands bounds protocol arena memory" {

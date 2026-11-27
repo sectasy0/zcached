@@ -30,10 +30,10 @@ test "INFO, COMMAND and CLIENT provide server introspection" {
     try std.testing.expect(std.mem.indexOf(u8, info.ok.str, "commands_total:0\r\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, info.ok.str, "# Persistence\r\naof_enabled:") != null);
 
-    try std.testing.expectEqual(@as(i64, 26), (try runCommand(&handler, &.{ .{ .str = "COMMAND" }, .{ .str = "COUNT" } })).ok.int);
+    try std.testing.expectEqual(@as(i64, 27), (try runCommand(&handler, &.{ .{ .str = "COMMAND" }, .{ .str = "COUNT" } })).ok.int);
     var command_result = try runCommand(&handler, &.{.{ .str = "COMMAND" }});
     try std.testing.expect(command_result == .ok);
-    try std.testing.expectEqual(@as(usize, 26), command_result.ok.array.items.len);
+    try std.testing.expectEqual(@as(usize, 27), command_result.ok.array.items.len);
     for (command_result.ok.array.items) |name| {
         try std.testing.expect(!std.ascii.eqlIgnoreCase(name.str, "PEXPIREAT"));
     }
@@ -59,6 +59,7 @@ test "public commands reject unsupported extra arguments" {
         &.{ .{ .str = "ECHO" }, .{ .str = "value" }, .{ .str = "extra" } },
         &.{ .{ .str = "DBSIZE" }, .{ .str = "extra" } },
         &.{ .{ .str = "SAVE" }, .{ .str = "extra" } },
+        &.{ .{ .str = "ASAVE" }, .{ .str = "extra" } },
         &.{ .{ .str = "KEYS" }, .{ .str = "extra" } },
         &.{ .{ .str = "FLUSH" }, .{ .str = "extra" } },
         &.{ .{ .str = "LASTSAVE" }, .{ .str = "extra" } },

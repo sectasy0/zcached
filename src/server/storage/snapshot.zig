@@ -48,6 +48,9 @@ logger: *Logger,
 path: ?[]const u8,
 save_lock: sync.Mutex = .{},
 save_task: ?Agent.ScheduledTask = null,
+save_in_progress: std.atomic.Value(bool) = .init(false),
+test_started: ?*sync.Event = null,
+test_gate: ?*sync.Event = null,
 
 /// Initializes protocol decoding state and selects the configured or default directory.
 pub fn init(
@@ -88,8 +91,31 @@ fn saveScheduled(self: *Handler, memory: *Memory) void {
     };
 }
 
+/// Queues a snapshot and returns immediately. Only one save operation can be
+/// synchronous, scheduled, or asynchronous at a time.
+pub fn saveAsync(self: *Handler, agent: *Agent, memory: *Memory) !void {
+    if (self.save_in_progress.swap(true, .acq_rel)) return error.SaveInProgress;
+    errdefer self.save_in_progress.store(false, .release);
+    try agent.schedule(saveAsynchronous, .{ self, memory }, .{});
+}
+
+fn saveAsynchronous(self: *Handler, memory: *Memory) void {
+    defer self.save_in_progress.store(false, .release);
+    if (self.test_started) |event| event.set();
+    if (self.test_gate) |event| event.wait();
+    _ = self.saveLocked(memory) catch |err| {
+        self.logger.err("# asynchronous snapshot failed: {any}", .{err});
+    };
+}
+
 /// Writes a snapshot of all memory entries and returns its byte length.
 pub fn save(self: *Handler, memory: *Memory) !usize {
+    if (self.save_in_progress.swap(true, .acq_rel)) return error.SaveInProgress;
+    defer self.save_in_progress.store(false, .release);
+    return self.saveLocked(memory);
+}
+
+fn saveLocked(self: *Handler, memory: *Memory) !usize {
     self.save_lock.lock();
     defer self.save_lock.unlock();
 
@@ -117,6 +143,10 @@ pub fn save(self: *Handler, memory: *Memory) !usize {
         self.logger.warn("# snapshot saved but retention failed: {any}", .{err});
     };
     return bytes.items.len;
+}
+
+pub fn isSaveInProgress(self: *const Handler) bool {
+    return self.save_in_progress.load(.acquire);
 }
 
 fn encodeSnapshot(allocator: std.mem.Allocator, memory: *Memory, bytes: *std.array_list.Managed(u8)) !i64 {

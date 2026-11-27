@@ -4,6 +4,7 @@ const runtime_io = @import("runtime_io");
 const types = @import("../../protocol/types.zig");
 const snapshot = @import("snapshot.zig");
 const Config = @import("../config.zig");
+const Agent = @import("../background/agent.zig");
 pub const Fabric = @import("fabric.zig");
 
 const Memory = @This();
@@ -103,6 +104,14 @@ pub fn memoryUsed(self: *Memory) usize {
 
 pub fn save(self: *Memory) !usize {
     return self.persister.save(self);
+}
+
+pub fn saveAsync(self: *Memory, agent: *Agent) !void {
+    return self.persister.saveAsync(agent, self);
+}
+
+pub fn isSaveInProgress(self: *Memory) bool {
+    return self.persister.isSaveInProgress();
 }
 
 /// The returned list owns its buffer, but borrows the stored key bytes.

@@ -56,6 +56,8 @@ const CommandType = enum {
     DBSIZE,
     /// Persist the current in-memory state.
     SAVE,
+    /// Queue persistence of the current in-memory state.
+    ASAVE,
     /// Return a snapshot of all keys.
     KEYS,
     /// Return the timestamp of the last persistence save.
@@ -207,6 +209,10 @@ pub const Handler = struct {
                 if (command_set.items.len != 1) return .{ .err = error.InvalidCommand };
                 return self.save();
             },
+            .ASAVE => {
+                if (command_set.items.len != 1) return .{ .err = error.InvalidCommand };
+                return self.asave();
+            },
             .KEYS => {
                 if (command_set.items.len != 1) return .{ .err = error.InvalidCommand };
                 return self.zkeys();
@@ -333,6 +339,14 @@ pub const Handler = struct {
         if (size > 0) return .{ .ok = .{ .sstr = "OK" } };
 
         return .{ .err = error.SaveFailure };
+    }
+
+    /// Queues a snapshot without waiting for encoding or filesystem I/O.
+    fn asave(self: *Handler) Result {
+        if (self.context.resources.memory.size() == 0) return .{ .err = error.SaveFailure };
+        self.context.resources.memory.saveAsync(self.context.resources.agent) catch |err|
+            return .{ .err = err };
+        return .{ .ok = .{ .sstr = "OK" } };
     }
 
     /// Builds an owned map of requested values, substituting null for missing keys.
@@ -477,7 +491,7 @@ pub const Handler = struct {
     fn info(self: *Handler) Result {
         const text = std.fmt.allocPrint(
             self.allocator,
-            "# Server\r\nzcached_version:0.0.1\r\nworkers:{d}\r\nmax_clients:{d}\r\ntls_enabled:{s}\r\n\r\n# Connections\r\nconnections_accepted_total:{d}\r\nconnections_active:{d}\r\nconnections_closed_total:{d}\r\nread_timeouts_total:{d}\r\nrequest_limit_rejections_total:{d}\r\n\r\n# Traffic\r\ncommands_total:{d}\r\ncommand_errors_total:{d}\r\nmalformed_requests_total:{d}\r\nmemory_limit_rejections_total:{d}\r\nresponse_limit_rejections_total:{d}\r\nrequest_bytes_total:{d}\r\nresponse_bytes_total:{d}\r\nresponse_batches_total:{d}\r\nwrite_errors_total:{d}\r\n\r\n# Persistence\r\naof_enabled:{s}\r\nlast_save_timestamp:{d}\r\n\r\n# Keyspace\r\ndb_keys:{d}\r\nused_memory:{d}\r\nmemory_limit:{d}\r\n",
+            "# Server\r\nzcached_version:0.0.1\r\nworkers:{d}\r\nmax_clients:{d}\r\ntls_enabled:{s}\r\n\r\n# Connections\r\nconnections_accepted_total:{d}\r\nconnections_active:{d}\r\nconnections_closed_total:{d}\r\nread_timeouts_total:{d}\r\nrequest_limit_rejections_total:{d}\r\n\r\n# Traffic\r\ncommands_total:{d}\r\ncommand_errors_total:{d}\r\nmalformed_requests_total:{d}\r\nmemory_limit_rejections_total:{d}\r\nresponse_limit_rejections_total:{d}\r\nrequest_bytes_total:{d}\r\nresponse_bytes_total:{d}\r\nresponse_batches_total:{d}\r\nwrite_errors_total:{d}\r\n\r\n# Persistence\r\naof_enabled:{s}\r\nlast_save_timestamp:{d}\r\nsave_in_progress:{s}\r\n\r\n# Keyspace\r\ndb_keys:{d}\r\nused_memory:{d}\r\nmemory_limit:{d}\r\n",
             .{
                 self.context.config.workers,
                 self.context.config.max_clients,
@@ -498,6 +512,7 @@ pub const Handler = struct {
                 self.context.resources.metrics.write_errors_total.load(.monotonic),
                 if (self.context.config.aof.flush_strategy == .no) "0" else "1",
                 self.context.resources.memory.last_save.load(.monotonic),
+                if (self.context.resources.memory.isSaveInProgress()) "1" else "0",
                 self.context.resources.memory.size(),
                 self.context.resources.memory.memoryUsed(),
                 self.context.resources.memory.fabric.limit,
@@ -509,10 +524,10 @@ pub const Handler = struct {
     /// Lists public commands or reports the command count.
     fn commandList(self: *Handler, args: []ZType) Result {
         const names = [_][]const u8{
-            "PING",   "GET",    "SET",  "GSET",    "EXPIRE",   "TTL",    "PERSIST",
-            "DELETE", "FLUSH",  "MGET", "MSET",    "MSETNX",   "INCR",   "DECR",
-            "APPEND", "DBSIZE", "SAVE", "KEYS",    "LASTSAVE", "SIZEOF", "RENAME",
-            "ECHO",   "COPY",   "INFO", "COMMAND", "CLIENT",
+            "PING",   "GET",    "SET",  "GSET",  "EXPIRE",  "TTL",      "PERSIST",
+            "DELETE", "FLUSH",  "MGET", "MSET",  "MSETNX",  "INCR",     "DECR",
+            "APPEND", "DBSIZE", "SAVE", "ASAVE", "KEYS",    "LASTSAVE", "SIZEOF",
+            "RENAME", "ECHO",   "COPY", "INFO",  "COMMAND", "CLIENT",
         };
         if (args.len == 1 and args[0] == .str and std.ascii.eqlIgnoreCase(args[0].str, "COUNT")) {
             return .{ .ok = .{ .int = @intCast(names.len) } };

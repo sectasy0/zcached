@@ -25,6 +25,7 @@ include descriptive text or request-provided values.
 | `MAX_CLIENTS_REACHED` | The connection limit has been reached. |
 | `NOT_WHITELISTED` | The client address is not allowed. |
 | `SAVE_FAILURE` | A snapshot could not be saved. |
+| `SAVE_IN_PROGRESS` | A synchronous, asynchronous, or scheduled snapshot is already running. |
 | `UNPROCESSABLE` | The request could not be parsed. |
 | `INTERNAL_ERROR` | An unexpected error occurred. |
 
@@ -200,11 +201,18 @@ DBSIZE
 serialized value size
 
 `SAVE` performs a synchronous save of the dataset, producing a point-in-time
-snapshot of all data in the zcached instance in `.zcpf` format. There is no
-asynchronous `ASAVE` command.
+snapshot of all data in the zcached instance in `.zcpf` format. `ASAVE` queues
+the same snapshot work in the background and returns `OK` after the task is
+accepted. `LASTSAVE` changes only after the background file has been written,
+synced, and atomically installed. A second save request while either form is
+running returns `SAVE_IN_PROGRESS`.
+Asynchronous I/O failure is reported in the operational log and does not
+advance `LASTSAVE`; `ASAVE` itself only reports whether background work was
+accepted.
 
 ```sh
 SAVE
+ASAVE
 ```
 
 ### MGET

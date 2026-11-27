@@ -109,7 +109,9 @@ Snapshots are atomic `.zcpf` files in `.snapshot.path`:
 ```
 
 - `SAVE` creates a snapshot synchronously and returns only after replacement
-  and sync succeed.
+  and sync succeed. `ASAVE` accepts background work immediately and changes
+  `LASTSAVE` only after the snapshot is installed. A concurrent `SAVE` or
+  `ASAVE` returns `SAVE_IN_PROGRESS`.
 - `interval_secs = 0` leaves snapshots manual; a positive value schedules them.
 - `keep_last = 0` preserves every snapshot. A positive value applies retention
   after every successful manual or scheduled save.

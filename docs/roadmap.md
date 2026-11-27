@@ -57,7 +57,7 @@ Acceptance criteria:
 
 ## 2. Storage and persistence
 
-**Status:** ◐ partially complete
+**Status:** ✅ complete
 
 - ✅ Timestamped `.zcpf` snapshots with atomic replacement and retention.
 - ✅ Snapshot and AOF TTL metadata using absolute deadlines.
@@ -67,7 +67,9 @@ Acceptance criteria:
   format, with 1.x compatibility and future format-change rules in the
   [persistence format policy](internals/persistence_formats.md).
 - ✅ Add integrity and corruption handling for snapshot and AOF files.
-- ◐ Implement asynchronous save support (`ASAVE`); AOF rewrite is implemented.
+- ✅ Implemented asynchronous save support (`ASAVE`) with serialized snapshot
+  work, stable in-progress errors, and completion tracking through `LASTSAVE`;
+  AOF rewrite remains implemented.
 - ✅ Applied snapshot retention to manual and scheduled saves, including
   protection for the just-completed snapshot, and documented snapshot-then-AOF
   recovery precedence.

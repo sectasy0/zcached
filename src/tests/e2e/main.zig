@@ -285,7 +285,7 @@ fn runTests(socket: anytype) !void {
         false,
     );
 
-    try expectCommand(socket, &.{ "COMMAND", "COUNT" }, "COMMAND COUNT", ":26\r\n");
+    try expectCommand(socket, &.{ "COMMAND", "COUNT" }, "COMMAND COUNT", ":27\r\n");
     try expectCommand(socket, &.{ "CLIENT", "ID" }, "CLIENT ID", ":0\r\n");
 
     try sendAndExpect(
@@ -743,6 +743,31 @@ fn save(socket: anytype) !void {
         save_response,
         true,
     );
+
+    const before_async = try send(socket, "*1\r\n$8\r\nLASTSAVE\r\n\x03");
+    defer std.heap.page_allocator.free(before_async);
+    runtime_io.sleepNanoseconds(std.time.ns_per_s);
+    try sendAndExpect(
+        socket,
+        "*1\r\n$5\r\nASAVE\r\n\x03",
+        "ASAVE accepted",
+        "+OK\r\n",
+        false,
+    );
+
+    const deadline = runtime_io.timestampNanoseconds() + 5 * std.time.ns_per_s;
+    while (runtime_io.timestampNanoseconds() < deadline) {
+        const current = try send(socket, "*1\r\n$8\r\nLASTSAVE\r\n\x03");
+        defer std.heap.page_allocator.free(current);
+        if (!std.mem.eql(u8, current, before_async)) {
+            passed += 1;
+            break;
+        }
+        runtime_io.sleepNanoseconds(20 * std.time.ns_per_ms);
+    } else {
+        failed += 1;
+        return error.ResponseMismatch;
+    }
 }
 
 fn sizeOf(socket: anytype) !void {
