@@ -15,7 +15,7 @@ pub const CommandGroup = enum {
     all,
 };
 
-const Permissions = struct {
+pub const Permissions = struct {
     groups: []const CommandGroup = &.{},
     allow: []const []const u8 = &.{},
     deny: []const []const u8 = &.{},
@@ -25,7 +25,7 @@ const Permissions = struct {
     admin: bool = false,
 };
 
-const PrincipalConfig = struct {
+pub const PrincipalConfig = struct {
     id: []const u8,
     name: []const u8,
     token_sha256: []const u8,
@@ -39,7 +39,7 @@ pub const Principal = struct {
     permissions: Permissions,
 };
 
-const File = struct {
+pub const File = struct {
     principals: []const PrincipalConfig = &.{},
 };
 
@@ -110,6 +110,7 @@ pub fn init(allocator: std.mem.Allocator, config: Config.AuthConfig) !Store {
                 std.crypto.timing_safe.eql([32]u8, previous.token_hash, token_hash))
                 return error.InvalidPrincipal;
         }
+
         store.principals[index] = .{
             .id = entry.id,
             .name = entry.name,
@@ -118,6 +119,13 @@ pub fn init(allocator: std.mem.Allocator, config: Config.AuthConfig) !Store {
         };
     }
     return store;
+}
+
+pub fn initPath(allocator: std.mem.Allocator, path: []const u8) !Store {
+    return init(allocator, .{
+        .enabled = true,
+        .path = path,
+    });
 }
 
 pub fn deinit(self: *Store) void {

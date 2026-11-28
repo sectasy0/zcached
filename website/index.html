@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#050b09">
+  <meta name="description" content="zcached is a compact, fast in-memory cache built in Zig with snapshots, AOF, TLS, authentication and zero runtime dependencies.">
+  <title>zcached — Fast by design. Small by choice.</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="mask-icon" href="favicon.svg" color="#2de39b">
+  <link rel="stylesheet" href="styles.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <canvas id="energy-field" aria-hidden="true"></canvas>
+  <div class="noise" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="zcached home">
+      <img src="logo-mark.svg" alt="zcached">
+    </a>
+    <nav aria-label="Main navigation">
+      <a href="#why">Why zcached</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#quickstart">Quickstart</a>
+    </nav>
+    <a class="button button-small button-ghost" href="https://github.com/sectasy0/zcached">
+      GitHub
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M9 4l4 4-4 4"/></svg>
+    </a>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-glow" aria-hidden="true"></div>
+      <div class="hero-content">
+        <div class="eyebrow"><span class="live-dot"></span> Built in Zig. Wired for speed.</div>
+        <h1><span class="title-line">Fast by design.</span><span class="title-line accent-line">Small by choice.</span></h1>
+        <p class="hero-copy">A focused in-memory cache with a native reactor, durable snapshots and AOF, token auth, TLS, and a footprint that stays out of your way.</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#quickstart">Start in 60 seconds <span>↗</span></a>
+          <a class="button button-secondary" href="https://github.com/sectasy0/zcached">Explore the code</a>
+        </div>
+        <div class="hero-proof" aria-label="Project highlights">
+          <span><b>0</b> runtime dependencies</span>
+          <span><b>Zig 0.17.1</b> native</span>
+          <span><b>Linux</b> + macOS</span>
+        </div>
+      </div>
+
+      <div class="terminal-wrap" aria-label="zcached protocol example">
+        <div class="terminal-orbit terminal-orbit-one" aria-hidden="true"></div>
+        <div class="terminal-orbit terminal-orbit-two" aria-hidden="true"></div>
+        <div class="terminal">
+          <div class="terminal-bar">
+            <div class="terminal-dots"><i></i><i></i><i></i></div>
+            <span>zcached-cli — localhost:7556</span>
+            <span class="terminal-status"><i></i> connected</span>
+          </div>
+          <div class="terminal-body" aria-live="polite">
+            <div class="terminal-line"><span class="prompt">$</span><span class="command">zcached-cli PING</span></div>
+            <div class="terminal-line response"><span>+PONG</span><em>0.14ms</em></div>
+            <div class="terminal-line"><span class="prompt">$</span><span class="command">zcached-cli SET session:user-42 "active"</span></div>
+            <div class="terminal-line response"><span>+OK</span><em>0.21ms</em></div>
+            <div class="terminal-line active-line"><span class="prompt">$</span><span class="command" id="typed-command"></span><span class="cursor"></span></div>
+          </div>
+          <div class="terminal-stats">
+            <div><span>GET / second</span><strong data-count="5517224">0</strong></div>
+            <div><span>Pipeline depth</span><strong>64 <small>ops</small></strong></div>
+            <div><span>Value size</span><strong>20 <small>bytes</small></strong></div>
+            <div><span>16 KiB GET P99</span><strong>19.978 <small>ms</small></strong></div>
+          </div>
+        </div>
+        <div class="float-chip chip-one"><i></i> AOF synced</div>
+        <div class="float-chip chip-two">16 shards</div>
+      </div>
+    </section>
+
+    <section class="trust-strip">
+      <span>BUILT FOR THE PRACTICAL LAYER</span>
+      <div>Native I/O</div>
+      <div>Snapshots</div>
+      <div>Append-only log</div>
+      <div>TLS 1.3</div>
+      <div>Token ACLs</div>
+    </section>
+
+    <section class="section" id="why">
+      <div class="section-heading">
+        <div><span class="kicker">01 / WHY ZCACHED</span><h2>The essentials.<br>Nothing soft in the middle.</h2></div>
+        <p>Designed as infrastructure, not a framework: explicit limits, predictable recovery, and tools that tell you exactly what the server is doing.</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature-card feature-large">
+          <div class="card-index">01</div>
+          <div class="icon-box">
+            <svg viewBox="0 0 32 32"><path d="M4 20 16 4l12 16-12 8z"/><path d="m10 18 6-8 6 8-6 4z"/></svg>
+          </div>
+          <h3>Native, not abstracted.</h3>
+          <p>io_uring on Linux. kqueue on macOS. Cooperative connections keep throughput high without a thread explosion.</p>
+          <div class="reactor-visual" aria-hidden="true">
+            <span style="--i:1"></span><span style="--i:2"></span><span style="--i:3"></span><span style="--i:4"></span>
+            <i></i>
+          </div>
+        </article>
+        <article class="feature-card">
+          <div class="card-index">02</div>
+          <div class="icon-box"><svg viewBox="0 0 32 32"><path d="M16 3 5 8v8c0 6 4 10 11 13 7-3 11-7 11-13V8z"/><path d="m11 16 3 3 7-8"/></svg></div>
+          <h3>Durable by default.</h3>
+          <p>Atomic CRC-checked snapshots and a crash-safe AOF. Recovery order is documented, not discovered.</p>
+          <div class="mini-code"><span>snapshot</span> → <span>AOF</span> → <b>ready</b></div>
+        </article>
+        <article class="feature-card">
+          <div class="card-index">03</div>
+          <div class="icon-box"><svg viewBox="0 0 32 32"><circle cx="16" cy="11" r="6"/><path d="M6 28c0-6 4-10 10-10s10 4 10 10M3 28h26"/></svg></div>
+          <h3>Permissions with shape.</h3>
+          <p>Token principals, command groups, read/write/delete prefixes, rate limits and live revocation.</p>
+          <div class="permission-tags"><span>app:*</span><span>read</span><span>write</span><span>deny FLUSH</span></div>
+        </article>
+        <article class="feature-card">
+          <div class="card-index">04</div>
+          <div class="icon-box"><svg viewBox="0 0 32 32"><path d="M4 25V8m0 17h24M8 21l6-7 5 4 8-12"/><circle cx="14" cy="14" r="2"/><circle cx="19" cy="18" r="2"/></svg></div>
+          <h3>Observable under load.</h3>
+          <p>Atomic counters in <code>INFO</code>, explicit resource errors, protocol metrics, and backpressure boundaries.</p>
+          <div class="sparkline" aria-hidden="true">
+            <svg viewBox="0 0 320 64" preserveAspectRatio="none"><path d="M0 48 25 43 44 47 70 26 98 33 124 16 150 22 182 8 208 19 240 11 270 31 296 17 320 20"/></svg>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section architecture" id="architecture">
+      <div class="section-heading">
+        <div><span class="kicker">02 / THE CORE</span><h2>One clean path<br>from socket to state.</h2></div>
+        <p>The real request path starts at a client socket and ends in storage. Persistence, logging and periodic AOF flushes branch from the command path through the background Agent.</p>
+      </div>
+      <div class="architecture-board" role="img" aria-label="Network client connects through the StreamServer, Connection and Processor to authorization, command handling, memory shards, and append-only persistence.">
+        <svg class="architecture-lines" viewBox="0 0 1120 570" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+              <path d="M0 0 7 3.5 0 7z" class="arrow-head"/>
+            </marker>
+            <linearGradient id="flow" x1="0" x2="1">
+              <stop offset="0" stop-color="#164b35"/><stop offset=".5" stop-color="#2de39b"/><stop offset="1" stop-color="#164b35"/>
+            </linearGradient>
+          </defs>
+          <path data-from=".node-client" data-to=".node-transport" class="flow-line" marker-end="url(#arrow)"/>
+          <path data-from=".node-transport" data-to=".node-connection" class="flow-line" marker-end="url(#arrow)"/>
+          <path data-from=".node-connection" data-to=".node-processor" class="flow-line" marker-end="url(#arrow)"/>
+          <path data-from=".node-processor" data-to=".node-auth" class="flow-line" marker-end="url(#arrow)"/>
+          <path data-from=".node-auth" data-to=".node-commands" class="flow-line" marker-end="url(#arrow)"/>
+          <path data-from=".node-commands" data-to=".node-storage" class="flow-line" marker-end="url(#arrow)"/>
+          <path data-from=".node-commands" data-to=".node-aof" class="branch-line" marker-end="url(#arrow)"/>
+          <path data-from=".node-storage" data-to=".node-snapshot" class="branch-line" marker-end="url(#arrow)"/>
+        </svg>
+
+        <div class="arch-node node-client"><span>ANY CLIENT</span><b>Wire request</b><em>zcached-cli / custom client</em></div>
+        <div class="arch-node node-transport"><span>STREAMSERVER</span><b>Listener + TLS</b><em>semaphore admission</em></div>
+        <div class="arch-node node-connection"><span>CONNECTION</span><b>Frame buffers</b><em>input limits + response batches</em></div>
+        <div class="arch-node node-processor"><span>PROCESSOR</span><b>Protocol decode</b><em>parse → authorize → dispatch</em></div>
+        <div class="arch-node node-auth"><span>AUTH</span><b>Session + ACL</b><em>token · command groups · prefixes</em></div>
+        <div class="arch-node node-commands"><span>COMMAND HANDLER</span><b>Execute command</b><em>GET / SET / multi-key</em></div>
+        <div class="arch-node node-storage"><span>MEMORY → FABRIC</span><b>Sharded state</b><em>independent shard locks + heaps</em></div>
+        <div class="arch-node node-aof"><span>WRITE PATH</span><b>AOF + Agent</b><em>append · everysec flush · logs</em></div>
+        <div class="arch-node node-snapshot"><span>POINT-IN-TIME</span><b>Snapshots</b><em>manual / scheduled / ASAVE</em></div>
+      </div>
+      <div class="arch-notes">
+        <span><i>01</i> Client bytes enter only through StreamServer</span>
+        <span><i>02</i> Processor validates protocol and ACL before commands</span>
+        <span><i>03</i> Mutations update Memory/Fabric before AOF append</span>
+        <span><i>04</i> Agent owns periodic flush/log work, snapshots are independent</span>
+      </div>
+    </section>
+
+    <section class="section numbers">
+      <div class="section-heading compact benchmark-heading">
+        <div><span class="kicker">03 / MEASURED, NOT MARKETED</span><h2>Small machine.<br>Serious data path.</h2></div>
+        <p>Apple M2 · ReleaseFast · localhost TCP · 8 server workers · 32 clients · 20-byte values · TLS off · payload logging off · AOF disabled</p>
+      </div>
+      <div class="metrics-grid">
+        <div class="metric featured"><strong>5.52<small>M</small></strong><span>GET operations / second</span><p>median · pipeline 64 · 20 B</p></div>
+        <div class="metric"><strong>27<small>×</small></strong><span>pipeline speedup</span><p>GET at depth 64 vs depth 1</p></div>
+        <div class="metric"><strong>3.12<small>M</small></strong><span>SET operations / second</span><p>median · pipeline 64 · 20 B</p></div>
+        <div class="metric"><strong>3.11<small>M</small></strong><span>mixed operations / second</span><p>median · pipeline 64 · 20 B</p></div>
+      </div>
+      <div class="benchmark-bars" aria-label="Baseline and optimized throughput comparison">
+        <div class="bar-label"><span>GET · pipeline 1</span><b>204,306 ops/s</b></div>
+        <div class="bar-track"><i style="--bar-width:4%"></i></div>
+        <div class="bar-label"><span>GET · pipeline 16</span><b>2,113,790 ops/s</b></div>
+        <div class="bar-track"><i style="--bar-width:38%"></i></div>
+        <div class="bar-label"><span>GET · pipeline 64</span><b>5,517,224 ops/s</b></div>
+        <div class="bar-track"><i style="--bar-width:100%"></i></div>
+      </div>
+      <p class="benchmark-note">Each row is the median of three runs, with 20,000 requests per client. Pipeline throughput reports whole batches of operations per second and favors this highly concurrent local workload. These client-inclusive localhost results are not isolated server capacity claims or a cross-database comparison. Separate non-pipelined optimization benchmarks recorded 114,204 ops/s with AOF off and a 51% RSS reduction.</p>
+    </section>
+
+    <section class="section quickstart" id="quickstart">
+      <div class="quick-copy">
+        <span class="kicker">04 / QUICKSTART</span>
+        <h2>From clone<br>to cache.</h2>
+        <p>Build the server, launch it, and use the dedicated CLI. Authentication is optional for local development and explicit for production.</p>
+        <ul class="check-list">
+          <li><span>✓</span> Zig 0.17.1</li>
+          <li><span>✓</span> Linux or macOS</li>
+          <li><span>✓</span> OpenSSL only for TLS builds</li>
+        </ul>
+      </div>
+      <div class="code-window">
+        <div class="code-tabs" role="tablist" aria-label="Installation examples">
+          <button class="active" data-tab="build" role="tab">Build</button>
+          <button data-tab="docker" role="tab">Docker</button>
+          <button data-tab="auth" role="tab">Auth</button>
+          <button class="copy-button" aria-label="Copy code"><span>Copy</span><svg viewBox="0 0 16 16"><rect x="5" y="5" width="8" height="8" rx="1"/><path d="M3 11V3h8"/></svg></button>
+        </div>
+        <pre class="code-pane active" data-pane="build"><code><span class="comment"># Build optimized binaries</span>
+<span class="prompt">git clone</span> https://github.com/sectasy0/zcached
+<span class="prompt">cd</span> zcached
+<span class="prompt">zig build</span> -Doptimize=ReleaseFast
+
+<span class="comment"># Run and connect</span>
+<span class="prompt">./zig-out/bin/zcached</span>
+<span class="prompt">./zig-out/bin/zcached-cli</span> PING</code></pre>
+        <pre class="code-pane" data-pane="docker"><code><span class="comment"># Start the packaged server</span>
+<span class="prompt">docker compose up</span>
+
+<span class="comment"># Talk to port 7556</span>
+<span class="prompt">zcached-cli</span> --host 127.0.0.1 PING
+
+<span class="comment"># Persist /var/lib/zcached in production</span></code></pre>
+        <pre class="code-pane" data-pane="auth"><code><span class="comment"># Generate a cryptographically secure token</span>
+<span class="prompt">zcached-cli</span> token generate --hash
+
+<span class="comment"># Add a constrained principal</span>
+<span class="prompt">zcached-cli</span> auth add --file ./auth.zon \
+  --id application --token "$TOKEN" \
+  --groups basic,diagnostic --read "app:" \
+  --write "app:"</code></pre>
+      </div>
+    </section>
+
+    <section class="final-cta">
+      <div class="cta-grid" aria-hidden="true"></div>
+      <div class="cta-orb" aria-hidden="true"></div>
+      <span class="kicker">READY WHEN YOU ARE</span>
+      <h2>Put speed in the path.<br><span>Leave weight behind.</span></h2>
+      <a class="button button-primary" href="https://github.com/sectasy0/zcached">Build zcached <span>↗</span></a>
+    </section>
+  </main>
+
+  <footer>
+    <a class="brand footer-brand" href="#top">
+      <img src="logo-mark.svg" alt="zcached">
+    </a>
+    <p>Fast, small, and explicit.</p>
+    <div><a href="https://github.com/sectasy0/zcached">GitHub</a><a href="../docs/operations.md">Documentation</a><a href="../LICENSE">License</a></div>
+  </footer>
+</body>
+</html>

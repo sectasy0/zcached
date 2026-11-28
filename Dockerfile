@@ -21,7 +21,8 @@ COPY --chown=zcached:zcached . ./source
 
 # build and move app to ${APP_DIR}/zcached
 RUN cd source && ../zig-x86_64-linux-$ZIG_VERSION/zig build && \
-    mv ./zig-out/bin/zcached ${APP_DIR}/zcached
+    mv ./zig-out/bin/zcached ${APP_DIR}/zcached && \
+    mv ./zig-out/bin/zcached-cli ${APP_DIR}/zcached-cli
 
 # clean things up.
 RUN rm -rf zig-cache zig-out zig-x86_64-linux-$ZIG_VERSION && cd ${APP_DIR}

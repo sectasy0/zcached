@@ -115,6 +115,9 @@ Acceptance criteria:
   opt-in to preserve ordinary TLS client compatibility.
 - ✅ Published an [operational guide](operations.md) covering logs, resource
   limits, snapshots, AOF, Docker, systemd, monitoring, and recovery checks.
+- ✅ Added `zcached-cli` for one-shot protocol commands and local principal
+  list/add/remove/rotate operations with validated atomic auth-file updates
+  and remote admin reload, plus cryptographically secure token generation.
 
 Acceptance criteria:
 

@@ -164,6 +164,28 @@ pub fn build(b: *std.Build) void {
             .link_libc = true,
         }),
     });
+    const zcached_auth = b.createModule(.{
+        .root_source_file = b.path("src/auth.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &runtime_imports,
+    });
+    const zcached_cli = b.addExecutable(.{
+        .name = "zcached-cli",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/zcached-cli.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+            .imports = &runtime_imports,
+        }),
+    });
+    zcached_cli.root_module.addImport("auth", zcached_auth);
+    b.installArtifact(zcached_cli);
+    const cli_tests = b.addTest(.{
+        .name = "zcached-cli-tests",
+        .root_module = zcached_cli.root_module,
+    });
     const run_profile = b.addRunArtifact(profile);
     run_profile.addArg("--server");
     run_profile.addArtifactArg(exe);
@@ -190,6 +212,11 @@ pub fn build(b: *std.Build) void {
     run_io_tests.stdio = .inherit;
     unit_tests.root_module.addImport("benchmark", benchmark.root_module);
     unit_tests.root_module.addImport("profile", profile.root_module);
-    b.step("test", "Run server, native I/O, benchmark, and profiler tests").dependOn(&run_unit_tests.step);
+    const run_cli_tests = std.Build.Step.Run.create(b, "run zcached-cli-tests");
+    run_cli_tests.addArtifactArg(cli_tests);
+    run_cli_tests.stdio = .inherit;
+    const test_step = b.step("test", "Run server, CLI, native I/O, benchmark, and profiler tests");
+    test_step.dependOn(&run_unit_tests.step);
+    test_step.dependOn(&run_cli_tests.step);
     b.step("test-io", "Run native I/O backend tests").dependOn(&run_io_tests.step);
 }

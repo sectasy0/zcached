@@ -1,4 +1,8 @@
-# zcached - A Lightweight In-Memory Cache System
+<p align="center">
+  <img src="website/logo-mark.svg" width="360" alt="zcached">
+</p>
+
+# A Lightweight In-Memory Cache System
 
 Welcome to `zcached`, a nimble and efficient in-memory caching system resembling databases like Redis. This README acts as a comprehensive guide, aiding in comprehension, setup, and optimal utilization.
 
@@ -25,6 +29,18 @@ reactor; its connections run as cooperative fibers, not individual OS threads.
 `max_clients` limits connections per worker. Filesystem/platform services
 remain synchronous; see [network architecture](docs/internals/network_architecture.md)
 for ownership, copying, cancellation, and platform requirements.
+
+`zcached-cli` is installed alongside the server. It executes one-shot protocol
+commands and manages the local `auth.zon` principals file:
+
+```sh
+zig-out/bin/zcached-cli PING
+ZCACHED_CLI_TOKEN=secret zig-out/bin/zcached-cli SET app:key value
+zig-out/bin/zcached-cli auth list --file ./auth.zon
+```
+
+See the [operations guide](docs/operations.md) for principal add/remove/rotate
+and remote `AUTH RELOAD` usage.
 
 For production deployment and day-to-day operation, see the
 [operations guide](docs/operations.md), including resource limits, persistence,

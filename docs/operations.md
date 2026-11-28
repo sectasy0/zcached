@@ -123,6 +123,68 @@ limiting per connection. A zero `max_attempts` disables that rate limiter;
 a zero `timeout_ms` disables the authentication deadline. Tokens are never
 written by the network payload logger.
 
+## zcached-cli
+
+Builds install `zcached-cli` next to `zcached`. For one-shot commands:
+
+Generate a 32-byte (64 hexadecimal characters) high-entropy token:
+
+```sh
+zcached-cli token generate
+zcached-cli token generate --bytes 48 --hash
+```
+
+`--hash` additionally prints the SHA-256 expected by `token_sha256`.
+Generation uses the platform cryptographically secure entropy source and
+rejects token sizes below 16 bytes.
+
+```sh
+zcached-cli --host 127.0.0.1 --port 7556 PING
+zcached-cli --token "$TOKEN" SET app:key value
+ZCACHED_CLI_TOKEN="$TOKEN" zcached-cli GET app:key
+```
+
+The CLI encodes every argument as a protocol bulk string and prints the raw
+framed response without the terminator. Prefer `ZCACHED_CLI_TOKEN` over
+`--token` for normal use because command-line arguments can be visible in the
+process list and shell history.
+
+Local principal administration:
+
+```sh
+zcached-cli auth list --file /etc/zcached/auth.zon
+zcached-cli auth add \
+  --file /etc/zcached/auth.zon \
+  --id application-production \
+  --name application \
+  --token "$APP_TOKEN" \
+  --groups basic,diagnostic \
+  --read 'app:,shared:' \
+  --write 'app:' \
+  --delete 'app:'
+zcached-cli auth rotate \
+  --file /etc/zcached/auth.zon \
+  --id application-production \
+  --token "$NEW_APP_TOKEN"
+zcached-cli auth remove \
+  --file /etc/zcached/auth.zon \
+  --id application-production
+```
+
+Every change is serialized to a temporary file, validated by the server auth
+loader, then atomically renamed over the original. Invalid ACL data does not
+replace the active file. Plaintext tokens are never stored; only SHA-256 is
+written.
+
+Activate changes with a separate admin principal:
+
+```sh
+ZCACHED_CLI_TOKEN="$ADMIN_TOKEN" zcached-cli auth reload
+```
+
+When rotating the currently connected application's credential, complete the
+reload before retiring the old token.
+
 ## Resource limits
 
 Configure limits according to process memory, value size, client count, and
